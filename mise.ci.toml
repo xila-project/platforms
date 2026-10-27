@@ -104,3 +104,7 @@ for locale in ${XILA_DEMO_LOCALES:-en fr es de pt-BR it pl}; do
   cp -r examples/wasm/dist/. "pages/demonstrations/wasm/$locale/"
 done
 '''
+
+[tasks."ci:profiling"]
+extends = "ci:rust"
+run = "cargo test --locked --manifest-path tools/profiling/Cargo.toml"

@@ -50,6 +50,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev pkg-config libasound2-dev libudev-dev libxkbcommon-dev libwayland-dev libx11-dev libxkbcommon-x11-dev
       - run: mise run test:seed
       - run: mise run firmware:test
+      - run: mise run ci:profiling
       - run: mise run build:native
   browser:
     runs-on: ubuntu-latest
