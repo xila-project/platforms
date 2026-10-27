@@ -67,6 +67,22 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         self.assertIn('platform-demonstrations', demo)
         self.assertIn('reference-filesystem-images', demo)
         self.assertIn('XILA_FONT_CATALOG_ROOTS', demo)
+        self.assertIn('actions/upload-pages-artifact', demo)
+        self.assertIn('actions/deploy-pages', demo)
+        self.assertIn("github.event_name == 'workflow_run'", demo)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'", demo)
+        self.assertIn("github.event.workflow_run.event == 'push'", demo)
+        self.assertIn("github.event.workflow_run.head_branch == 'main'", demo)
+        self.assertIn('github.event.workflow_run.head_sha', demo)
+        self.assertIn("github.ref == 'refs/heads/main'", demo)
+        self.assertIn('pages: write', demo)
+        deploy = demo.split('  deploy:', 1)[1]
+        self.assertNotIn("github.event_name == 'pull_request'", deploy)
+        self.assertIn("inputs.platform_ref == '' || inputs.platform_ref == github.sha", deploy)
+        self.assertIn('name: github-pages', deploy)
+        landing = read('examples/wasm/pages-index.html')
+        self.assertIn('url=demonstrations/wasm/en/', landing)
+        self.assertIn('href="demonstrations/wasm/en/"', landing)
 
     def test_demo_images_follow_each_locale_target(self):
         script = tomllib.loads(read('mise.ci.toml'))['tasks']['pages:build']['run']

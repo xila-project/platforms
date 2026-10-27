@@ -8,6 +8,8 @@ Build guest applications separately in the Applications workspace, then set `XIL
 
 For the Docker runtime image, supply those already built guests as a BuildKit named context, for example `docker buildx build --build-context applications=/absolute/path/to/wasm -f Dockerfile.runtime .`. The browser entry point and OPFS code live in `examples/wasm`; native runtime and headless options are documented in `examples/native`.
 
+The browser example is published by this repository at [xila-project.github.io/platforms](https://xila-project.github.io/platforms/). The root opens the English example; localized builds are under `demonstrations/wasm/<locale>/`. A successful main-branch CI run triggers the Pages deployment. Core documentation remains at [documentation.xila.dev](https://documentation.xila.dev/).
+
 For local integration against adjacent working copies, generate a Cargo patch file and use it explicitly:
 
 ```sh

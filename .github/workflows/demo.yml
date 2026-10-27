@@ -1,6 +1,10 @@
 name: Browser demonstrations
 on:
   pull_request:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
   workflow_call:
     inputs:
       platform_ref:
@@ -16,6 +20,11 @@ permissions:
   contents: read
 jobs:
   build:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -28,7 +37,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: xila-project/platforms
-          ref: ${{ inputs.platform_ref || github.sha }}
+          ref: ${{ inputs.platform_ref || github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
       - uses: actions/checkout@v7
         with:
@@ -54,6 +63,11 @@ jobs:
         env:
           CARGO_TARGET_ROOT: ${{ github.workspace }}/target/pages
         run: mise run pages:build
+      - name: Add Pages landing page
+        run: cp examples/wasm/pages-index.html pages/index.html
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: pages/
       - uses: actions/upload-artifact@v7
         with:
           name: platform-demonstrations
@@ -64,3 +78,23 @@ jobs:
           name: reference-filesystem-images
           path: target/reference-filesystem-images/
           if-no-files-found: error
+  deploy:
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' &&
+       (inputs.platform_ref == '' || inputs.platform_ref == github.sha))
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/deploy-pages@v5
+        id: deployment
