@@ -27,7 +27,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     sections = {
-        "https://github.com/xila-project/core": (args.core, ["core", "libraries", "subsystems", "drivers/core", "executables/wasm"]),
+        "https://github.com/xila-project/core": (args.core, ["core", "libraries", "subsystems", "drivers/core"]),
         "https://github.com/xila-project/platforms": (args.platforms, ["drivers", "libraries/testing"]),
         "https://github.com/xila-project/applications": (args.applications, ["executables", "libraries/application_shortcuts"]),
     }
