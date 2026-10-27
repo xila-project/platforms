@@ -116,6 +116,7 @@ members = [
   "examples/native",
   "examples/wasm",
   "tools/fs_image",
+  "tools/artifacts",
 ]
 
 [patch.crates-io]

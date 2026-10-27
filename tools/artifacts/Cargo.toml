@@ -1,0 +1,13 @@
+[package]
+name = "xila-prepare-applications"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+xila-package-reader = { git = "https://github.com/xila-project/package_manager", rev = "71c4da6799a958b188492b0a833bca3550b821ab" }
+xila-package-verification = { git = "https://github.com/xila-project/package_manager", rev = "71c4da6799a958b188492b0a833bca3550b821ab", default-features = false, features = ["sha256"] }
+tar-no-std = { version = "0.5.0", default-features = false }
+
+[dev-dependencies]
+xila-package-manifest = { git = "https://github.com/xila-project/package_manager", rev = "71c4da6799a958b188492b0a833bca3550b821ab" }
+xila-package-writer = { git = "https://github.com/xila-project/package_manager", rev = "71c4da6799a958b188492b0a833bca3550b821ab" }
