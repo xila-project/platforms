@@ -37,24 +37,13 @@ RUN npm ci --ignore-scripts
 
 COPY . .
 
-# Keep seed generation aligned with `mise run prepare-native-image`:
-# bundled WASI apps are built first, then fs_image creates an MBR + LittleFS
-# disk that is copied to the image as an immutable seed.
-RUN cargo build --locked \
-        --package xila-calculator \
-        --package xila-weather \
-        --package xila-clock \
-        --package xila-pixel-painter \
-        --package xila-synth \
-        --package xila-text-editor \
-        --target wasm32-wasip1 \
-        --profile release-wasm \
-    && test -s target/wasm32-wasip1/release-wasm/text_editor.wasm \
-    && mkdir -p target/seed/native \
+# Applications are independently built and supplied as a named BuildKit context.
+COPY --from=applications / /applications/
+RUN mkdir -p target/seed/native \
     && cargo run --locked --package xila-fs-image -- \
         target/seed/native/seed.img 16777216 \
         --bundle native \
-        --applications-dir target/wasm32-wasip1/release-wasm \
+        --applications-dir /applications \
     && cargo build --locked --package xila-native-example --bin xila-runtime --release \
     && test -s target/release/xila-runtime \
     && test -s target/seed/native/seed.img \
