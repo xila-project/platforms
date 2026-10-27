@@ -2170,7 +2170,7 @@ checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 [[package]]
 name = "littlefs2-sys"
 version = "0.4.0"
-source = "git+https://github.com/AlixANNERAUD/littlefs2-sys.git?rev=2c2aab090f7592d79eec991656c03797d1a22c8f#2c2aab090f7592d79eec991656c03797d1a22c8f"
+source = "git+https://github.com/xila-project/core?rev=31089029263ac40a4cd9cd4fc0be1cd3693e2113#31089029263ac40a4cd9cd4fc0be1cd3693e2113"
 dependencies = [
  "bindgen 0.70.1",
  "cc",
@@ -5138,7 +5138,7 @@ dependencies = [
 [[package]]
 name = "xila-activity"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=38a90085da842e14df548b7be9be3c355e166df8#38a90085da842e14df548b7be9be3c355e166df8"
+source = "git+https://github.com/xila-project/applications?rev=26ee04355c3ddea0f41ee81ece168cec2f9eb376#26ee04355c3ddea0f41ee81ece168cec2f9eb376"
 dependencies = [
  "embassy-futures",
  "xila",
@@ -5155,7 +5155,7 @@ dependencies = [
 [[package]]
 name = "xila-application-shortcuts"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=38a90085da842e14df548b7be9be3c355e166df8#38a90085da842e14df548b7be9be3c355e166df8"
+source = "git+https://github.com/xila-project/applications?rev=26ee04355c3ddea0f41ee81ece168cec2f9eb376#26ee04355c3ddea0f41ee81ece168cec2f9eb376"
 dependencies = [
  "embedded-i18n",
 ]
@@ -5197,7 +5197,7 @@ dependencies = [
 [[package]]
 name = "xila-command-line-shell"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=38a90085da842e14df548b7be9be3c355e166df8#38a90085da842e14df548b7be9be3c355e166df8"
+source = "git+https://github.com/xila-project/applications?rev=26ee04355c3ddea0f41ee81ece168cec2f9eb376#26ee04355c3ddea0f41ee81ece168cec2f9eb376"
 dependencies = [
  "getargs",
  "getargs-derive",
@@ -5207,7 +5207,7 @@ dependencies = [
 [[package]]
 name = "xila-debug-application"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=38a90085da842e14df548b7be9be3c355e166df8#38a90085da842e14df548b7be9be3c355e166df8"
+source = "git+https://github.com/xila-project/applications?rev=26ee04355c3ddea0f41ee81ece168cec2f9eb376#26ee04355c3ddea0f41ee81ece168cec2f9eb376"
 dependencies = [
  "serde_json",
  "xila",
@@ -5390,7 +5390,7 @@ dependencies = [
 [[package]]
 name = "xila-file-manager"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=38a90085da842e14df548b7be9be3c355e166df8#38a90085da842e14df548b7be9be3c355e166df8"
+source = "git+https://github.com/xila-project/applications?rev=26ee04355c3ddea0f41ee81ece168cec2f9eb376#26ee04355c3ddea0f41ee81ece168cec2f9eb376"
 dependencies = [
  "xila",
  "xila-application-shortcuts",
@@ -5465,7 +5465,7 @@ dependencies = [
 [[package]]
 name = "xila-graphical-shell"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=38a90085da842e14df548b7be9be3c355e166df8#38a90085da842e14df548b7be9be3c355e166df8"
+source = "git+https://github.com/xila-project/applications?rev=26ee04355c3ddea0f41ee81ece168cec2f9eb376#26ee04355c3ddea0f41ee81ece168cec2f9eb376"
 dependencies = [
  "getargs",
  "getargs-derive",
@@ -5644,7 +5644,7 @@ dependencies = [
 [[package]]
 name = "xila-settings"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=38a90085da842e14df548b7be9be3c355e166df8#38a90085da842e14df548b7be9be3c355e166df8"
+source = "git+https://github.com/xila-project/applications?rev=26ee04355c3ddea0f41ee81ece168cec2f9eb376#26ee04355c3ddea0f41ee81ece168cec2f9eb376"
 dependencies = [
  "const_format",
  "embassy-futures",
@@ -5701,7 +5701,7 @@ dependencies = [
 [[package]]
 name = "xila-terminal"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=38a90085da842e14df548b7be9be3c355e166df8#38a90085da842e14df548b7be9be3c355e166df8"
+source = "git+https://github.com/xila-project/applications?rev=26ee04355c3ddea0f41ee81ece168cec2f9eb376#26ee04355c3ddea0f41ee81ece168cec2f9eb376"
 dependencies = [
  "xila",
  "xila-application-shortcuts",
@@ -5772,7 +5772,7 @@ dependencies = [
 [[package]]
 name = "xila-wasm"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=38a90085da842e14df548b7be9be3c355e166df8#38a90085da842e14df548b7be9be3c355e166df8"
+source = "git+https://github.com/xila-project/applications?rev=26ee04355c3ddea0f41ee81ece168cec2f9eb376#26ee04355c3ddea0f41ee81ece168cec2f9eb376"
 dependencies = [
  "embassy-time",
  "getargs",
