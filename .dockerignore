@@ -9,3 +9,6 @@ node_modules
 docs
 *.img
 *.log
+
+.application-src
+.application-artifacts

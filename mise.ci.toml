@@ -44,3 +44,15 @@ if [ -n "${GITHUB_OUTPUT:-}" ]; then
   echo "version={{ vars.rust_version }}" >> "$GITHUB_OUTPUT"
 fi
 '''
+
+[tasks."ci:build-applications"]
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets = [
+  "wasm32-wasip1",
+] }
+run = "cargo build --locked --manifest-path .application-src/Cargo.toml --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth"
+
+[tasks."ci:runtime-smoke"]
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets = [
+  "wasm32-wasip1",
+] }
+run = "rustc --edition=2021 --target wasm32-wasip1 -O tests/container/runtime_smoke.rs -o runtime-smoke.wasm"
