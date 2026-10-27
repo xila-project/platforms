@@ -20,7 +20,7 @@ xila = { git = "https://github.com/xila-project/core", rev = "3735a377d543c08e40
 xila_http = { git = "https://github.com/xila-project/core", rev = "3735a377d543c08e402af1e398b5f36bbf481fc9", default-features = false }
 verification = { git = "https://github.com/xila-project/package_manager", rev = "f5e3f0b323a79a80d106ce2b88b77bfa8667d71b", default-features = false }
 application_metadata = { package = "xila-application-metadata", git = "https://github.com/xila-project/core", rev = "3735a377d543c08e402af1e398b5f36bbf481fc9" }
-application_shortcuts = { package = "xila-application-shortcuts", git = "https://github.com/xila-project/applications", rev = "2706ef46c555c2353617303abfdf82c20111149e" }
+application_shortcuts = { package = "xila-application-shortcuts", git = "https://github.com/xila-project/applications", rev = "38a90085da842e14df548b7be9be3c355e166df8" }
 audio = { package = "xila-audio", git = "https://github.com/xila-project/core", rev = "3735a377d543c08e402af1e398b5f36bbf481fc9" }
 nanoaudio = { git = "https://github.com/AlixANNERAUD/nanoaudio.git", rev = "596076c64827fd8bf9e8319addc2f215e0cde8be", default-features = false }
 nanoaudio-cpal = { git = "https://github.com/AlixANNERAUD/nanoaudio.git", rev = "596076c64827fd8bf9e8319addc2f215e0cde8be", default-features = false }
@@ -61,20 +61,20 @@ drivers_std = { package = "xila-drivers-std", path = "drivers/std" }
 drivers_wasm = { package = "xila-drivers-wasm", path = "drivers/wasm" }
 
 # - Executables
-file_manager = { package = "xila-file-manager", git = "https://github.com/xila-project/applications", rev = "2706ef46c555c2353617303abfdf82c20111149e" }
-command_line_shell = { package = "xila-command-line-shell", git = "https://github.com/xila-project/applications", rev = "2706ef46c555c2353617303abfdf82c20111149e" }
-graphical_shell = { package = "xila-graphical-shell", git = "https://github.com/xila-project/applications", rev = "2706ef46c555c2353617303abfdf82c20111149e" }
-wasm = { package = "xila-wasm", git = "https://github.com/xila-project/applications", rev = "2706ef46c555c2353617303abfdf82c20111149e" }
-terminal = { package = "xila-terminal", git = "https://github.com/xila-project/applications", rev = "2706ef46c555c2353617303abfdf82c20111149e" }
-settings = { package = "xila-settings", git = "https://github.com/xila-project/applications", rev = "2706ef46c555c2353617303abfdf82c20111149e" }
-debug_application = { package = "xila-debug-application", git = "https://github.com/xila-project/applications", rev = "2706ef46c555c2353617303abfdf82c20111149e" }
-activity = { package = "xila-activity", git = "https://github.com/xila-project/applications", rev = "2706ef46c555c2353617303abfdf82c20111149e" }
-pixel_painter = { package = "xila-pixel-painter", git = "https://github.com/xila-project/applications", rev = "2706ef46c555c2353617303abfdf82c20111149e" }
-text_editor = { package = "xila-text-editor", git = "https://github.com/xila-project/applications", rev = "2706ef46c555c2353617303abfdf82c20111149e" }
-calculator = { package = "xila-calculator", git = "https://github.com/xila-project/applications", rev = "2706ef46c555c2353617303abfdf82c20111149e" }
-weather = { package = "xila-weather", git = "https://github.com/xila-project/applications", rev = "2706ef46c555c2353617303abfdf82c20111149e" }
-clock = { package = "xila-clock", git = "https://github.com/xila-project/applications", rev = "2706ef46c555c2353617303abfdf82c20111149e" }
-synth = { package = "xila-synth", git = "https://github.com/xila-project/applications", rev = "2706ef46c555c2353617303abfdf82c20111149e" }
+file_manager = { package = "xila-file-manager", git = "https://github.com/xila-project/applications", rev = "38a90085da842e14df548b7be9be3c355e166df8" }
+command_line_shell = { package = "xila-command-line-shell", git = "https://github.com/xila-project/applications", rev = "38a90085da842e14df548b7be9be3c355e166df8" }
+graphical_shell = { package = "xila-graphical-shell", git = "https://github.com/xila-project/applications", rev = "38a90085da842e14df548b7be9be3c355e166df8" }
+wasm = { package = "xila-wasm", git = "https://github.com/xila-project/applications", rev = "38a90085da842e14df548b7be9be3c355e166df8" }
+terminal = { package = "xila-terminal", git = "https://github.com/xila-project/applications", rev = "38a90085da842e14df548b7be9be3c355e166df8" }
+settings = { package = "xila-settings", git = "https://github.com/xila-project/applications", rev = "38a90085da842e14df548b7be9be3c355e166df8" }
+debug_application = { package = "xila-debug-application", git = "https://github.com/xila-project/applications", rev = "38a90085da842e14df548b7be9be3c355e166df8" }
+activity = { package = "xila-activity", git = "https://github.com/xila-project/applications", rev = "38a90085da842e14df548b7be9be3c355e166df8" }
+pixel_painter = { package = "xila-pixel-painter", git = "https://github.com/xila-project/applications", rev = "38a90085da842e14df548b7be9be3c355e166df8" }
+text_editor = { package = "xila-text-editor", git = "https://github.com/xila-project/applications", rev = "38a90085da842e14df548b7be9be3c355e166df8" }
+calculator = { package = "xila-calculator", git = "https://github.com/xila-project/applications", rev = "38a90085da842e14df548b7be9be3c355e166df8" }
+weather = { package = "xila-weather", git = "https://github.com/xila-project/applications", rev = "38a90085da842e14df548b7be9be3c355e166df8" }
+clock = { package = "xila-clock", git = "https://github.com/xila-project/applications", rev = "38a90085da842e14df548b7be9be3c355e166df8" }
+synth = { package = "xila-synth", git = "https://github.com/xila-project/applications", rev = "38a90085da842e14df548b7be9be3c355e166df8" }
 
 # - External crates
 embedded-hal = { version = "1", default-features = false }
