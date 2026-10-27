@@ -52,7 +52,10 @@ def main() -> None:
     args = parser.parse_args()
     if args.max_abi < 0:
         parser.error("--max-abi must be nonnegative")
-    prepare(args.profile, args.lockfile, args.output, args.tool, args.max_abi)
+    try:
+        prepare(args.profile, args.lockfile, args.output, args.tool, args.max_abi)
+    except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:
+        parser.exit(1, f"{error}\n")
 
 
 if __name__ == "__main__":

@@ -14,6 +14,8 @@ permissions:
   contents: read
 jobs:
   integration:
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -33,10 +35,17 @@ jobs:
           ref: ${{ inputs.applications_ref }}
           path: applications
           persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: xila-project/package_manager
+          ref: 71c4da6799a958b188492b0a833bca3550b821ab
+          path: package-manager
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.99.0
           targets: wasm32-wasip1
+          components: rustfmt
       - uses: actions/setup-node@v6
         with:
           node-version: 24.22.0
@@ -52,8 +61,25 @@ jobs:
         working-directory: platforms
         run: |
           cargo metadata --config "$RUNNER_TEMP/xila-local.toml" --format-version 1 > "$RUNNER_TEMP/metadata.json"
+          python3 -c 'import collections,json,os; m=json.load(open(os.environ["RUNNER_TEMP"]+"/metadata.json")); d=collections.defaultdict(set); [d[p["name"]].add(p["id"]) for p in m["packages"] if p["name"] == "xila" or p["name"].startswith("xila-")]; bad={k:v for k,v in d.items() if len(v)>1}; print(bad); assert not bad'
           cargo tree --config "$RUNNER_TEMP/xila-local.toml" -d
           cargo check --config "$RUNNER_TEMP/xila-local.toml" -p xila-native-example
       - name: Check Applications integration harness
         working-directory: applications
         run: cargo check --config "$RUNNER_TEMP/xila-local.toml" -p xila-command-line-shell --tests --features xila/graphics_rendering_xrgb8888
+      - name: Build application artifacts
+        working-directory: applications
+        run: cargo build --config "$RUNNER_TEMP/xila-local.toml" --target wasm32-wasip1 -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth
+      - name: Build packaging and image tools
+        run: |
+          cargo build --locked --manifest-path package-manager/Cargo.toml -p xila-package-builder
+          cargo build --manifest-path platforms/Cargo.toml --config "$RUNNER_TEMP/xila-local.toml" -p xila-prepare-applications -p xila-fs-image
+      - name: Verify packaged applications and seed profiles
+        run: |
+          python3 platforms/tools/ci/package_seed_check.py \
+            --applications "$GITHUB_WORKSPACE/applications" \
+            --package-manager "$GITHUB_WORKSPACE/package-manager" \
+            --wasm-dir "$CARGO_TARGET_DIR/wasm32-wasip1/debug" \
+            --builder "$CARGO_TARGET_DIR/debug/xila-package" \
+            --preparer "$CARGO_TARGET_DIR/debug/xila-prepare-applications" \
+            --fs-image "$CARGO_TARGET_DIR/debug/fs_image"

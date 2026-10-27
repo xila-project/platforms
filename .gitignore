@@ -24,3 +24,6 @@ rustc-ice-*.txt
 #.idea/
 
 /node_modules
+
+__pycache__/
+*.pyc
