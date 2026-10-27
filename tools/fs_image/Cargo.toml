@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 application_metadata = { workspace = true }
+application_shortcuts = { workspace = true }
 users = { workspace = true }
 abi_definitions = { workspace = true }
 drivers_std = { workspace = true }

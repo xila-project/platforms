@@ -29,7 +29,7 @@ def main():
     sections = {
         "https://github.com/xila-project/core": (args.core, ["core", "libraries", "subsystems", "drivers/core", "executables/wasm"]),
         "https://github.com/xila-project/platforms": (args.platforms, ["drivers", "libraries/testing"]),
-        "https://github.com/xila-project/applications": (args.applications, ["executables"]),
+        "https://github.com/xila-project/applications": (args.applications, ["executables", "libraries/application_shortcuts"]),
     }
     lines = []
     for url, (root, roots) in sections.items():

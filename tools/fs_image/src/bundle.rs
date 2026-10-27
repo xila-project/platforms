@@ -74,16 +74,22 @@ pub fn prepare(profile: &str, applications: &Path) -> Result<Staging, Box<dyn Er
         )?;
         fs::create_dir_all(staging.0.join(format!("data/applications/{name}")))?;
     }
+    let native_shortcuts = match profile {
+        "native" => include_str!("../profiles/native-shortcuts.txt"),
+        "wasm" => include_str!("../profiles/browser-shortcuts.txt"),
+        _ => unreachable!(),
+    };
     for name in guests
         .iter()
-        .chain(application_metadata::NATIVE)
-        .filter(|name| profile == "native" || **name != "activity")
+        .copied()
+        .chain(native_shortcuts.lines())
+        .filter(|name| cfg!(unix) || *name != "debug")
     {
         fs::write(
             staging.0.join(format!(
                 "configuration/shared/applications/shortcuts/{name}.json"
             )),
-            application_metadata::shortcut(name).ok_or("unknown application")?,
+            application_shortcuts::shortcut(name).ok_or("unknown application")?,
         )?;
     }
     println!("Prepared {profile} bundle: {}", guests.join(","));
