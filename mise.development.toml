@@ -2,13 +2,13 @@
 rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
   "rustfmt",
 ], mr_boxington = true }
-"mr-boxington" = "latest"
+"mr-boxington" = "1.26.0"
 
 [task_templates."dev:browser".tools]
 rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets = [
   "wasm32-unknown-unknown",
 ], mr_boxington = true }
-"mr-boxington" = "latest"
+"mr-boxington" = "1.26.0"
 
 [bootstrap.packages]
 "apt:clang" = "latest"
@@ -47,3 +47,21 @@ extends = "dev:rust"
 
 [tasks."firmware:test"]
 extends = "dev:rust"
+
+[tasks."test:drivers"]
+extends = "dev:rust"
+
+[tasks."clippy:drivers"]
+extends = "dev:rust"
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "clippy",
+  "rustfmt",
+], mr_boxington = true }
+
+[tasks."clippy:browser"]
+extends = "dev:browser"
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "clippy",
+], targets = [
+  "wasm32-unknown-unknown",
+], mr_boxington = true }

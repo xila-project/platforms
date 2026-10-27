@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: xila-project/applications
-          ref: 584a600df084e0828d5ce62fd28e1feb215baf09
+          ref: 7a4d1f68bf3e54271fa9bfd4710542973f22e416
           path: .application-catalogs
           persist-credentials: false
       - uses: jdx/mise-action@v5.2.2
@@ -48,6 +48,8 @@ jobs:
           github-cache-mode: target
           cache-generation: v1-platforms-host
       - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev pkg-config libasound2-dev libudev-dev libxkbcommon-dev libwayland-dev libx11-dev libxkbcommon-x11-dev
+      - run: mise run clippy:drivers
+      - run: mise run test:drivers
       - run: mise run test:seed
       - run: mise run firmware:test
       - run: mise run ci:profiling
@@ -62,7 +64,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: xila-project/applications
-          ref: 584a600df084e0828d5ce62fd28e1feb215baf09
+          ref: 7a4d1f68bf3e54271fa9bfd4710542973f22e416
           path: .application-catalogs
           persist-credentials: false
       - uses: jdx/mise-action@v5.2.2
@@ -78,7 +80,9 @@ jobs:
           github-cache-mode: target
           cache-generation: v1-platforms-browser
       - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev
+      - run: mise run clippy:browser
       - run: mise run check:browser
+      - run: node --test drivers/wasm/tests/seed.test.mjs
       - run: node --test examples/wasm/tests/disk_manager.test.mjs
   required:
     if: always()

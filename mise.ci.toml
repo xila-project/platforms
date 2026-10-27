@@ -108,3 +108,17 @@ done
 [tasks."ci:profiling"]
 extends = "ci:rust"
 run = "cargo test --locked --manifest-path tools/profiling/Cargo.toml"
+
+[tasks."test:drivers"]
+extends = "ci:rust"
+
+[tasks."clippy:drivers"]
+extends = "ci:rust"
+
+[tasks."clippy:browser"]
+extends = "ci:browser"
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "clippy",
+], targets = [
+  "wasm32-unknown-unknown",
+] }

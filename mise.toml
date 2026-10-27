@@ -36,3 +36,15 @@ cargo run --locked -p xila-fs-image -- target/seed/browser/seed.img 16777216 --b
 [tasks."firmware:test"]
 description = "Test the native firmware simulator and VFS integration"
 run = "cargo test --locked -p xila-firmware-native"
+
+[tasks."test:drivers"]
+description = "Test native and common platform drivers"
+run = "cargo test --locked -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-testing --features xila-drivers-native/audio"
+
+[tasks."clippy:drivers"]
+description = "Lint native and common platform drivers"
+run = "cargo clippy --locked -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-testing --all-targets --features xila-drivers-native/audio -- -D warnings"
+
+[tasks."clippy:browser"]
+description = "Lint browser drivers"
+run = "cargo clippy --locked -p xila-drivers-wasm --target wasm32-unknown-unknown --features audio -- -D warnings"
