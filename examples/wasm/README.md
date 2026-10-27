@@ -1,5 +1,7 @@
 # Browser example
 
+The published example is at [platforms.xila.dev](https://platforms.xila.dev/). Localized versions are available under `demonstrations/wasm/<locale>/`.
+
 From the repository root, prepare the separate application disk and build the
 browser runtime:
 
