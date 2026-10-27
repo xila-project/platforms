@@ -122,3 +122,14 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", compone
 ], targets = [
   "wasm32-unknown-unknown",
 ] }
+
+[tasks."build:profiling"]
+extends = "ci:rust"
+
+[tasks."ci:profiling-runtime-tests"]
+extends = "ci:rust"
+run = "cargo test --locked -p xila-drivers-std --lib --features profiling,heaptrack"
+
+[tasks."ci:profiling-native-tests"]
+extends = "ci:rust"
+run = "cargo test --locked -p xila-native-example --bin native_example --features profiling,heaptrack"

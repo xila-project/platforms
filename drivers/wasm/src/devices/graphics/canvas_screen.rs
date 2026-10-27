@@ -73,7 +73,12 @@ impl Inner {
 
         // XRGB8888 on little-endian WASM stores pixels as B,G,R,X.
         // Canvas ImageData expects R,G,B,A. Swap the remaining complete pixels.
-        for (src, dst) in rgba[i..].chunks_exact(4).zip(bgra[i..].chunks_exact_mut(4)) {
+        for (src, dst) in rgba[i..]
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(bgra[i..].as_chunks_mut::<4>().0.iter_mut())
+        {
             dst.copy_from_slice(&[src[2], src[1], src[0], src[3]]);
         }
     }

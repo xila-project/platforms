@@ -53,6 +53,8 @@ jobs:
       - run: mise run test:seed
       - run: mise run firmware:test
       - run: mise run ci:profiling
+      - run: mise run ci:profiling-runtime-tests
+      - run: mise run ci:profiling-native-tests
       - run: mise run build:native
   browser:
     runs-on: ubuntu-latest

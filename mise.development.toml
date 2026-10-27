@@ -65,3 +65,6 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", compone
 ], targets = [
   "wasm32-unknown-unknown",
 ], mr_boxington = true }
+
+[tasks."build:profiling"]
+extends = "dev:rust"

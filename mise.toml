@@ -48,3 +48,7 @@ run = "cargo clippy --locked -p xila-drivers-native -p xila-drivers-std -p xila-
 [tasks."clippy:browser"]
 description = "Lint browser drivers"
 run = "cargo clippy --locked -p xila-drivers-wasm --target wasm32-unknown-unknown --features audio -- -D warnings"
+
+[tasks."build:profiling"]
+description = "Build the native profiling runtime"
+run = "cargo build --locked -p xila-native-example --profile profiling"
