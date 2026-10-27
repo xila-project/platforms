@@ -1,0 +1,46 @@
+[wrappers.cargo]
+command = "env"
+args = [
+  "{% if env.XILA_MBX | default(value='0') == '1' %}mbx{% else %}cargo{% endif %}",
+]
+env = { MBX_CARGO_SHIM_MODE = "1" }
+
+[task_templates."ci:rust".tools]
+rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "clippy",
+  "rustfmt",
+] }
+
+[task_templates."ci:browser".tools]
+rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets = [
+  "wasm32-unknown-unknown",
+] }
+
+[tasks."ci:format-rust"]
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "rustfmt",
+] }
+run = "cargo fmt --all -- --check"
+
+[tasks."ci:format-toml"]
+tools.taplo = "{{ vars.taplo_version }}"
+run = "taplo format --check"
+
+[tasks."build:native"]
+extends = "ci:rust"
+
+[tasks."test:seed"]
+extends = "ci:rust"
+
+[tasks."check:browser"]
+extends = "ci:browser"
+
+[tasks."ci:toolchain"]
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal" }
+run = '''
+set -eu
+rustc --version
+if [ -n "${GITHUB_OUTPUT:-}" ]; then
+  echo "version={{ vars.rust_version }}" >> "$GITHUB_OUTPUT"
+fi
+'''
