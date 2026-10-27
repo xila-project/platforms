@@ -46,7 +46,9 @@ fi
 '''
 
 [tasks."ci:build-applications"]
-tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets = [
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "rustfmt",
+], targets = [
   "wasm32-wasip1",
 ] }
 run = "cargo build --locked --manifest-path .application-src/Cargo.toml --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth"

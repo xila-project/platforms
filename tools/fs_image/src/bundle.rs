@@ -13,24 +13,12 @@ impl Drop for Staging {
 }
 
 pub fn prepare(profile: &str, applications: &Path) -> Result<Staging, Box<dyn Error>> {
-    let guests: &[&str] = match profile {
-        "native" => &[
-            "calculator",
-            "clock",
-            "pixel_painter",
-            "synth",
-            "text_editor",
-            "weather",
-        ],
-        "wasm" => &[
-            "calculator",
-            "clock",
-            "pixel_painter",
-            "synth",
-            "text_editor",
-        ],
+    let manifest = match profile {
+        "native" => include_str!("../profiles/native.txt"),
+        "wasm" => include_str!("../profiles/browser.txt"),
         _ => return Err("bundle must be native or wasm".into()),
     };
+    let guests: Vec<&str> = manifest.lines().filter(|line| !line.is_empty()).collect();
     let staging = loop {
         let path = std::env::temp_dir().join(format!(
             "xila-bundle-{}-{}",
@@ -75,7 +63,7 @@ pub fn prepare(profile: &str, applications: &Path) -> Result<Staging, Box<dyn Er
         staging.0.join(&application_metadata::PENDING_PATH[1..]),
         application_metadata::PENDING_CONTENT,
     )?;
-    for name in guests {
+    for name in &guests {
         let source = applications.join(format!("{name}.wasm"));
         if !fs::symlink_metadata(&source)?.is_file() {
             return Err("guest binary must be a regular file".into());
