@@ -133,3 +133,8 @@ run = "cargo test --locked -p xila-drivers-std --lib --features profiling,heaptr
 [tasks."ci:profiling-native-tests"]
 extends = "ci:rust"
 run = "cargo test --locked -p xila-native-example --bin native_example --features profiling,heaptrack"
+
+[tasks."ci:lint-workflows"]
+tools."aqua:rhysd/actionlint" = "{{ vars.actionlint_version }}"
+tools."aqua:koalaman/shellcheck" = "{{ vars.shellcheck_version }}"
+run = "actionlint"

@@ -22,6 +22,8 @@ jobs:
       - uses: jdx/mise-action@v5.2.2
       - run: mise run ci:format-rust
       - run: mise run ci:format-toml
+      - run: python3 -m unittest discover -s tools/ci -v
+      - run: mise run ci:lint-workflows
   native:
     runs-on: ubuntu-latest
     env:
