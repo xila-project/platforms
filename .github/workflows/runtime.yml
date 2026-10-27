@@ -33,7 +33,7 @@ on:
 
 permissions:
   contents: read
-  packages: write
+  packages: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
@@ -54,12 +54,44 @@ jobs:
     uses: xila-project/core/.github/workflows/extended.yml@bf0d276655dbabaa8769bd89d10ae1b835085301
     secrets: inherit
 
+  runtime-pr:
+    name: Build runtime image for PR
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      MISE_ENV: ci
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v5.2.2
+      - uses: actions/checkout@v7
+        with:
+          repository: xila-project/applications
+          ref: 44cafb2d93760705dc087972ef87cf827dcfa8d1
+          path: .application-src
+          persist-credentials: false
+      - run: mise run ci:build-applications
+      - run: mkdir -p .application-artifacts && cp .application-src/target/wasm32-wasip1/release-wasm/*.wasm .application-artifacts/
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          build-contexts: |
+            applications=./.application-artifacts
+          file: Dockerfile.runtime
+          platforms: linux/amd64
+          outputs: type=cacheonly
+          cache-from: type=gha,scope=xila-runtime-linux-amd64
   runtime:
-    name: Build runtime image
+    name: Build and publish runtime image
+    permissions:
+      contents: read
+      packages: write
     needs: [primary, deep]
     if: >-
       always() && (
-        github.event_name == 'pull_request' ||
         (github.event_name == 'workflow_run' &&
          github.event.workflow_run.event == 'push' &&
          github.event.workflow_run.conclusion == 'success' &&

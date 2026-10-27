@@ -61,3 +61,46 @@ run = "rustc --edition=2021 --target wasm32-wasip1 -O tests/container/runtime_sm
 
 [tasks."firmware:test"]
 extends = "ci:rust"
+
+[tasks."pages:demo"]
+dir = "examples/wasm"
+tools.rust = { version = "nightly-2026-10-12", profile = "minimal", components = [
+  "rustfmt",
+], targets = [
+  "wasm32-unknown-unknown",
+] }
+tools."github:trunk-rs/trunk" = "0.21.14"
+run = "trunk build --release --public-url ./"
+
+[tasks."pages:build"]
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "rustfmt",
+], targets = [
+  "wasm32-wasip1",
+  "wasm32-unknown-unknown",
+] }
+run = '''
+set -eu
+mkdir -p pages/demonstrations/wasm target/reference-filesystem-images
+for locale in ${XILA_DEMO_LOCALES:-en fr es de pt-BR it pl}; do
+  export EMBEDDED_I18N_LOCALE="$locale"
+  export CARGO_TARGET_DIR="${CARGO_TARGET_ROOT:-$PWD/target/pages}/$locale"
+  mise run ci:build-applications
+  mkdir -p "$CARGO_TARGET_DIR/seed/wasm" target/seed/wasm
+  cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/seed.img" 16777216 --bundle wasm --applications-dir "$CARGO_TARGET_DIR/wasm32-wasip1/release-wasm"
+  cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/repeated.img" 16777216 --bundle wasm --applications-dir "$CARGO_TARGET_DIR/wasm32-wasip1/release-wasm"
+  cmp "$CARGO_TARGET_DIR/seed/wasm/seed.img" "$CARGO_TARGET_DIR/seed/wasm/repeated.img"
+  rm "$CARGO_TARGET_DIR/seed/wasm/repeated.img"
+  cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/native.img" 16777216 --bundle native --applications-dir "$CARGO_TARGET_DIR/wasm32-wasip1/release-wasm"
+  cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/native-repeated.img" 16777216 --bundle native --applications-dir "$CARGO_TARGET_DIR/wasm32-wasip1/release-wasm"
+  cmp "$CARGO_TARGET_DIR/seed/wasm/native.img" "$CARGO_TARGET_DIR/seed/wasm/native-repeated.img"
+  rm "$CARGO_TARGET_DIR/seed/wasm/native-repeated.img"
+  mkdir -p "target/reference-filesystem-images/$locale"
+  cp "$CARGO_TARGET_DIR/seed/wasm/seed.img" "target/reference-filesystem-images/$locale/wasm.img"
+  cp "$CARGO_TARGET_DIR/seed/wasm/native.img" "target/reference-filesystem-images/$locale/native.img"
+  cp "$CARGO_TARGET_DIR/seed/wasm/seed.img" target/seed/wasm/seed.img
+  mise run pages:demo
+  mkdir -p "pages/demonstrations/wasm/$locale"
+  cp -r examples/wasm/dist/. "pages/demonstrations/wasm/$locale/"
+done
+'''
