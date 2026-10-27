@@ -1,0 +1,6 @@
+calculator
+clock
+pixel_painter
+synth
+text_editor
+weather

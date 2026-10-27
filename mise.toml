@@ -1,0 +1,56 @@
+[vars]
+rust_version = "1.99.0"
+node_version = "24.22.0"
+taplo_version = "0.10.0"
+actionlint_version = "1.7.7"
+shellcheck_version = "0.11.0"
+
+[tasks."build:native"]
+description = "Build the native runtime"
+run = "cargo build --locked -p xila-native-example"
+
+[tasks."check:browser"]
+description = "Check the browser runtime"
+run = "cargo check --locked -p xila-wasm-example --target wasm32-unknown-unknown"
+
+[tasks."test:seed"]
+description = "Test filesystem images and package verification"
+run = "cargo test --locked -p xila-fs-image -p xila-prepare-applications"
+
+[tasks."image:native"]
+description = "Create a native seed from already built Wasm applications"
+run = '''
+set -eu
+: "${XILA_APPLICATIONS_DIR:?set XILA_APPLICATIONS_DIR to the directory of built .wasm applications}"
+mkdir -p target/seed/native
+cargo run --locked -p xila-fs-image -- target/seed/native/seed.img 16777216 --bundle native --applications-dir "$XILA_APPLICATIONS_DIR"
+'''
+
+[tasks."image:browser"]
+description = "Create a browser seed from already built Wasm applications"
+run = '''
+set -eu
+: "${XILA_APPLICATIONS_DIR:?set XILA_APPLICATIONS_DIR to the directory of built .wasm applications}"
+mkdir -p target/seed/browser
+cargo run --locked -p xila-fs-image -- target/seed/browser/seed.img 16777216 --bundle wasm --applications-dir "$XILA_APPLICATIONS_DIR"
+'''
+
+[tasks."firmware:test"]
+description = "Test the native firmware simulator and VFS integration"
+run = "cargo test --locked -p xila-firmware-native"
+
+[tasks."test:drivers"]
+description = "Test native and common platform drivers"
+run = "cargo test --locked -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-testing --features xila-drivers-native/audio"
+
+[tasks."clippy:drivers"]
+description = "Lint native and common platform drivers"
+run = "cargo clippy --locked -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-testing --all-targets --features xila-drivers-native/audio -- -D warnings"
+
+[tasks."clippy:browser"]
+description = "Lint browser drivers"
+run = "cargo clippy --locked -p xila-drivers-wasm --target wasm32-unknown-unknown --features audio -- -D warnings"
+
+[tasks."build:profiling"]
+description = "Build the native profiling runtime"
+run = "cargo build --locked -p xila-native-example --profile profiling"

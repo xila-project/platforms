@@ -1,0 +1,70 @@
+[task_templates."dev:rust".tools]
+rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "rustfmt",
+], mr_boxington = true }
+"mr-boxington" = "1.26.0"
+
+[task_templates."dev:browser".tools]
+rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets = [
+  "wasm32-unknown-unknown",
+], mr_boxington = true }
+"mr-boxington" = "1.26.0"
+
+[bootstrap.packages]
+"apt:clang" = "latest"
+"apt:pkg-config" = "latest"
+"apt:libasound2-dev" = "latest"
+"apt:libudev-dev" = "latest"
+"apt:libxkbcommon-dev" = "latest"
+"apt:libwayland-dev" = "latest"
+"apt:libx11-dev" = "latest"
+"apt:libxkbcommon-x11-dev" = "latest"
+
+[tasks."format:rust"]
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "rustfmt",
+] }
+run = "cargo fmt --all"
+
+[tasks."format:toml"]
+tools.taplo = "{{ vars.taplo_version }}"
+run = "taplo format"
+
+[tasks."build:native"]
+extends = "dev:rust"
+
+[tasks."check:browser"]
+extends = "dev:browser"
+
+[tasks."test:seed"]
+extends = "dev:rust"
+
+[tasks."image:native"]
+extends = "dev:rust"
+
+[tasks."image:browser"]
+extends = "dev:rust"
+
+[tasks."firmware:test"]
+extends = "dev:rust"
+
+[tasks."test:drivers"]
+extends = "dev:rust"
+
+[tasks."clippy:drivers"]
+extends = "dev:rust"
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "clippy",
+  "rustfmt",
+], mr_boxington = true }
+
+[tasks."clippy:browser"]
+extends = "dev:browser"
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "clippy",
+], targets = [
+  "wasm32-unknown-unknown",
+], mr_boxington = true }
+
+[tasks."build:profiling"]
+extends = "dev:rust"
