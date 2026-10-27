@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: xila-project/applications
-          ref: ${{ inputs.applications_ref || '26ee04355c3ddea0f41ee81ece168cec2f9eb376' }}
+          ref: ${{ inputs.applications_ref || '9c761dffe85fea406b0ae46f875f2b566d6e0cdd' }}
           path: applications
           persist-credentials: false
       - uses: actions/checkout@v7
