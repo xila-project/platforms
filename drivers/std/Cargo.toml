@@ -32,6 +32,7 @@ heaptrack = []
 profiling = ["task/profiling", "dep:miniserde"]
 
 [dev-dependencies]
+task = { workspace = true, features = ["test_harness"] }
 little_fs = { workspace = true }
 abi_definitions = { workspace = true }
 critical-section = { workspace = true, features = ["std"] }
