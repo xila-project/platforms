@@ -1,0 +1,59 @@
+name: Cross-repository integration
+on:
+  workflow_dispatch:
+    inputs:
+      core_ref:
+        description: Explicit Core commit SHA
+        required: true
+        type: string
+      applications_ref:
+        description: Explicit Applications commit SHA
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: platforms
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: xila-project/core
+          ref: ${{ inputs.core_ref }}
+          path: core
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: xila-project/applications
+          ref: ${{ inputs.applications_ref }}
+          path: applications
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.0
+          targets: wasm32-wasip1
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.22.0
+      - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev pkg-config libasound2-dev libudev-dev libxkbcommon-dev libwayland-dev libx11-dev libxkbcommon-x11-dev
+      - run: npm ci
+        working-directory: platforms
+      - run: npm ci
+        working-directory: applications
+      - name: Patch all Core and Applications crates to the selected checkouts
+        working-directory: platforms
+        run: python3 tools/dev/local_overrides.py --core ../core --applications ../applications --platforms . --output "$RUNNER_TEMP/xila-local.toml"
+      - name: Validate native assembly against the selected commits
+        working-directory: platforms
+        run: |
+          cargo metadata --config "$RUNNER_TEMP/xila-local.toml" --format-version 1 > "$RUNNER_TEMP/metadata.json"
+          cargo tree --config "$RUNNER_TEMP/xila-local.toml" -d
+          cargo check --config "$RUNNER_TEMP/xila-local.toml" -p xila-native-example
+      - name: Check Applications integration harness
+        working-directory: applications
+        run: cargo check --config "$RUNNER_TEMP/xila-local.toml" -p xila-command-line-shell --tests --features xila/graphics_rendering_xrgb8888
