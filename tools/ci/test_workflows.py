@@ -16,6 +16,13 @@ def read(name):
 
 
 class PlatformWorkflowPolicy(unittest.TestCase):
+    def test_littlefs_configuration_is_owned_by_core(self):
+        self.assertFalse((ROOT / 'config/littlefs/little_fs_config.h').exists())
+        self.assertNotIn('LITTLEFS_CONFIG', read('.cargo/config.toml'))
+        binding = tomllib.loads(read('Cargo.toml'))['patch']['crates-io']['littlefs2-sys']
+        self.assertEqual(binding['git'], 'https://github.com/xila-project/core')
+        self.assertRegex(binding['rev'], r'^[0-9a-f]{40}$')
+
     def test_runtime_pr_has_no_publish_permissions_and_runs_smoke(self):
         workflow = read('.github/workflows/runtime.yml')
         pr = workflow.split('  runtime-pr:', 1)[1].split('  runtime:', 1)[0]
