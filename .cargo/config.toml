@@ -1,0 +1,6 @@
+[env]
+DEP_LV_CONFIG_PATH = { value = "config/lvgl", relative = true }
+EMBEDDED_I18N_LOCALE = "en"
+EMBEDDED_I18N_FALLBACK = "en"
+XILA_LV_FONT_CONV_DIR = { value = "node_modules/lv_font_conv", relative = true }
+LITTLEFS_CONFIG = { value = "config/littlefs/little_fs_config.h", relative = true }
