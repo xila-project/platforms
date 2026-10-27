@@ -111,7 +111,7 @@ fn browser_and_native_bundles_contain_their_declared_apps() {
         let image = fs::read(f.0.join(format!("{profile}.img"))).unwrap();
         for app in ["synth", "text_editor"] {
             let fixture = format!("guest fixture for {app}");
-            let shortcut = application_metadata::shortcut(app).unwrap();
+            let shortcut = application_shortcuts::shortcut(app).unwrap();
             for content in [fixture.as_bytes(), shortcut.as_bytes()] {
                 assert!(image.windows(content.len()).any(|bytes| bytes == content));
             }
