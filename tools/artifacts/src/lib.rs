@@ -10,6 +10,9 @@ pub fn prepare(
     max_abi: u32,
     digest: [u8; 32],
 ) -> Result<Vec<u8>, &'static str> {
+    if max_abi > abi_declarations::APPLICATION_ABI_VERSION {
+        return Err("requested ABI exceeds this runtime version");
+    }
     let mut verifier =
         ContentVerifier::new(bytes.len() as u64, digest).map_err(|_| "invalid size")?;
     verifier.update(bytes).map_err(|_| "invalid archive size")?;
@@ -81,6 +84,7 @@ mod tests {
         assert!(prepare(&bytes, "xila.other", "1.0.0", 1, expected).is_err());
         assert!(prepare(&bytes, "xila.clock", "2.0.0", 1, expected).is_err());
         assert!(prepare(&bytes, "xila.clock", "1.0.0", 0, expected).is_err());
+        assert!(prepare(&bytes, "xila.clock", "1.0.0", 2, expected).is_err());
         let mut corrupt = bytes.clone();
         let index = corrupt.windows(3).position(|w| w == b"abc").unwrap();
         corrupt[index] ^= 1;

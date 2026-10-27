@@ -1,0 +1,27 @@
+[package]
+name = "xila-firmware-native"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+firmware_update = { package = "xila-firmware-update", git = "https://github.com/xila-project/core", rev = "36d1fc27e8399e342702d72660f81808be2c994f", features = [
+  "native",
+] }
+file_system = { workspace = true }
+virtual_file_system = { workspace = true }
+task = { workspace = true, features = ["test_harness"] }
+users = { workspace = true }
+time = { workspace = true }
+little_fs = { workspace = true }
+drivers_std = { workspace = true }
+abi_definitions = { workspace = true }
+critical-section = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+shared = { workspace = true }
+verification = { workspace = true, features = ["sha256", "ed25519"] }
+ed25519-dalek = { version = "3.0", default-features = false }
+
+[[bin]]
+name = "xila-firmware-sim"
+path = "src/main.rs"

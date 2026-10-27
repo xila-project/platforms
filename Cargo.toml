@@ -117,8 +117,12 @@ members = [
   "examples/native",
   "examples/wasm",
   "tools/fs_image",
+  "tools/firmware_sim",
   "tools/artifacts",
 ]
 
 [patch.crates-io]
 littlefs2-sys = { git = "https://github.com/AlixANNERAUD/littlefs2-sys.git", branch = "xila-littlefs-2.11" }
+
+[patch."https://github.com/xila-project/core"]
+xila-drivers-std = { path = "drivers/std" }

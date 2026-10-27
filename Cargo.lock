@@ -215,7 +215,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "parking_lot 0.12.5",
  "percent-encoding",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
  "wl-clipboard-rs",
  "x11rb",
 ]
@@ -1381,7 +1381,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2471,7 +2471,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2978,7 +2978,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3464,7 +3464,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3855,10 +3855,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4174,6 +4174,16 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
+
+[[package]]
+name = "verification"
+version = "0.1.0"
+source = "git+https://github.com/xila-project/package_manager?rev=f5e3f0b323a79a80d106ce2b88b77bfa8667d71b#f5e3f0b323a79a80d106ce2b88b77bfa8667d71b"
+dependencies = [
+ "ed25519-dalek",
+ "sha2 0.11.1",
+ "subtle",
+]
 
 [[package]]
 name = "version_check"
@@ -4707,7 +4717,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5395,6 +5405,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "xila-firmware-native"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "ed25519-dalek",
+ "verification",
+ "xila-abi-definitions",
+ "xila-drivers-std",
+ "xila-file-system",
+ "xila-firmware-update",
+ "xila-little-fs",
+ "xila-shared",
+ "xila-task",
+ "xila-time",
+ "xila-users",
+ "xila-virtual-file-system",
+]
+
+[[package]]
+name = "xila-firmware-update"
+version = "0.1.0"
+source = "git+https://github.com/xila-project/core?rev=36d1fc27e8399e342702d72660f81808be2c994f#36d1fc27e8399e342702d72660f81808be2c994f"
+dependencies = [
+ "critical-section",
+ "verification",
+ "xila-abi-definitions",
+ "xila-drivers-std",
+ "xila-file-system",
+ "xila-little-fs",
+ "xila-shared",
+ "xila-synchronization",
+ "xila-task",
+ "xila-time",
+ "xila-users",
+ "xila-virtual-file-system",
+]
+
+[[package]]
 name = "xila-fs-image"
 version = "0.1.0"
 dependencies = [
@@ -5580,6 +5628,7 @@ name = "xila-prepare-applications"
 version = "0.1.0"
 dependencies = [
  "tar-no-std",
+ "xila-abi-declarations",
  "xila-package-manifest",
  "xila-package-reader",
  "xila-package-verification",

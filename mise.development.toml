@@ -44,3 +44,6 @@ extends = "dev:rust"
 
 [tasks."image:browser"]
 extends = "dev:rust"
+
+[tasks."firmware:test"]
+extends = "dev:rust"

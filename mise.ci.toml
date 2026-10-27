@@ -58,3 +58,6 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets
   "wasm32-wasip1",
 ] }
 run = "rustc --edition=2021 --target wasm32-wasip1 -O tests/container/runtime_smoke.rs -o runtime-smoke.wasm"
+
+[tasks."firmware:test"]
+extends = "ci:rust"

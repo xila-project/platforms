@@ -32,3 +32,7 @@ set -eu
 mkdir -p target/seed/browser
 cargo run --locked -p xila-fs-image -- target/seed/browser/seed.img 16777216 --bundle wasm --applications-dir "$XILA_APPLICATIONS_DIR"
 '''
+
+[tasks."firmware:test"]
+description = "Test the native firmware simulator and VFS integration"
+run = "cargo test --locked -p xila-firmware-native"
