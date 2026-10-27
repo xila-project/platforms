@@ -71,7 +71,7 @@ jobs:
         run: cargo check --config "$RUNNER_TEMP/xila-local.toml" -p xila-command-line-shell --tests --features xila/graphics_rendering_xrgb8888
       - name: Build application artifacts
         working-directory: applications
-        run: cargo build --config "$RUNNER_TEMP/xila-local.toml" --target wasm32-wasip1 -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth
+        run: cargo build --config "$RUNNER_TEMP/xila-local.toml" --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth
       - name: Build packaging and image tools
         run: |
           cargo build --locked --manifest-path package-manager/Cargo.toml -p xila-package-builder
@@ -81,7 +81,7 @@ jobs:
           python3 platforms/tools/ci/package_seed_check.py \
             --applications "$GITHUB_WORKSPACE/applications" \
             --package-manager "$GITHUB_WORKSPACE/package-manager" \
-            --wasm-dir "$CARGO_TARGET_DIR/wasm32-wasip1/debug" \
+            --wasm-dir "$CARGO_TARGET_DIR/wasm32-wasip1/release-wasm" \
             --builder "$CARGO_TARGET_DIR/debug/xila-package" \
             --preparer "$CARGO_TARGET_DIR/debug/xila-prepare-applications" \
             --fs-image "$CARGO_TARGET_DIR/debug/fs_image"
