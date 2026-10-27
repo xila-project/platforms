@@ -29,12 +29,18 @@ pub fn prepare(
     }
     let archive = TarArchiveRef::new(bytes).map_err(|_| "invalid archive")?;
     let path = &manifest.files[0].path;
-    archive
+    let payload = archive
         .entries()
         .find_map(|entry| {
             (entry.filename().as_str().ok() == Some(path.as_str())).then(|| entry.data().to_vec())
         })
-        .ok_or("missing payload")
+        .ok_or("missing payload")?;
+    let mut features = wasmparser::WasmFeatures::default();
+    features.set(wasmparser::WasmFeatures::MEMORY64, false);
+    wasmparser::Validator::new_with_features(features)
+        .validate_all(&payload)
+        .map_err(|_| "invalid or incompatible Wasm module")?;
+    Ok(payload)
 }
 
 #[cfg(test)]
@@ -43,7 +49,15 @@ mod tests {
     use xila_package_manifest::{FORMAT_VERSION, Manifest, ManifestFile};
     use xila_package_writer::{SourceFile, write_package};
 
-    fn package(target: &str) -> Vec<u8> {
+    fn package(target: &str, payload: &[u8]) -> Vec<u8> {
+        let mut hash = xila_package_verification::Sha256Verifier::new();
+        hash.update(payload).unwrap();
+        let sha256: String = hash
+            .finalize()
+            .unwrap()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
         let manifest = Manifest {
             format_version: FORMAT_VERSION,
             name: "xila.clock".into(),
@@ -53,8 +67,8 @@ mod tests {
             capabilities: vec![],
             files: vec![ManifestFile {
                 path: "bin/clock.wasm".into(),
-                size: 3,
-                sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".into(),
+                size: payload.len() as u64,
+                sha256,
             }],
         };
         let mut archive = Vec::new();
@@ -63,7 +77,7 @@ mod tests {
             &manifest,
             &[SourceFile {
                 path: "bin/clock.wasm",
-                bytes: b"abc",
+                bytes: payload,
             }],
             None,
         )
@@ -73,26 +87,39 @@ mod tests {
 
     #[test]
     fn verifies_identity_target_abi_and_integrity_before_extracting() {
-        let bytes = package("wasm32-wasip1");
+        let bytes = package("wasm32-wasip1", b"\0asm\x01\0\0\0");
         let mut hash = xila_package_verification::Sha256Verifier::new();
         hash.update(&bytes).unwrap();
         let expected = hash.finalize().unwrap();
         assert_eq!(
             prepare(&bytes, "xila.clock", "1.0.0", 1, expected).unwrap(),
-            b"abc"
+            b"\0asm\x01\0\0\0"
         );
         assert!(prepare(&bytes, "xila.other", "1.0.0", 1, expected).is_err());
         assert!(prepare(&bytes, "xila.clock", "2.0.0", 1, expected).is_err());
         assert!(prepare(&bytes, "xila.clock", "1.0.0", 0, expected).is_err());
         assert!(prepare(&bytes, "xila.clock", "1.0.0", 2, expected).is_err());
         let mut corrupt = bytes.clone();
-        let index = corrupt.windows(3).position(|w| w == b"abc").unwrap();
+        let index = corrupt.windows(4).position(|w| w == b"\0asm").unwrap();
         corrupt[index] ^= 1;
         assert!(prepare(&corrupt, "xila.clock", "1.0.0", 1, expected).is_err());
         let mut hash = xila_package_verification::Sha256Verifier::new();
         hash.update(&corrupt).unwrap();
         assert!(prepare(&corrupt, "xila.clock", "1.0.0", 1, hash.finalize().unwrap()).is_err());
-        let wrong_target = package("wasm32-unknown-unknown");
+        let invalid_wasm = package("wasm32-wasip1", b"abc");
+        let mut hash = xila_package_verification::Sha256Verifier::new();
+        hash.update(&invalid_wasm).unwrap();
+        assert!(
+            prepare(
+                &invalid_wasm,
+                "xila.clock",
+                "1.0.0",
+                1,
+                hash.finalize().unwrap()
+            )
+            .is_err()
+        );
+        let wrong_target = package("wasm32-unknown-unknown", b"\0asm\x01\0\0\0");
         let mut hash = xila_package_verification::Sha256Verifier::new();
         hash.update(&wrong_target).unwrap();
         assert!(

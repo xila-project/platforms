@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+wasmparser = "0.228"
 abi_declarations = { workspace = true }
 xila-package-reader = { git = "https://github.com/xila-project/package_manager", rev = "71c4da6799a958b188492b0a833bca3550b821ab" }
 xila-package-verification = { git = "https://github.com/xila-project/package_manager", rev = "71c4da6799a958b188492b0a833bca3550b821ab", default-features = false, features = [

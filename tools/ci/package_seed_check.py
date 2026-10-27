@@ -3,6 +3,7 @@
 import argparse
 from pathlib import Path
 import subprocess
+import re
 import tempfile
 
 PLATFORMS = Path(__file__).resolve().parents[2]
@@ -42,7 +43,9 @@ def main() -> None:
                                 "--bundle", bundle, "--applications-dir", str(app_dir)], check=True)
             if (root / f"{profile}-packaged.img").read_bytes() != (root / f"{profile}-direct.img").read_bytes():
                 raise SystemExit(f"{profile}: packaged and direct seed images differ")
-        bad = lockfile.read_text().replace('sha256 = "', 'sha256 = "0', 1)
+        bad = re.sub(r'(sha256 = ")([0-9a-f])',
+                     lambda match: match.group(1) + ("0" if match.group(2) != "0" else "1"),
+                     lockfile.read_text(), count=1)
         (root / "bad.toml").write_text(bad)
         result = subprocess.run(["python3", str(PLATFORMS / "tools/prepare_seed.py"), "--profile", "native",
                                  "--lockfile", str(root / "bad.toml"), "--output", str(root / "invalid"),
