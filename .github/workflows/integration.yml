@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: xila-project/core
-          ref: ${{ inputs.core_ref || 'eb6ac1e33cdfda61a5acaa9c8c6e05a9906bfa64' }}
+          ref: ${{ inputs.core_ref || '19f779981db3a25579fe6374221b0014243de01a' }}
           path: core
           persist-credentials: false
       - uses: actions/checkout@v7
