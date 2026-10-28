@@ -117,6 +117,25 @@ fn headless_debug_application_answers_through_the_mounted_transport() {
     assert!(response.contains(r#""ok":true"#), "{response}");
     assert!(response.contains(r#""width":320"#), "{response}");
     assert!(response.contains(r#""height":240"#), "{response}");
+
+    for (request, field) in [
+        (r#"{"op":"diagnostics"}"#, "tasks"),
+        (
+            r#"{"op":"ui_tree","max_elements":64,"max_depth":16}"#,
+            "elements",
+        ),
+    ] {
+        let mut stream = UnixStream::connect(&endpoint).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        writeln!(stream, "{request}").unwrap();
+        let mut response = String::new();
+        BufReader::new(stream).read_line(&mut response).unwrap();
+        let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert!(response["result"][field].is_array(), "{response}");
+    }
 }
 
 #[test]

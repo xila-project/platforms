@@ -171,7 +171,11 @@ class PlatformWorkflowPolicy(unittest.TestCase):
                       'cargo metadata', 'cargo tree', 'package_seed_check.py'):
             self.assertIn(token, workflow)
         self.assertIn('assert not bad', workflow)
-        self.assertIn('--profile release-wasm', workflow)
+        self.assertIn('mise run ci:integration-build-applications', workflow)
+        tasks = tomllib.loads(read('mise.ci.toml'))
+        build = tasks['tasks']['ci:integration-build-applications']
+        self.assertIn('wasm32-wasip1', build['tools']['rust']['targets'])
+        self.assertIn('--profile release-wasm', build['run'])
         self.assertIn('wasm32-wasip1/release-wasm', workflow)
 
     def test_profiles_are_explicit_and_browser_does_not_gain_weather(self):

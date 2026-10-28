@@ -38,3 +38,6 @@ heaptrack = ["drivers_std/heaptrack", "prebuilt-applications"]
 [[bin]]
 name = "native_example"
 path = "src/main.rs"
+
+[dev-dependencies]
+serde_json = "1.0"
