@@ -138,3 +138,23 @@ run = "cargo test --locked -p xila-native-example --bin native_example --feature
 tools."aqua:rhysd/actionlint" = "{{ vars.actionlint_version }}"
 tools."aqua:koalaman/shellcheck" = "{{ vars.shellcheck_version }}"
 run = "actionlint"
+
+# Native dependencies are applied only by explicit mise bootstrap tasks.
+[bootstrap.packages]
+"apt:clang" = { env = "ci" }
+"apt:libclang-dev" = { env = "ci" }
+"apt:pkg-config" = { env = "host" }
+"apt:libasound2-dev" = { env = "host" }
+"apt:libudev-dev" = { env = "host" }
+"apt:libxkbcommon-dev" = { env = "host" }
+"apt:libwayland-dev" = { env = "host" }
+"apt:libx11-dev" = { env = "host" }
+"apt:libxkbcommon-x11-dev" = { env = "host" }
+
+[tasks."ci:packages-linker"]
+description = "Install required CI linker packages through mise bootstrap"
+run = "mise -E ci bootstrap packages apply --manager apt --update --yes"
+
+[tasks."ci:packages-host"]
+description = "Install required native GUI and linker packages through mise bootstrap"
+run = "mise -E ci,host bootstrap packages apply --manager apt --update --yes"
