@@ -1,7 +1,5 @@
 //! Bounded text admission. Acknowledgements report queued bytes, not UI completion.
 use std::{
-    io::{BufRead, BufReader, Read, Write},
-    os::unix::net::UnixStream,
     path::Path,
     time::{Duration, Instant},
 };
@@ -24,11 +22,7 @@ pub(super) fn send(endpoint: &Path, text: &str) -> bool {
             return false;
         }
         let rest = &text[confirmed..];
-        let value = match exchange(
-            endpoint,
-            rest,
-            deadline.saturating_duration_since(Instant::now()),
-        ) {
+        let value = match exchange(endpoint, rest, deadline) {
             Ok(value) => value,
             Err(message) => {
                 print_failure("transport_failed", &message, confirmed, true);
@@ -92,27 +86,9 @@ fn print_failure(code: &str, message: &str, confirmed: usize, uncertain: bool) {
     );
 }
 
-fn exchange(endpoint: &Path, text: &str, timeout: Duration) -> Result<serde_json::Value, String> {
-    let mut stream = UnixStream::connect(endpoint).map_err(|error| error.to_string())?;
-    stream
-        .set_read_timeout(Some(timeout))
-        .map_err(|error| error.to_string())?;
-    stream
-        .set_write_timeout(Some(timeout))
-        .map_err(|error| error.to_string())?;
+fn exchange(endpoint: &Path, text: &str, deadline: Instant) -> Result<serde_json::Value, String> {
     let mut request = serde_json::to_vec(&serde_json::json!({"op":"text","text":text}))
         .map_err(|error| error.to_string())?;
     request.push(b'\n');
-    stream
-        .write_all(&request)
-        .map_err(|error| error.to_string())?;
-    let mut header = Vec::new();
-    let mut reader = BufReader::new(stream).take(debug_protocol::MAX_RESPONSE_BYTES as u64);
-    reader
-        .read_until(b'\n', &mut header)
-        .map_err(|error| error.to_string())?;
-    if header.last() != Some(&b'\n') {
-        return Err("Missing or oversized response header.".into());
-    }
-    serde_json::from_slice(&header).map_err(|error| error.to_string())
+    super::wait::exchange(endpoint, deadline, &request).map_err(|error| error.to_string())
 }
