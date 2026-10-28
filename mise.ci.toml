@@ -186,3 +186,10 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", compone
   "wasm32-wasip1",
 ] }
 run = "rustc --version"
+
+[tasks."ci:integration-build-applications"]
+description = "Build Applications guests with the selected integration checkouts"
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets = [
+  "wasm32-wasip1",
+] }
+run = 'cargo build --manifest-path ../applications/Cargo.toml --config "$RUNNER_TEMP/xila-local.toml" --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth'

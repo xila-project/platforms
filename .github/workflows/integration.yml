@@ -83,8 +83,10 @@ jobs:
         working-directory: applications
         run: cargo check --config "$RUNNER_TEMP/xila-local.toml" -p xila-command-line-shell --tests --features xila/graphics_rendering_xrgb8888
       - name: Build application artifacts
-        working-directory: applications
-        run: cargo build --config "$RUNNER_TEMP/xila-local.toml" --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth
+        working-directory: platforms
+        run: mise run ci:integration-build-applications
+        env:
+          MISE_ENV: ci
       - name: Build packaging and image tools
         run: |
           cargo build --locked --manifest-path package-manager/Cargo.toml -p xila-package-builder
