@@ -98,7 +98,10 @@ JSON response reports `status: "queued"`: applications may not have processed
 the input yet. On an error, `confirmed_queued_bytes` is a UTF-8 byte offset for
 the acknowledged prefix. `last_request_status: "unknown"` means the last
 request may also have been queued; inspect the UI before retrying to avoid
-duplicate input.
+duplicate input. Unicode is passed to LVGL text widgets; native Xila window key
+events still expose only an 8-bit character and guest window events do not expose
+key data. Applications that consume those events cannot reliably receive Unicode;
+verify the destination widget before sending text.
 
 ## Wi-Fi control-plane demo
 
