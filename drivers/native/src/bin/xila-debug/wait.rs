@@ -162,16 +162,17 @@ fn connect(endpoint: &Path, deadline: Instant) -> io::Result<UnixStream> {
         ));
     }
     address.sun_family = libc::AF_UNIX as _;
+    // Match std::os::unix::net's pathname length, including the terminating NUL.
+    let address_len = std::mem::offset_of!(libc::sockaddr_un, sun_path) + name.len() + 1;
     #[cfg(any(
-        target_os = "macos",
-        target_os = "ios",
+        target_vendor = "apple",
         target_os = "freebsd",
         target_os = "openbsd",
         target_os = "netbsd",
         target_os = "dragonfly"
     ))]
     {
-        address.sun_len = std::mem::size_of::<libc::sockaddr_un>() as u8;
+        address.sun_len = address_len as u8;
     }
     for (dst, src) in address.sun_path.iter_mut().zip(name) {
         *dst = *src as _;
@@ -192,7 +193,7 @@ fn connect(endpoint: &Path, deadline: Instant) -> io::Result<UnixStream> {
         libc::connect(
             stream.as_raw_fd(),
             (&address as *const libc::sockaddr_un).cast(),
-            std::mem::size_of::<libc::sockaddr_un>() as libc::socklen_t,
+            address_len as libc::socklen_t,
         )
     };
     if status < 0 {
