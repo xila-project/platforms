@@ -1,5 +1,9 @@
 use std::io::{BufReader, Read, Write};
 
+#[cfg(unix)]
+#[path = "xila-debug/wait.rs"]
+mod wait;
+
 use drivers_native::window_screen::control::protocol::{InputState, Request};
 
 fn main() {
@@ -24,6 +28,10 @@ fn run() -> Result<bool, String> {
     }
 
     let operation = arguments.next().ok_or_else(usage)?;
+    #[cfg(unix)]
+    if operation == "wait-for" {
+        return wait::run(endpoint, arguments);
+    }
     let request = parse_operation(&operation, &mut arguments)?;
     let screenshot_path = match &request {
         Request::Screenshot { path } => Some(path.clone()),
@@ -197,7 +205,7 @@ fn parse_state(value: Option<&str>) -> Result<InputState, String> {
 }
 
 fn usage() -> String {
-    "usage: xila-debug [--endpoint PATH] diagnostics|resolution|screenshot PATH|ui-tree [MAX_ELEMENTS MAX_DEPTH]|pointer move X Y|pointer button press|release|key KEY press|release|text TEXT".into()
+    "usage: xila-debug [--endpoint PATH] diagnostics|resolution|screenshot PATH|ui-tree [MAX_ELEMENTS MAX_DEPTH]|wait-for --text TEXT [--timeout-ms MS]|pointer move X Y|pointer button press|release|key KEY press|release|text TEXT".into()
 }
 
 #[cfg(test)]

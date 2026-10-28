@@ -67,6 +67,7 @@ cargo run -p xila-drivers-native --bin xila-debug -- diagnostics
 cargo run -p xila-drivers-native --bin xila-debug -- resolution
 cargo run -p xila-drivers-native --bin xila-debug -- screenshot /tmp/xila-ui.png
 cargo run -p xila-drivers-native --bin xila-debug -- ui-tree
+cargo run -p xila-drivers-native --bin xila-debug -- wait-for --text Settings --timeout-ms 3000
 cargo run -p xila-drivers-native --bin xila-debug -- pointer move 120 80
 cargo run -p xila-drivers-native --bin xila-debug -- pointer button press
 cargo run -p xila-drivers-native --bin xila-debug -- key enter press
@@ -79,6 +80,15 @@ driver only supplies display output and any physical inputs. The host client
 receives a bounded raw RGBA screenshot and writes it as PNG to the requested
 path. JSON headers are limited to 64 KiB and screenshot data to 8 MiB. The
 transport is available on Unix hosts.
+
+`wait-for --text TEXT` polls the UI tree for a case-sensitive substring of an
+individual element's text. Its timeout defaults to 3000 ms and must be between
+1 and 60000 ms; it covers connecting and receiving each response as well as
+polling. It returns JSON and a nonzero status on timeout or transport failure.
+A timeout with `error.truncated: true` means at least one snapshot omitted part
+of the tree, so it cannot establish that the text was absent. Success means the
+text was observed in a snapshot; it does not promise that the UI remains in
+that state or that queued input has been consumed.
 
 ## Wi-Fi control-plane demo
 
