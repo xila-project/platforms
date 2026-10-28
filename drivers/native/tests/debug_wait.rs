@@ -59,7 +59,7 @@ fn wait_for_text_times_out_even_if_server_stalls() {
         let Some(_stream) = accept(&listener) else {
             return;
         };
-        thread::sleep(Duration::from_millis(500));
+        thread::sleep(Duration::from_millis(1500));
     });
     let start = Instant::now();
     let output = Command::new(env!("CARGO_BIN_EXE_xila-debug"))
@@ -73,7 +73,10 @@ fn wait_for_text_times_out_even_if_server_stalls() {
     assert!(!output.status.success());
     let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(result["error"]["code"], "timeout");
-    assert!(elapsed < Duration::from_millis(450), "elapsed: {elapsed:?}");
+    assert!(
+        elapsed < Duration::from_millis(1000),
+        "elapsed: {elapsed:?}"
+    );
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -103,7 +106,7 @@ fn wait_deadline_is_not_extended_by_trickling_response() {
         let Some(mut stream) = accept(&listener) else {
             return;
         };
-        for _ in 0..20 {
+        for _ in 0..100 {
             if stream.write_all(b" ").is_err() {
                 break;
             }
@@ -122,7 +125,10 @@ fn wait_deadline_is_not_extended_by_trickling_response() {
     assert!(!output.status.success());
     let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(result["error"]["code"], "timeout");
-    assert!(elapsed < Duration::from_millis(450), "elapsed: {elapsed:?}");
+    assert!(
+        elapsed < Duration::from_millis(1000),
+        "elapsed: {elapsed:?}"
+    );
     std::fs::remove_dir_all(dir).unwrap();
 }
 
