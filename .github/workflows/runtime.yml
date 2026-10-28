@@ -64,20 +64,27 @@ jobs:
     env:
       MISE_ENV: ci
     steps:
-      - uses: actions/checkout@v7
+      - name: "Setup | Checkout applications"
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@v5.2.2
-      - uses: actions/checkout@v7
+      - name: "Setup | Activate mise"
+        uses: jdx/mise-action@v5.2.2
+      - name: "Setup | Checkout applications"
+        uses: actions/checkout@v7
         with:
           repository: xila-project/applications
           ref: 26ee04355c3ddea0f41ee81ece168cec2f9eb376
           path: .application-src
           persist-credentials: false
-      - run: mise run ci:build-applications
-      - run: mkdir -p .application-artifacts && cp .application-src/target/wasm32-wasip1/release-wasm/*.wasm .application-artifacts/
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - name: "Build | WASI guests"
+        run: mise run ci:build-applications
+      - name: "Setup | Stage WASI application artifacts"
+        run: mkdir -p .application-artifacts && cp .application-src/target/wasm32-wasip1/release-wasm/*.wasm .application-artifacts/
+      - name: "Setup | Docker Buildx"
+        uses: docker/setup-buildx-action@v4
+      - name: "Build | Runtime Docker image"
+        uses: docker/build-push-action@v7
         with:
           context: .
           build-contexts: |
@@ -87,13 +94,13 @@ jobs:
           load: true
           tags: xila-runtime:ci
           cache-from: type=gha,scope=xila-runtime-linux-amd64
-      - name: Check image user and entrypoint
+      - name: "Validate | Image user and entrypoint"
         run: |
           test "$(docker inspect --format '{{.Config.User}}' xila-runtime:ci)" = '10001:10001'
           test "$(docker inspect --format '{{json .Config.Entrypoint}}' xila-runtime:ci)" = '["/usr/bin/xila-runtime"]'
-      - name: Build runtime smoke-test guest
+      - name: "Build | Runtime smoke-test guest"
         run: mise run ci:runtime-smoke
-      - name: Test read-only root, host mounts, state persistence, and exit status
+      - name: "Test | Runtime root, mounts, persistence, and exit status"
         run: |
           set -eu
           fixture="$PWD"
@@ -133,7 +140,7 @@ jobs:
           docker rm xila-runtime-signal-test
           test "$signal_status" -eq 143
           run_guest verify
-      - name: Exercise Xila CLI shell over stdin
+      - name: "Test | Xila CLI via stdin"
         run: |
           set -eu
           mkdir -p "$PWD/runtime-shell-state"
@@ -170,27 +177,31 @@ jobs:
     env:
       MISE_ENV: ci
     steps:
-      - uses: actions/checkout@v7
+      - name: "Setup | Checkout applications"
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
-      - uses: jdx/mise-action@v5.2.2
-      - name: Check out the pinned Applications revision
+      - name: "Setup | Activate mise"
+        uses: jdx/mise-action@v5.2.2
+      - name: "Setup | Checkout pinned Applications"
         uses: actions/checkout@v7
         with:
           repository: xila-project/applications
           ref: 26ee04355c3ddea0f41ee81ece168cec2f9eb376
           path: .application-src
           persist-credentials: false
-      - name: Build independent WASI guest artifacts
+      - name: "Build | Independent WASI guests"
         run: mise run ci:build-applications
-      - run: mkdir -p .application-artifacts && cp .application-src/target/wasm32-wasip1/release-wasm/*.wasm .application-artifacts/
-      - name: Read runtime package version
+      - name: "Setup | Stage WASI application artifacts"
+        run: mkdir -p .application-artifacts && cp .application-src/target/wasm32-wasip1/release-wasm/*.wasm .application-artifacts/
+      - name: "Setup | Resolve runtime package version"
         id: version
         run: |
           version="$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("examples/native/Cargo.toml").read_text())["package"]["version"])')"
           echo "value=$version" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@v4
-      - name: Prepare image metadata
+      - name: "Setup | Docker Buildx"
+        uses: docker/setup-buildx-action@v4
+      - name: "Setup | Container image metadata"
         if: github.event_name != 'pull_request'
         id: meta
         uses: docker/metadata-action@v6
@@ -204,7 +215,7 @@ jobs:
       # PRs only compile the full Dockerfile: no local image load, image export,
       # cache upload, smoke tests, or publication. Main/release runs retain all
       # image-based validation and publication steps.
-      - name: Build runtime image
+      - name: "Build | Runtime container image"
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -225,15 +236,15 @@ jobs:
           # Cache uploads are best-effort: GitHub's cache service can time out
           # after the image was already built successfully.
           cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=xila-runtime-linux-amd64,ignore-error=true' || '' }}
-      - name: Check image user and entrypoint
+      - name: "Validate | Image user and entrypoint"
         if: github.event_name != 'pull_request'
         run: |
           test "$(docker inspect --format '{{.Config.User}}' xila-runtime:ci)" = '10001:10001'
           test "$(docker inspect --format '{{json .Config.Entrypoint}}' xila-runtime:ci)" = '["/usr/bin/xila-runtime"]'
-      - name: Build runtime smoke-test guest
+      - name: "Build | Runtime smoke-test guest"
         if: github.event_name != 'pull_request'
         run: mise run ci:runtime-smoke
-      - name: Test read-only root, host mounts, state persistence, and exit status
+      - name: "Test | Runtime root, mounts, persistence, and exit status"
         if: github.event_name != 'pull_request'
         run: |
           set -eu
@@ -274,7 +285,7 @@ jobs:
           docker rm xila-runtime-signal-test
           test "$signal_status" -eq 143
           run_guest verify
-      - name: Exercise Xila CLI shell over stdin
+      - name: "Test | Xila CLI via stdin"
         if: github.event_name != 'pull_request'
         run: |
           set -eu
@@ -290,14 +301,14 @@ jobs:
             --tmpfs /tmp:rw,noexec,nosuid,size=16m \
             --mount "type=bind,src=$PWD/runtime-shell-state,dst=/var/lib/xila" \
             xila-runtime:ci shell --network=none </dev/null
-      - name: Log in to GitHub Container Registry
+      - name: "Setup | GHCR authentication"
         if: github.event_name == 'workflow_run' || startsWith(github.ref, 'refs/tags/v')
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish image to GitHub Container Registry
+      - name: "Publish | Runtime image to GHCR"
         if: github.event_name == 'workflow_run' || startsWith(github.ref, 'refs/tags/v')
         env:
           IMAGE_TAGS: ${{ steps.meta.outputs.tags }}

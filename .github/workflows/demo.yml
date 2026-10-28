@@ -34,39 +34,47 @@ jobs:
       XILA_DEMO_LOCALES: ${{ github.event_name == 'pull_request' && 'en' || 'en fr es de pt-BR it pl' }}
       XILA_FONT_CATALOG_ROOTS: ${{ github.workspace }}/.application-src
     steps:
-      - uses: actions/checkout@v7
+      - name: "Setup | Checkout platforms"
+        uses: actions/checkout@v7
         with:
           repository: xila-project/platforms
           ref: ${{ inputs.platform_ref || github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
-      - uses: actions/checkout@v7
+      - name: "Setup | Checkout applications"
+        uses: actions/checkout@v7
         with:
           repository: xila-project/applications
           ref: 26ee04355c3ddea0f41ee81ece168cec2f9eb376
           path: .application-src
           persist-credentials: false
-      - uses: xila-project/workspace/.github/actions/setup-rust@d4ff44239bcfa0bc662e37f38d00f3d23f8f04db
+      - name: "Setup | Rust toolchain and build cache"
+        uses: xila-project/workspace/.github/actions/setup-rust@d4ff44239bcfa0bc662e37f38d00f3d23f8f04db
         with:
           cache-mode: objects
           cache-generation: v1-platforms-pages-all-locales
           save-on-workflow-dispatch: ${{ github.ref == 'refs/heads/main' }}
-      - run: mise run ci:deps-npm
-      - run: mise run ci:packages-host
-      - name: Build localized demonstrations and verify filesystem images
+      - name: "Setup | Locked Node dependencies"
+        run: mise run ci:deps-npm
+      - name: "Setup | Native build dependencies"
+        run: mise run ci:packages-host
+      - name: "Build | Localized demonstrations and filesystem images"
         env:
           CARGO_TARGET_ROOT: ${{ github.workspace }}/target/pages
         run: mise run pages:build
-      - name: Add Pages landing page
+      - name: "Build | Pages landing page"
         run: cp examples/wasm/pages-index.html pages/index.html
-      - uses: actions/upload-pages-artifact@v5
+      - name: "Publish | Upload Pages artifact"
+        uses: actions/upload-pages-artifact@v5
         with:
           path: pages/
-      - uses: actions/upload-artifact@v7
+      - name: "Report | Upload platform demonstrations"
+        uses: actions/upload-artifact@v7
         with:
           name: platform-demonstrations
           path: pages/demonstrations/
           if-no-files-found: error
-      - uses: actions/upload-artifact@v7
+      - name: "Report | Upload reference filesystem images"
+        uses: actions/upload-artifact@v7
         with:
           name: reference-filesystem-images
           path: target/reference-filesystem-images/
@@ -89,5 +97,6 @@ jobs:
       pages: write
       id-token: write
     steps:
-      - uses: actions/deploy-pages@v5
+      - name: "Publish | Deploy Pages"
+        uses: actions/deploy-pages@v5
         id: deployment

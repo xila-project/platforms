@@ -69,27 +69,27 @@ jobs:
         working-directory: platforms
         env:
           MISE_ENV: ci
-      - name: Patch all Core and Applications crates to the selected checkouts
+      - name: "Setup | Patch selected Core and Applications sources"
         working-directory: platforms
         run: python3 tools/dev/local_overrides.py --core ../core --applications ../applications --platforms . --output "$RUNNER_TEMP/xila-local.toml"
-      - name: Validate native assembly against the selected commits
+      - name: "Validate | Cross-repository native assembly"
         working-directory: platforms
         run: |
           cargo metadata --config "$RUNNER_TEMP/xila-local.toml" --format-version 1 > "$RUNNER_TEMP/metadata.json"
           python3 -c 'import collections,json,os; m=json.load(open(os.environ["RUNNER_TEMP"]+"/metadata.json")); d=collections.defaultdict(set); [d[p["name"]].add(p["id"]) for p in m["packages"] if p["name"] == "xila" or p["name"].startswith("xila-")]; bad={k:v for k,v in d.items() if len(v)>1}; print(bad); assert not bad'
           cargo tree --config "$RUNNER_TEMP/xila-local.toml" -d
           cargo check --config "$RUNNER_TEMP/xila-local.toml" -p xila-native-example
-      - name: Check Applications integration harness
+      - name: "Validate | Applications integration harness"
         working-directory: applications
         run: cargo check --config "$RUNNER_TEMP/xila-local.toml" -p xila-command-line-shell --tests --features xila/graphics_rendering_xrgb8888
-      - name: Build application artifacts
+      - name: "Build | WASI application artifacts"
         working-directory: applications
         run: cargo build --config "$RUNNER_TEMP/xila-local.toml" --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth
-      - name: Build packaging and image tools
+      - name: "Build | Packaging and filesystem tools"
         run: |
           cargo build --locked --manifest-path package-manager/Cargo.toml -p xila-package-builder
           cargo build --manifest-path platforms/Cargo.toml --config "$RUNNER_TEMP/xila-local.toml" -p xila-prepare-applications -p xila-fs-image
-      - name: Verify packaged applications and seed profiles
+      - name: "Validate | Packages and filesystem seeds"
         run: |
           python3 platforms/tools/ci/package_seed_check.py \
             --applications "$GITHUB_WORKSPACE/applications" \
