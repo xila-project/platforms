@@ -74,7 +74,7 @@ pub(super) fn send(endpoint: &Path, text: &str) -> bool {
     }
     println!(
         "{}",
-        serde_json::json!({"ok":true,"result":{"status":"queued","queued_bytes":confirmed,"queued_events":events,"complete":true}})
+        serde_json::json!({"ok":true,"result":{"status":"queued","queued_bytes":confirmed,"queued_events":events,"complete":true,"unicode_window_events":if text.is_ascii() {"not_applicable"} else {"unsupported"}}})
     );
     true
 }

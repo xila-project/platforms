@@ -53,6 +53,7 @@ fn text_retries_queue_full_and_unicode_prefixes() {
     assert_eq!(result["result"]["queued_bytes"], 5);
     assert_eq!(result["result"]["queued_events"], 4);
     assert_eq!(result["result"]["status"], "queued");
+    assert_eq!(result["result"]["unicode_window_events"], "unsupported");
     std::fs::remove_dir_all(dir).unwrap();
 }
 
