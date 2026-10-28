@@ -16,84 +16,87 @@ env:
   CARGO_TERM_COLOR: always
 jobs:
   quality:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v5.2.2
-      - run: mise run ci:format-rust
-      - run: mise run ci:format-toml
-      - run: python3 -m unittest discover -s tools/ci -v
-      - run: mise run ci:lint-workflows
+    name: "Quality / Rust"
+    uses: xila-project/workspace/.github/workflows/quality.yml@d4ff44239bcfa0bc662e37f38d00f3d23f8f04db
   native:
+    name: "Build & Test / Native platform"
     runs-on: ubuntu-latest
     env:
       XILA_MBX: "1"
       XILA_FONT_CATALOG_ROOTS: ${{ github.workspace }}/.application-catalogs
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/checkout@v7
+      - name: "Setup | Checkout sources"
+        uses: actions/checkout@v7
+      - name: "Setup | Checkout application catalogs"
+        uses: actions/checkout@v7
         with:
           repository: xila-project/applications
           ref: 26ee04355c3ddea0f41ee81ece168cec2f9eb376
           path: .application-catalogs
           persist-credentials: false
-      - uses: jdx/mise-action@v5.2.2
-      - uses: actions/setup-node@v6
+      - name: "Setup | Rust toolchain and build cache"
+        uses: xila-project/workspace/.github/actions/setup-rust@d4ff44239bcfa0bc662e37f38d00f3d23f8f04db
         with:
-          node-version: 24.22.0
-      - run: npm ci
-      - id: toolchain
-        run: mise run ci:toolchain
-      - uses: jdx/mr-boxington-action@v1
-        with:
-          toolchain: ${{ steps.toolchain.outputs.version }}
-          github-cache-mode: target
+          cache-mode: target
           cache-generation: v1-platforms-host
-      - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev pkg-config libasound2-dev libudev-dev libxkbcommon-dev libwayland-dev libx11-dev libxkbcommon-x11-dev
-      - run: mise run clippy:drivers
-      - run: mise run test:drivers
-      - run: mise run test:seed
-      - run: mise run firmware:test
-      - run: mise run ci:profiling
-      - run: mise run ci:profiling-runtime-tests
-      - run: mise run ci:profiling-native-tests
-      - run: mise run build:native
+      - name: "Setup | Locked npm dependencies"
+        run: mise run ci:deps-npm
+      - name: "Setup | Native build dependencies"
+        run: mise run ci:packages-host
+      - name: "Lint | Platform drivers"
+        run: mise run clippy:drivers
+      - name: "Test | Platform drivers"
+        run: mise run test:drivers
+      - name: "Test | Filesystem seed"
+        run: mise run test:seed
+      - name: "Test | Native firmware"
+        run: mise run firmware:test
+      - name: "Test | Profiling"
+        run: mise run ci:profiling
+      - name: "Test | Runtime profiling"
+        run: mise run ci:profiling-runtime-tests
+      - name: "Test | Native profiling"
+        run: mise run ci:profiling-native-tests
+      - name: "Build | Native platform"
+        run: mise run build:native
   browser:
+    name: "Build & Test / Browser platform"
     runs-on: ubuntu-latest
     env:
       XILA_MBX: "1"
       XILA_FONT_CATALOG_ROOTS: ${{ github.workspace }}/.application-catalogs
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/checkout@v7
+      - name: "Setup | Checkout sources"
+        uses: actions/checkout@v7
+      - name: "Setup | Checkout application catalogs"
+        uses: actions/checkout@v7
         with:
           repository: xila-project/applications
           ref: 26ee04355c3ddea0f41ee81ece168cec2f9eb376
           path: .application-catalogs
           persist-credentials: false
-      - uses: jdx/mise-action@v5.2.2
-      - uses: actions/setup-node@v6
+      - name: "Setup | Rust toolchain and build cache"
+        uses: xila-project/workspace/.github/actions/setup-rust@d4ff44239bcfa0bc662e37f38d00f3d23f8f04db
         with:
-          node-version: 24.22.0
-      - run: npm ci
-      - id: toolchain
-        run: mise run ci:toolchain
-      - uses: jdx/mr-boxington-action@v1
-        with:
-          toolchain: ${{ steps.toolchain.outputs.version }}
-          github-cache-mode: target
+          cache-mode: target
           cache-generation: v1-platforms-browser
-      - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev
-      - run: mise run clippy:browser
-      - run: mise run check:browser
-      - run: node --test drivers/wasm/tests/seed.test.mjs
-      - run: node --test examples/wasm/tests/disk_manager.test.mjs
+      - name: "Setup | Locked npm dependencies"
+        run: mise run ci:deps-npm
+      - name: "Setup | Clang and linker dependencies"
+        run: mise run ci:packages-linker
+      - name: "Lint | Browser drivers"
+        run: mise run clippy:browser
+      - name: "Build | Browser platform check"
+        run: mise run check:browser
+      - name: "Test | Browser integration"
+        run: mise run ci:browser-node-tests
   required:
     if: always()
     needs: [quality, native, browser]
     runs-on: ubuntu-latest
     steps:
-      - env:
+      - name: "Gate | Verify mandatory checks"
+        env:
           QUALITY: ${{ needs.quality.result }}
           NATIVE: ${{ needs.native.result }}
           BROWSER: ${{ needs.browser.result }}

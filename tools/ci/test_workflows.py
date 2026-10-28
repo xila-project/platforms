@@ -136,9 +136,20 @@ class PlatformWorkflowPolicy(unittest.TestCase):
                      'ci:profiling', 'ci:profiling-runtime-tests', 'ci:profiling-native-tests',
                      'clippy:browser', 'check:browser'):
             self.assertIn(f'mise run {task}', ci)
-        self.assertIn('drivers/wasm/tests/seed.test.mjs', ci)
-        self.assertIn('examples/wasm/tests/disk_manager.test.mjs', ci)
+        browser_tests = tomllib.loads(read('mise.ci.toml'))['tasks']['ci:browser-node-tests']['run']
+        self.assertIn('drivers/wasm/tests/seed.test.mjs', browser_tests)
+        self.assertIn('examples/wasm/tests/disk_manager.test.mjs', browser_tests)
         self.assertIn('needs: [quality, native, browser]', ci)
+
+    def test_quality_reuses_shared_job_without_weakening_gate(self):
+        ci = read('.github/workflows/ci.yml')
+        self.assertIn('  quality:', ci)
+        self.assertIn('xila-project/workspace/.github/workflows/quality.yml@', ci)
+        self.assertIn('needs: [quality, native, browser]', ci)
+        self.assertIn('ci:quality-extra', read('mise.ci.toml'))
+        for line in ci.splitlines():
+            self.assertNotRegex(line, r'^      - (uses|run|env):')
+        self.assertIn('name: "Gate | Verify mandatory checks"', ci)
 
     def test_ci_cache_and_toolchain_wrapping_are_scoped(self):
         tasks = tomllib.loads(read('mise.ci.toml'))
@@ -146,10 +157,13 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         self.assertEqual(wrapper['env']['MBX_CARGO_SHIM_MODE'], '1')
         self.assertNotIn('mr-boxington', str(tasks.get('task_templates', {})))
         ci = read('.github/workflows/ci.yml')
+        self.assertIn('mise run ci:packages-host', ci)
+        self.assertIn('mise run ci:packages-linker', ci)
+        self.assertNotIn('apt-get', ci)
         self.assertIn('v1-platforms-host', ci)
         self.assertIn('v1-platforms-browser', ci)
-        self.assertIn('github-cache-mode: target', ci)
-        self.assertIn('github-cache-mode: objects', read('.github/workflows/demo.yml'))
+        self.assertIn('cache-mode: target', ci)
+        self.assertIn('cache-mode: objects', read('.github/workflows/demo.yml'))
 
     def test_cross_repository_workflow_uses_explicit_refs_and_checks_identity(self):
         workflow = read('.github/workflows/integration.yml')

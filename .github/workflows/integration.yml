@@ -21,41 +21,54 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      - name: "Setup | Checkout core"
+        uses: actions/checkout@v7
         with:
           path: platforms
           persist-credentials: false
-      - uses: actions/checkout@v7
+      - name: "Setup | Checkout core"
+        uses: actions/checkout@v7
         with:
           repository: xila-project/core
           ref: ${{ inputs.core_ref || '19f779981db3a25579fe6374221b0014243de01a' }}
           path: core
           persist-credentials: false
-      - uses: actions/checkout@v7
+      - name: "Setup | Checkout applications"
+        uses: actions/checkout@v7
         with:
           repository: xila-project/applications
           ref: ${{ inputs.applications_ref || '9c761dffe85fea406b0ae46f875f2b566d6e0cdd' }}
           path: applications
           persist-credentials: false
-      - uses: actions/checkout@v7
+      - name: "Setup | Checkout package_manager"
+        uses: actions/checkout@v7
         with:
           repository: xila-project/package_manager
           ref: 71c4da6799a958b188492b0a833bca3550b821ab
           path: package-manager
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.99.0
-          targets: wasm32-wasip1
-          components: rustfmt
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24.22.0
-      - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev pkg-config libasound2-dev libudev-dev libxkbcommon-dev libwayland-dev libx11-dev libxkbcommon-x11-dev
-      - run: npm ci
+      - name: "Setup | Activate mise"
+        uses: jdx/mise-action@v5.2.2
+      - name: "Setup | Native and WASI Rust toolchain"
+        run: mise run ci:integration-toolchain
         working-directory: platforms
-      - run: npm ci
-        working-directory: applications
+        env:
+          MISE_ENV: ci
+      - name: "Setup | Native build dependencies"
+        run: mise run ci:packages-host
+        working-directory: platforms
+        env:
+          MISE_ENV: ci
+      - name: "Setup | Locked Platforms dependencies"
+        run: mise run ci:deps-npm
+        working-directory: platforms
+        env:
+          MISE_ENV: ci
+      - name: "Setup | Locked Applications dependencies"
+        run: mise run ci:deps-npm-applications
+        working-directory: platforms
+        env:
+          MISE_ENV: ci
       - name: Patch all Core and Applications crates to the selected checkouts
         working-directory: platforms
         run: python3 tools/dev/local_overrides.py --core ../core --applications ../applications --platforms . --output "$RUNNER_TEMP/xila-local.toml"

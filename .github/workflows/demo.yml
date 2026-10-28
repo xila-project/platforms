@@ -45,20 +45,13 @@ jobs:
           ref: 26ee04355c3ddea0f41ee81ece168cec2f9eb376
           path: .application-src
           persist-credentials: false
-      - uses: jdx/mise-action@v5.2.2
-      - uses: actions/setup-node@v6
+      - uses: xila-project/workspace/.github/actions/setup-rust@d4ff44239bcfa0bc662e37f38d00f3d23f8f04db
         with:
-          node-version: 24.22.0
-      - run: npm ci
-      - id: toolchain
-        run: mise run ci:toolchain
-      - uses: jdx/mr-boxington-action@v1
-        with:
-          toolchain: ${{ steps.toolchain.outputs.version }}
-          github-cache-mode: objects
+          cache-mode: objects
           cache-generation: v1-platforms-pages-all-locales
           save-on-workflow-dispatch: ${{ github.ref == 'refs/heads/main' }}
-      - run: sudo apt-get update && sudo apt-get install -y clang libclang-dev pkg-config libasound2-dev libudev-dev libxkbcommon-dev libwayland-dev libx11-dev libxkbcommon-x11-dev
+      - run: mise run ci:deps-npm
+      - run: mise run ci:packages-host
       - name: Build localized demonstrations and verify filesystem images
         env:
           CARGO_TARGET_ROOT: ${{ github.workspace }}/target/pages

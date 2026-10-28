@@ -158,3 +158,31 @@ run = "mise -E ci bootstrap packages apply --manager apt --update --yes"
 [tasks."ci:packages-host"]
 description = "Install required native GUI and linker packages through mise bootstrap"
 run = "mise -E ci,host bootstrap packages apply --manager apt --update --yes"
+
+[tasks."ci:deps-npm"]
+description = "Install locked Node tooling using the pinned mise version"
+tools.node = "{{ vars.node_version }}"
+run = "npm ci"
+
+[tasks."ci:browser-node-tests"]
+description = "Run Web runtime and disk manager JavaScript tests with pinned Node"
+tools.node = "{{ vars.node_version }}"
+run = "node --test drivers/wasm/tests/seed.test.mjs && node --test examples/wasm/tests/disk_manager.test.mjs"
+
+[tasks."ci:quality-extra"]
+description = "Validate platform-specific CI workflow and source policies"
+run = "python3 -m unittest discover -s tools/ci -v"
+
+[tasks."ci:deps-npm-applications"]
+description = "Install locked dependencies in the explicitly checked-out Applications repository"
+tools.node = "{{ vars.node_version }}"
+run = "npm ci --prefix ../applications"
+
+[tasks."ci:integration-toolchain"]
+description = "Install pinned WASI and native integration Rust targets via mise"
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "rustfmt",
+], targets = [
+  "wasm32-wasip1",
+] }
+run = "rustc --version"
