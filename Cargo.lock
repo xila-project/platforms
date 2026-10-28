@@ -5454,8 +5454,6 @@ dependencies = [
  "critical-section",
  "libc",
  "xila-abi-definitions",
- "xila-application-metadata",
- "xila-application-shortcuts",
  "xila-drivers-std",
  "xila-file-system",
  "xila-little-fs",
