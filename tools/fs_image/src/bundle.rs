@@ -24,15 +24,22 @@ fn shortcut_json(name: &str, guest: bool) -> Result<String, Box<dyn Error>> {
     if fields.len() != 6 {
         return Err("invalid seed shortcut row".into());
     }
-    let [id, label, icon, red, green, blue]: [&str; 6] =
-        fields.try_into().map_err(|_| "invalid seed shortcut fields")?;
+    let [id, label, icon, red, green, blue]: [&str; 6] = fields
+        .try_into()
+        .map_err(|_| "invalid seed shortcut fields")?;
     // This table is compiled into the image builder. Reject unescaped text
     // before formatting JSON, avoiding a runtime JSON library dependency.
     if id.is_empty()
-        || !id.bytes().all(|b| b.is_ascii_lowercase() || b == b'_' || b.is_ascii_digit())
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b == b'_' || b.is_ascii_digit())
         || label.is_empty()
-        || !label.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b' ' | b'-'))
-        || !icon.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'>'))
+        || !label
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b' ' | b'-'))
+        || !icon
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'>'))
     {
         return Err("seed shortcut contains invalid metadata".into());
     }
@@ -150,7 +157,13 @@ mod tests {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&root).unwrap();
-        let apps = ["calculator", "clock", "pixel_painter", "synth", "text_editor"];
+        let apps = [
+            "calculator",
+            "clock",
+            "pixel_painter",
+            "synth",
+            "text_editor",
+        ];
         for app in apps {
             fs::write(root.join(format!("{app}.wasm")), b"wasm fixture").unwrap();
         }
@@ -166,11 +179,24 @@ mod tests {
                 assert!(bundle.0.join(directory).is_dir(), "{directory}");
             }
             let shortcut = fs::read_to_string(
-                bundle.0.join("applications/bundles/xila.calculator/shortcut.json")
-            ).unwrap();
+                bundle
+                    .0
+                    .join("applications/bundles/xila.calculator/shortcut.json"),
+            )
+            .unwrap();
             assert!(shortcut.contains("@bundle/executables/calculator.wasm"));
-            assert!(bundle.0.join("applications/bundles/xila.calculator/executables/calculator.wasm").is_file());
-            assert!(!bundle.0.join("configuration/shared/applications/shortcuts/calculator.json").exists());
+            assert!(
+                bundle
+                    .0
+                    .join("applications/bundles/xila.calculator/executables/calculator.wasm")
+                    .is_file()
+            );
+            assert!(
+                !bundle
+                    .0
+                    .join("configuration/shared/applications/shortcuts/calculator.json")
+                    .exists()
+            );
         }
         fs::remove_dir_all(root).unwrap();
     }
