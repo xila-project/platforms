@@ -51,6 +51,10 @@ pub fn prepare(profile: &str, applications: &Path) -> Result<Staging, Box<dyn Er
         "devices/time",
         "applications/executables",
         "applications/libraries",
+        // v2 self-contained bundle storage and atomic activation metadata.
+        // Legacy executables/shortcuts remain until the launcher migration.
+        "applications/bundles",
+        "applications/active",
         "data/system/logs",
         "data/applications",
         "data/shared",
@@ -94,4 +98,35 @@ pub fn prepare(profile: &str, applications: &Path) -> Result<Staging, Box<dyn Er
     }
     println!("Prepared {profile} bundle: {}", guests.join(","));
     Ok(staging)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn seeding_reserves_bundle_directories_without_removing_legacy_paths() {
+        let root = std::env::temp_dir().join(format!(
+            "xila-bundle-test-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&root).unwrap();
+        let apps = ["calculator", "clock", "pixel_painter", "synth", "text_editor"];
+        for app in apps {
+            fs::write(root.join(format!("{app}.wasm")), b"wasm fixture").unwrap();
+        }
+        {
+            let bundle = prepare("wasm", &root).unwrap();
+            for directory in [
+                "applications/bundles",
+                "applications/active",
+                "applications/executables",
+                "applications/libraries",
+            ] {
+                assert!(bundle.0.join(directory).is_dir(), "{directory}");
+            }
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
 }
