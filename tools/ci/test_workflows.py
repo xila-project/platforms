@@ -28,9 +28,9 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         pr = workflow.split('  runtime-pr:', 1)[1].split('  runtime:', 1)[0]
         self.assertNotIn('packages: write', pr)
         self.assertNotIn('docker/login-action', pr)
-        for check in ('Check image user and entrypoint', 'Build runtime smoke-test guest',
-                      'Test read-only root, host mounts, state persistence, and exit status',
-                      'Exercise Xila CLI shell over stdin'):
+        for check in ('Validate | Image user and entrypoint', 'Build | Runtime smoke-test guest',
+                      'Test | Runtime root, mounts, persistence, and exit status',
+                      'Test | Xila CLI via stdin'):
             self.assertIn(check, pr)
         self.assertIn('cache-from: type=gha', pr)
         self.assertNotIn('cache-to:', pr)

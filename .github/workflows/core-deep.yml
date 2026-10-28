@@ -30,23 +30,30 @@ jobs:
       CARGO_LLVM_COV_TARGET_DIR: ${{ github.workspace }}/target/llvm-cov-target
       XILA_MBX: "1"
     steps:
-      - uses: actions/checkout@v7
+      - name: "Setup | Checkout core"
+        uses: actions/checkout@v7
         with:
           repository: xila-project/core
           ref: ${{ inputs.core_ref }}
           persist-credentials: false
-      - uses: jdx/mise-action@v5.2.2
-      - run: mise run deps:npm
-      - id: toolchain
+      - name: "Setup | Activate mise"
+        uses: jdx/mise-action@v5.2.2
+      - name: "Setup | Locked Node dependencies"
+        run: mise run deps:npm
+      - name: "Setup | Resolve Rust toolchain"
+        id: toolchain
         run: mise run ci:toolchain
-      - uses: jdx/mr-boxington-action@v1
+      - name: "Setup | Rust compilation cache"
+        uses: jdx/mr-boxington-action@v1
         with:
           toolchain: ${{ steps.toolchain.outputs.version }}
           github-cache-mode: objects
           cache-generation: v1-extended-coverage
           save-on-workflow-dispatch: ${{ github.ref == 'refs/heads/main' }}
-      - run: mise run ci:coverage
-      - uses: codecov/codecov-action@v7
+      - name: "Test | Host coverage"
+        run: mise run ci:coverage
+      - name: "Report | Upload coverage"
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: Xila-Project/Core
@@ -61,24 +68,29 @@ jobs:
       MISE_ENV: ci
       XILA_MBX: "1"
     steps:
-      - uses: actions/checkout@v7
+      - name: "Setup | Checkout core"
+        uses: actions/checkout@v7
         with:
           repository: xila-project/core
           ref: ${{ inputs.core_ref }}
           persist-credentials: false
-      - uses: jdx/mise-action@v5.2.2
-      - run: mise run deps:npm
-      - id: toolchain
+      - name: "Setup | Activate mise"
+        uses: jdx/mise-action@v5.2.2
+      - name: "Setup | Locked Node dependencies"
+        run: mise run deps:npm
+      - name: "Setup | Resolve Rust toolchain"
+        id: toolchain
         run: mise run ci:toolchain
-      - uses: jdx/mr-boxington-action@v1
+      - name: "Setup | Rust compilation cache"
+        uses: jdx/mr-boxington-action@v1
         with:
           toolchain: ${{ steps.toolchain.outputs.version }}
           github-cache-mode: target
           cache-generation: v1-extended-profiling
           save-on-workflow-dispatch: ${{ github.ref == 'refs/heads/main' }}
-      - name: Test runtime profiling instrumentation
+      - name: "Test | Runtime profiling instrumentation"
         run: mise run ci:profiling-runtime-tests
-      - name: Test native profiling configuration
+      - name: "Test | Native profiling configuration"
         run: mise run ci:profiling-native-tests
 
   abi-deep:
@@ -94,25 +106,29 @@ jobs:
       CI_ABI_MEMORY: ${{ matrix.memory }}
       XILA_MBX: "1"
     steps:
-      - uses: actions/checkout@v7
+      - name: "Setup | Checkout core"
+        uses: actions/checkout@v7
         with:
           repository: xila-project/core
           ref: ${{ inputs.core_ref }}
           persist-credentials: false
-      - uses: jdx/mise-action@v5.2.2
-      - id: toolchain
+      - name: "Setup | Activate mise"
+        uses: jdx/mise-action@v5.2.2
+      - name: "Setup | Resolve Rust toolchain"
+        id: toolchain
         run: mise run ci:toolchain-nightly
-      - uses: jdx/mr-boxington-action@v1
+      - name: "Setup | Rust compilation cache"
+        uses: jdx/mr-boxington-action@v1
         with:
           toolchain: ${{ steps.toolchain.outputs.version }}
           github-cache-mode: objects
           cache-generation: v1-extended-abi-${{ matrix.memory }}
           save-on-workflow-dispatch: ${{ github.ref == 'refs/heads/main' }}
-      - name: Enforce ABI coverage thresholds
+      - name: "Validate | ABI coverage thresholds"
         run: mise run ci:abi-coverage
-      - name: Test ABI with host Miri
+      - name: "Test | Host Miri ABI"
         run: mise run ci:abi-miri
-      - name: Test ABI with cross-architecture Miri
+      - name: "Test | Cross-architecture Miri ABI"
         run: mise run ci:abi-miri-cross
 
   release-gate:
@@ -124,7 +140,7 @@ jobs:
     outputs:
       validated-sha: ${{ steps.sha.outputs.validated-sha }}
     steps:
-      - name: Require successful deep checks
+      - name: "Gate | Verify deep checks"
         env:
           COVERAGE_RESULT: ${{ needs.coverage.result }}
           ABI_RESULT: ${{ needs.abi-deep.result }}
@@ -137,7 +153,7 @@ jobs:
               exit 1
             fi
           done
-      - name: Record validated commit
+      - name: "Report | Record validated commit"
         id: sha
         env:
           CORE_REF: ${{ inputs.core_ref }}
