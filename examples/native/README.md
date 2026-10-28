@@ -71,6 +71,7 @@ cargo run -p xila-drivers-native --bin xila-debug -- wait-for --text Settings --
 cargo run -p xila-drivers-native --bin xila-debug -- pointer move 120 80
 cargo run -p xila-drivers-native --bin xila-debug -- pointer button press
 cargo run -p xila-drivers-native --bin xila-debug -- key enter press
+cargo run -p xila-drivers-native --bin xila-debug -- press-key enter
 cargo run -p xila-drivers-native --bin xila-debug -- text 'hello xila'
 ```
 
@@ -89,6 +90,15 @@ A timeout with `error.truncated: true` means at least one snapshot omitted part
 of the tree, so it cannot establish that the text was absent. Success means the
 text was observed in a snapshot; it does not promise that the UI remains in
 that state or that queued input has been consumed.
+
+`press-key` queues its press and release together. `text` accepts up to 4096
+UTF-8 bytes, rejects control characters, and queues whole character pairs. The
+client retries when the bounded input queue is full, for up to 30 seconds. Its
+JSON response reports `status: "queued"`: applications may not have processed
+the input yet. On an error, `confirmed_queued_bytes` is a UTF-8 byte offset for
+the acknowledged prefix. `last_request_status: "unknown"` means the last
+request may also have been queued; inspect the UI before retrying to avoid
+duplicate input.
 
 ## Wi-Fi control-plane demo
 
