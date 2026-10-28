@@ -5549,6 +5549,7 @@ version = "0.1.0"
 dependencies = [
  "getargs",
  "getargs-derive",
+ "serde_json",
  "xila",
  "xila-abi-definitions",
  "xila-activity",

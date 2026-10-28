@@ -114,7 +114,7 @@ fn run() -> Result<bool, String> {
                 .map_err(|error| format!("Truncated screenshot payload: {error}"))?;
             write_png(&path, metadata.width, metadata.height, &pixels)?;
             println!("{}", String::from_utf8_lossy(&header));
-            println!("Screenshot written to {path}");
+            eprintln!("Screenshot written to {path}");
         } else {
             if payload_bytes != 0 {
                 return Err("Unexpected binary payload in non-screenshot response".into());
