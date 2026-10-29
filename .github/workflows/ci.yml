@@ -15,6 +15,16 @@ env:
   MISE_ENV: ci
   CARGO_TERM_COLOR: always
 jobs:
+  lock-debug:
+    name: "Diagnostic / Resolve package CLI Cargo.lock"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Setup | Checkout sources"
+        uses: actions/checkout@v7
+      - name: "Diagnostic | Resolve full Cargo metadata and print lock diff"
+        run: |
+          cargo metadata --format-version 1 > /tmp/xila-metadata.json
+          git diff -- Cargo.lock
   quality:
     name: "Quality / Rust"
     uses: xila-project/workspace/.github/workflows/quality.yml@d4ff44239bcfa0bc662e37f38d00f3d23f8f04db
