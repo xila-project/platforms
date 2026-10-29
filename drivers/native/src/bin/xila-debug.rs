@@ -1,3 +1,7 @@
+#[cfg(unix)]
+#[path = "xila-debug/text.rs"]
+mod text;
+
 use std::io::{BufReader, Read, Write};
 
 #[cfg(unix)]
@@ -51,6 +55,16 @@ fn run() -> Result<bool, String> {
                 },
             )
         });
+        if let Request::Text { text } = &request {
+            if let Err(error) = debug_protocol::validate_request(&request) {
+                println!(
+                    "{}",
+                    serde_json::json!({"ok": false, "error": {"code": error.code(), "message": "Request validation failed.", "confirmed_queued_bytes": 0, "last_request_status": "not_queued"}})
+                );
+                return Ok(false);
+            }
+            return Ok(text::send(&endpoint, text));
+        }
         let mut stream = std::os::unix::net::UnixStream::connect(&endpoint)
             .map_err(|error| format!("Cannot connect to {}: {error}", endpoint.display()))?;
         let mut bytes = serde_json::to_vec(&request).map_err(|error| error.to_string())?;
@@ -188,6 +202,9 @@ fn parse_operation(
             key: arguments.next().ok_or("key requires a name")?,
             state: parse_state(arguments.next().as_deref())?,
         }),
+        "press-key" => Ok(Request::PressKey {
+            key: arguments.next().ok_or("press-key requires a name")?,
+        }),
         "text" => {
             let text = arguments.collect::<Vec<_>>().join(" ");
             Ok(Request::Text { text })
@@ -205,7 +222,7 @@ fn parse_state(value: Option<&str>) -> Result<InputState, String> {
 }
 
 fn usage() -> String {
-    "usage: xila-debug [--endpoint PATH] diagnostics|resolution|screenshot PATH|ui-tree [MAX_ELEMENTS MAX_DEPTH]|wait-for --text TEXT [--timeout-ms MS]|pointer move X Y|pointer button press|release|key KEY press|release|text TEXT".into()
+    "usage: xila-debug [--endpoint PATH] diagnostics|resolution|screenshot PATH|ui-tree [MAX_ELEMENTS MAX_DEPTH]|wait-for --text TEXT [--timeout-ms MS]|pointer move X Y|pointer button press|release|key KEY press|release|press-key KEY|text TEXT".into()
 }
 
 #[cfg(test)]
