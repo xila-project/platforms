@@ -5605,7 +5605,7 @@ dependencies = [
 [[package]]
 name = "xila-package-application"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=feat%2Fpackage-cli-and-v1-bundles#690c1c453b3d5d6a55d16d96e24b5c960267337a"
+source = "git+https://github.com/xila-project/applications?rev=98295c47777a0db620c677438a7965eed0c00b97#98295c47777a0db620c677438a7965eed0c00b97"
 dependencies = [
  "tar-no-std 0.5.0 (git+https://github.com/AlixANNERAUD/tar-no-std?rev=ecdd39990ae4143d36b7f2adcf3eff2f971fea11)",
  "xila",
