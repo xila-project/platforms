@@ -69,6 +69,7 @@ terminal = { package = "xila-terminal", git = "https://github.com/xila-project/a
 settings = { package = "xila-settings", git = "https://github.com/xila-project/applications", rev = "26ee04355c3ddea0f41ee81ece168cec2f9eb376" }
 debug_application = { package = "xila-debug-application", git = "https://github.com/xila-project/applications", rev = "26ee04355c3ddea0f41ee81ece168cec2f9eb376" }
 activity = { package = "xila-activity", git = "https://github.com/xila-project/applications", rev = "26ee04355c3ddea0f41ee81ece168cec2f9eb376" }
+package = { package = "xila-package-application", git = "https://github.com/xila-project/applications", branch = "feat/package-cli-and-v1-bundles" }
 pixel_painter = { package = "xila-pixel-painter", git = "https://github.com/xila-project/applications", rev = "26ee04355c3ddea0f41ee81ece168cec2f9eb376" }
 text_editor = { package = "xila-text-editor", git = "https://github.com/xila-project/applications", rev = "26ee04355c3ddea0f41ee81ece168cec2f9eb376" }
 calculator = { package = "xila-calculator", git = "https://github.com/xila-project/applications", rev = "26ee04355c3ddea0f41ee81ece168cec2f9eb376" }
