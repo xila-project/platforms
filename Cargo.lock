@@ -5607,6 +5607,8 @@ name = "xila-package-application"
 version = "0.1.0"
 source = "git+https://github.com/xila-project/applications?rev=4d51ad09b3c1858e5920f8f17815567cb2013543#4d51ad09b3c1858e5920f8f17815567cb2013543"
 dependencies = [
+ "getargs",
+ "getargs-derive",
  "tar-no-std 0.5.0 (git+https://github.com/AlixANNERAUD/tar-no-std?rev=ecdd39990ae4143d36b7f2adcf3eff2f971fea11)",
  "xila",
  "xila-abi-declarations",
