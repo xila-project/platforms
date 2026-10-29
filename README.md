@@ -34,8 +34,9 @@ from paths in Xila's VFS, using 512-byte TAR streaming and a full Ed25519
 publisher-signature / SHA-256 inventory check **only at installation time**.
 Normal execution of the installed Wasm never repeats the package signature
 check. The installed package is stored at
-`/applications/packages/<package-id>/`; shortcut registration, upgrades and
-package downloading are not implemented yet.
+`/applications/bundles/<package-id>/`; application-owned shortcuts in the bundle are discovered automatically by
+Graphical Shell when opening the drawer. Upgrades and package downloading are
+not implemented yet.
 
 ```text
 package install /temporary/example.xpk
