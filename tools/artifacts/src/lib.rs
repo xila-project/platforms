@@ -36,7 +36,12 @@ pub fn prepare(
         .as_str();
     if !entrypoint.starts_with("bin/")
         || !entrypoint.ends_with(".wasm")
-        || manifest.files.iter().filter(|item| item.path == entrypoint).count() != 1
+        || manifest
+            .files
+            .iter()
+            .filter(|item| item.path == entrypoint)
+            .count()
+            != 1
     {
         return Err("package entrypoint is incompatible");
     }
