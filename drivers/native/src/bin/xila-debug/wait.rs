@@ -210,8 +210,15 @@ fn connect(endpoint: &Path, deadline: Instant) -> io::Result<UnixStream> {
 }
 
 fn query(endpoint: &Path, deadline: Instant) -> io::Result<Value> {
+    exchange(
+        endpoint,
+        deadline,
+        b"{\"op\":\"ui_tree\",\"max_elements\":256,\"max_depth\":24}\n",
+    )
+}
+
+pub(super) fn exchange(endpoint: &Path, deadline: Instant, request: &[u8]) -> io::Result<Value> {
     let mut stream = connect(endpoint, deadline)?;
-    let request = b"{\"op\":\"ui_tree\",\"max_elements\":256,\"max_depth\":24}\n";
     let mut written = 0;
     while written < request.len() {
         ready(&stream, libc::POLLOUT, deadline)?;
@@ -256,7 +263,7 @@ fn query(endpoint: &Path, deadline: Instant) -> io::Result<Value> {
         if bytes.len() + length >= debug_protocol::MAX_RESPONSE_BYTES {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "UI-tree response exceeds limit",
+                "Response exceeds limit",
             ));
         }
         bytes.extend_from_slice(&chunk[..length]);
