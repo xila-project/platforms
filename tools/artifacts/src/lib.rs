@@ -22,13 +22,31 @@ pub fn prepare(
         || manifest.version != version
         || manifest.target != "wasm32-wasip1"
         || manifest.minimum_xila_abi > max_abi
-        || manifest.files.len() != 1
-        || !manifest.files[0].path.ends_with(".wasm")
     {
         return Err("package is incompatible");
     }
+    // Files other than the Wasm (such as the source-owned shortcut.json) are
+    // authenticated by inspect_unsigned too, even though the seed helper only
+    // extracts the entrypoint. The full package is installed by package CLI.
+    let entrypoint = manifest
+        .application
+        .as_ref()
+        .ok_or("package lacks an application descriptor")?
+        .entrypoint
+        .as_str();
+    if !entrypoint.starts_with("bin/")
+        || !entrypoint.ends_with(".wasm")
+        || manifest
+            .files
+            .iter()
+            .filter(|item| item.path == entrypoint)
+            .count()
+            != 1
+    {
+        return Err("package entrypoint is incompatible");
+    }
     let archive = TarArchiveRef::new(bytes).map_err(|_| "invalid archive")?;
-    let path = &manifest.files[0].path;
+    let path = entrypoint;
     let payload = archive
         .entries()
         .find_map(|entry| {
@@ -46,7 +64,7 @@ pub fn prepare(
 #[cfg(test)]
 mod tests {
     use super::prepare;
-    use xila_package_manifest::{FORMAT_VERSION, Manifest, ManifestFile};
+    use xila_package_manifest::{Application, FORMAT_VERSION, Manifest, ManifestFile, SCHEMA_URL};
     use xila_package_writer::{SourceFile, write_package};
 
     fn package(target: &str, payload: &[u8]) -> Vec<u8> {
@@ -59,6 +77,7 @@ mod tests {
             .map(|b| format!("{b:02x}"))
             .collect();
         let manifest = Manifest {
+            schema: Some(SCHEMA_URL.into()),
             format_version: FORMAT_VERSION,
             name: "xila.clock".into(),
             version: "1.0.0".into(),
@@ -70,6 +89,12 @@ mod tests {
                 size: payload.len() as u64,
                 sha256,
             }],
+            application: Some(Application {
+                entrypoint: "bin/clock.wasm".into(),
+                display_name: "Clock".into(),
+                icon: "".into(),
+                show_in_launcher: true,
+            }),
         };
         let mut archive = Vec::new();
         write_package(

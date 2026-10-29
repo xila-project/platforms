@@ -25,3 +25,32 @@ The **Cross-repository integration** Actions workflow accepts explicit Core and 
 For CJK builds, set `XILA_FONT_CATALOG_ROOTS` to the Applications checkout (or a path-list of catalog roots) so Core includes those translated characters in its generated font subset. The root must contain the application `executables/` and `libraries/` directories.
 
 The ESP32 sources and Wokwi board files are retained from Core, but the current Espressif driver is gated out on host targets and still contains legacy API references. No ESP32 or Wokwi build has been established by these host checks; a supported ESP-IDF toolchain and board-specific build are needed before claiming that port works.
+
+## Package installation (native runtime)
+
+The native runtime mounts the CLI-only `package` command at
+`/applications/executables/package`. It installs v1 `.xpk` bundles
+from paths in Xila's VFS, using 512-byte TAR streaming and a full Ed25519
+publisher-signature / SHA-256 inventory check **only at installation time**.
+Normal execution of the installed Wasm never repeats the package signature
+check. The installed package is stored at
+`/applications/bundles/<package-id>/`; application-owned shortcuts in the bundle are discovered automatically by
+Graphical Shell when opening the drawer. Upgrades and package downloading are
+not implemented yet.
+
+```text
+package install /temporary/example.xpk
+package install /temporary/example.xpk --public-key /temporary/developer.pub
+package install /temporary/example.xpk --allow-untrusted
+package list
+```
+
+The default trust anchor is a raw 32-byte Ed25519 key at
+`/configuration/system/packages/trusted.pub`. Passing `--public-key`
+explicitly trusts another signer **for this installation only**. Passing
+`--allow-untrusted` explicitly skips *publisher authentication*, but never
+SHA-256, TAR layout or compatibility validation. System-wide installation
+currently requires a root (UID 0) Xila task; the seeded administrator login
+is UID 1000 and has no implicit privilege escalation. A privileged package
+service is future work. See [the CLI README](https://github.com/xila-project/applications/tree/main/executables/package)
+for limitations and security assumptions.

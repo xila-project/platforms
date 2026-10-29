@@ -24,12 +24,14 @@ def main():
     parser.add_argument("--core", type=Path, required=True)
     parser.add_argument("--platforms", type=Path, required=True)
     parser.add_argument("--applications", type=Path, required=True)
+    parser.add_argument("--package-manager", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     sections = {
         "https://github.com/xila-project/core": (args.core, ["core", "libraries", "subsystems", "drivers/core"]),
         "https://github.com/xila-project/platforms": (args.platforms, ["drivers", "libraries/testing"]),
         "https://github.com/xila-project/applications": (args.applications, ["executables", "libraries/application_shortcuts"]),
+        **({"https://github.com/xila-project/package_manager": (args.package_manager, ["crates"])} if args.package_manager else {}),
     }
     lines = []
     for url, (root, roots) in sections.items():
