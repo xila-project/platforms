@@ -3852,6 +3852,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tar-no-std"
+version = "0.5.0"
+source = "git+https://github.com/AlixANNERAUD/tar-no-std?rev=ecdd39990ae4143d36b7f2adcf3eff2f971fea11#ecdd39990ae4143d36b7f2adcf3eff2f971fea11"
+dependencies = [
+ "bitflags 2.13.2",
+ "log",
+ "num-traits",
+]
+
+[[package]]
 name = "tempfile"
 version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5563,6 +5573,7 @@ dependencies = [
  "xila-drivers-std",
  "xila-file-manager",
  "xila-graphical-shell",
+ "xila-package-application",
  "xila-settings",
  "xila-terminal",
  "xila-wasm",
@@ -5592,9 +5603,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "xila-package-application"
+version = "0.1.0"
+source = "git+https://github.com/xila-project/applications?branch=feat%2Fpackage-cli-and-v1-bundles#690c1c453b3d5d6a55d16d96e24b5c960267337a"
+dependencies = [
+ "tar-no-std 0.5.0 (git+https://github.com/AlixANNERAUD/tar-no-std?rev=ecdd39990ae4143d36b7f2adcf3eff2f971fea11)",
+ "xila",
+ "xila-abi-declarations",
+ "xila-package-manifest 0.2.0",
+ "xila-package-reader 0.2.0",
+ "xila-package-verification 0.1.0 (git+https://github.com/xila-project/package_manager?rev=38d5bb8d42618b42fa02e93de255f5da23846efb)",
+]
+
+[[package]]
+name = "xila-package-bundle"
+version = "0.2.0"
+source = "git+https://github.com/xila-project/package_manager?rev=38d5bb8d42618b42fa02e93de255f5da23846efb#38d5bb8d42618b42fa02e93de255f5da23846efb"
+dependencies = [
+ "xila-package-manifest 0.2.0",
+ "xila-package-verification 0.1.0 (git+https://github.com/xila-project/package_manager?rev=38d5bb8d42618b42fa02e93de255f5da23846efb)",
+]
+
+[[package]]
 name = "xila-package-manifest"
 version = "0.1.0"
 source = "git+https://github.com/xila-project/package_manager?rev=71c4da6799a958b188492b0a833bca3550b821ab#71c4da6799a958b188492b0a833bca3550b821ab"
+dependencies = [
+ "miniserde",
+]
+
+[[package]]
+name = "xila-package-manifest"
+version = "0.2.0"
+source = "git+https://github.com/xila-project/package_manager?rev=38d5bb8d42618b42fa02e93de255f5da23846efb#38d5bb8d42618b42fa02e93de255f5da23846efb"
 dependencies = [
  "miniserde",
 ]
@@ -5604,9 +5645,30 @@ name = "xila-package-reader"
 version = "0.1.0"
 source = "git+https://github.com/xila-project/package_manager?rev=71c4da6799a958b188492b0a833bca3550b821ab#71c4da6799a958b188492b0a833bca3550b821ab"
 dependencies = [
- "tar-no-std",
- "xila-package-manifest",
- "xila-package-verification",
+ "tar-no-std 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "xila-package-manifest 0.1.0",
+ "xila-package-verification 0.1.0 (git+https://github.com/xila-project/package_manager?rev=71c4da6799a958b188492b0a833bca3550b821ab)",
+]
+
+[[package]]
+name = "xila-package-reader"
+version = "0.2.0"
+source = "git+https://github.com/xila-project/package_manager?rev=38d5bb8d42618b42fa02e93de255f5da23846efb#38d5bb8d42618b42fa02e93de255f5da23846efb"
+dependencies = [
+ "tar-no-std 0.5.0 (git+https://github.com/AlixANNERAUD/tar-no-std?rev=ecdd39990ae4143d36b7f2adcf3eff2f971fea11)",
+ "xila-package-bundle",
+ "xila-package-manifest 0.2.0",
+ "xila-package-verification 0.1.0 (git+https://github.com/xila-project/package_manager?rev=38d5bb8d42618b42fa02e93de255f5da23846efb)",
+]
+
+[[package]]
+name = "xila-package-verification"
+version = "0.1.0"
+source = "git+https://github.com/xila-project/package_manager?rev=38d5bb8d42618b42fa02e93de255f5da23846efb#38d5bb8d42618b42fa02e93de255f5da23846efb"
+dependencies = [
+ "ed25519-dalek",
+ "sha2 0.11.1",
+ "subtle",
 ]
 
 [[package]]
@@ -5625,20 +5687,20 @@ version = "0.1.0"
 source = "git+https://github.com/xila-project/package_manager?rev=71c4da6799a958b188492b0a833bca3550b821ab#71c4da6799a958b188492b0a833bca3550b821ab"
 dependencies = [
  "tar",
- "xila-package-manifest",
- "xila-package-verification",
+ "xila-package-manifest 0.1.0",
+ "xila-package-verification 0.1.0 (git+https://github.com/xila-project/package_manager?rev=71c4da6799a958b188492b0a833bca3550b821ab)",
 ]
 
 [[package]]
 name = "xila-prepare-applications"
 version = "0.1.0"
 dependencies = [
- "tar-no-std",
+ "tar-no-std 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wasmparser",
  "xila-abi-declarations",
- "xila-package-manifest",
- "xila-package-reader",
- "xila-package-verification",
+ "xila-package-manifest 0.1.0",
+ "xila-package-reader 0.1.0",
+ "xila-package-verification 0.1.0 (git+https://github.com/xila-project/package_manager?rev=71c4da6799a958b188492b0a833bca3550b821ab)",
  "xila-package-writer",
 ]
 
