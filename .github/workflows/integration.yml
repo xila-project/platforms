@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: xila-project/core
-          ref: ${{ inputs.core_ref || '3684ff78b3ad893cc4111bfad3ceba87a8920ddd' }}
+          ref: ${{ inputs.core_ref || 'e897a898b2a681c576997abdc0958e0f4e0f368c' }}
           path: core
           persist-credentials: false
       - name: "Setup | Checkout applications"

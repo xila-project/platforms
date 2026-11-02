@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-application_metadata = { workspace = true }
+authentication = { workspace = true }
 application_shortcuts = { workspace = true }
 users = { workspace = true }
 abi_definitions = { workspace = true }

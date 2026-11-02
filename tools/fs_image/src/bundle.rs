@@ -60,8 +60,8 @@ pub fn prepare(profile: &str, applications: &Path) -> Result<Staging, Box<dyn Er
         fs::create_dir_all(staging.0.join(directory))?;
     }
     fs::write(
-        staging.0.join(&application_metadata::PENDING_PATH[1..]),
-        application_metadata::PENDING_CONTENT,
+        staging.0.join(&authentication::SEED_PENDING_PATH[1..]),
+        authentication::SEED_PENDING_CONTENT,
     )?;
     for name in &guests {
         let source = applications.join(format!("{name}.wasm"));
