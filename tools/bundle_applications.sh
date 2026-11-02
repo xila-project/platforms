@@ -27,7 +27,9 @@ if [[ -z "$builder" ]]; then
   fi
   root="$platforms/target/tools/xila-package-$revision"
   if [[ ! -x "$root/bin/xila-package" ]]; then
-    cargo install --locked --quiet --root "$root" \
+    # Own target directory: a shared CARGO_TARGET_DIR/build.target-dir can hold
+    # stale artifacts from other package_manager revisions.
+    CARGO_TARGET_DIR="$root/target" cargo install --locked --quiet --root "$root" \
       --git https://github.com/xila-project/package_manager --rev "$revision" xila-package-builder
   fi
   builder="$root/bin/xila-package"
