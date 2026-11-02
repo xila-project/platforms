@@ -25,6 +25,7 @@ def main() -> None:
                 "python3", str(args.package_manager / "tools/package_wasm.py"),
                 "--wasm-root", str(args.wasm_dir), "--wasm-path", f"{app}.wasm",
                 "--manifest-root", str(args.applications), "--manifest-path", f"packaging/{app}.json",
+                "--shortcut-path", f"executables/{app}/shortcut.json",
                 "--staging", str(root / f"{app}-stage"), "--manifest-output", str(root / f"{app}.json"),
                 "--output", str(root / "packages"), "--builder", str(args.builder),
             ], check=True)

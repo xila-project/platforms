@@ -18,6 +18,7 @@ terminal = { workspace = true }
 settings = { workspace = true }
 debug_application = { workspace = true }
 activity = { workspace = true }
+package = { workspace = true }
 drivers_core = { workspace = true }
 drivers_std = { workspace = true }
 drivers_shared = { workspace = true }
