@@ -5605,7 +5605,7 @@ dependencies = [
 [[package]]
 name = "xila-package-application"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=afd0b4bdbc35d19a88740d2b1a1a786bf227e818#afd0b4bdbc35d19a88740d2b1a1a786bf227e818"
+source = "git+https://github.com/xila-project/applications?rev=076cd5a38f06300739c435e28ae43df9618f3c8c#076cd5a38f06300739c435e28ae43df9618f3c8c"
 dependencies = [
  "getargs",
  "getargs-derive",

@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: xila-project/applications
-          ref: ${{ inputs.applications_ref || 'afd0b4bdbc35d19a88740d2b1a1a786bf227e818' }}
+          ref: ${{ inputs.applications_ref || '076cd5a38f06300739c435e28ae43df9618f3c8c' }}
           path: applications
           persist-credentials: false
       - name: "Setup | Checkout package_manager"
