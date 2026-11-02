@@ -44,7 +44,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: xila-project/package_manager
-          ref: c63eac6bae20cd94e1f91bcd0055214647aabde8
+          ref: 2d690a02f7ff9c2a1142654cba93ddea89f46fd7
           path: package-manager
           persist-credentials: false
       - name: "Setup | Activate mise"
