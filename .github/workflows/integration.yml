@@ -30,21 +30,21 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: xila-project/core
-          ref: ${{ inputs.core_ref || '19f779981db3a25579fe6374221b0014243de01a' }}
+          ref: ${{ inputs.core_ref || '3684ff78b3ad893cc4111bfad3ceba87a8920ddd' }}
           path: core
           persist-credentials: false
       - name: "Setup | Checkout applications"
         uses: actions/checkout@v7
         with:
           repository: xila-project/applications
-          ref: ${{ inputs.applications_ref || 'f8e8d63baba132f4ee1899c702976a4f37189eeb' }}
+          ref: ${{ inputs.applications_ref || 'afd0b4bdbc35d19a88740d2b1a1a786bf227e818' }}
           path: applications
           persist-credentials: false
       - name: "Setup | Checkout package_manager"
         uses: actions/checkout@v7
         with:
           repository: xila-project/package_manager
-          ref: 0ae8fce5f6eaf41555ee99137c7688fd79fbcd7d
+          ref: c63eac6bae20cd94e1f91bcd0055214647aabde8
           path: package-manager
           persist-credentials: false
       - name: "Setup | Activate mise"

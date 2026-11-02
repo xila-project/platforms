@@ -50,7 +50,7 @@ pub fn prepare(
     let payload = archive
         .entries()
         .find_map(|entry| {
-            (entry.filename().as_str().ok() == Some(path.as_str())).then(|| entry.data().to_vec())
+            (entry.filename().as_str().ok() == Some(path)).then(|| entry.data().to_vec())
         })
         .ok_or("missing payload")?;
     let mut features = wasmparser::WasmFeatures::default();
