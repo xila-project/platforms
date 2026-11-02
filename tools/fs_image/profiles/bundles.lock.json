@@ -1,0 +1,42 @@
+{
+  "$comment": "Released application bundles seeded into official images. Update with the new version, URL and SHA-256 after each Applications release.",
+  "publisher_key": "6D1cvlGzCAITQrmkWjJgn97DW1s6p3zvDNe8a87pcbc=",
+  "applications": {
+    "calculator": {
+      "name": "xila.calculator",
+      "version": "0.1.0",
+      "url": "https://github.com/xila-project/applications/releases/download/xila.calculator-v0.1.0/xila.calculator-0.1.0-wasm32-wasip1.xpk",
+      "sha256": "6b6d073c877e28424da2b939fee87b9a93e7cbd728346ec3d0fbfbb893d63805"
+    },
+    "clock": {
+      "name": "xila.clock",
+      "version": "0.1.0",
+      "url": "https://github.com/xila-project/applications/releases/download/xila.clock-v0.1.0/xila.clock-0.1.0-wasm32-wasip1.xpk",
+      "sha256": "6976f8d118066b7294ac051160505b2c410fa9213cffa6a7c889946cf6fdbfcd"
+    },
+    "pixel_painter": {
+      "name": "xila.pixel-painter",
+      "version": "0.1.0",
+      "url": "https://github.com/xila-project/applications/releases/download/xila.pixel-painter-v0.1.0/xila.pixel-painter-0.1.0-wasm32-wasip1.xpk",
+      "sha256": "f0c28b1f6712c2a8a1b6a7e3795beae11918723be0fabafe031dc6bee53fa17b"
+    },
+    "synth": {
+      "name": "xila.synth",
+      "version": "0.1.0",
+      "url": "https://github.com/xila-project/applications/releases/download/xila.synth-v0.1.0/xila.synth-0.1.0-wasm32-wasip1.xpk",
+      "sha256": "e8d3314972e6490d9197d9cef28626ae209533bb034b9f9ac29fc3a8c9f3f19a"
+    },
+    "text_editor": {
+      "name": "xila.text-editor",
+      "version": "0.1.0",
+      "url": "https://github.com/xila-project/applications/releases/download/xila.text-editor-v0.1.0/xila.text-editor-0.1.0-wasm32-wasip1.xpk",
+      "sha256": "b204a21f83f650ffda540b1891cc8e30833fc1eec41c5dcf9417cb4123db3d20"
+    },
+    "weather": {
+      "name": "xila.weather",
+      "version": "0.1.0",
+      "url": "https://github.com/xila-project/applications/releases/download/xila.weather-v0.1.0/xila.weather-0.1.0-wasm32-wasip1.xpk",
+      "sha256": "c91a13d432bf2983a1eae7873903ab8b4846bcd7002578142850772ebc20cb14"
+    }
+  }
+}

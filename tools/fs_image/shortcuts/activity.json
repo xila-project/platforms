@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/xila-project/applications/main/schemas/shell-shortcut.schema.json",
+  "name": "Activity",
+  "command": "/applications/executables/activity",
+  "arguments": [],
+  "terminal": false,
+  "icon_string": "Ac",
+  "icon_color": [0, 150, 136]
+}

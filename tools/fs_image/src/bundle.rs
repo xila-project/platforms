@@ -12,7 +12,48 @@ impl Drop for Staging {
     }
 }
 
-pub fn prepare(profile: &str, applications: &Path) -> Result<Staging, Box<dyn Error>> {
+/// Package identifier of an official guest application, e.g. `xila.pixel-painter`.
+pub fn package_identifier(name: &str) -> String {
+    format!("xila.{}", name.replace('_', "-"))
+}
+
+fn native_shortcut(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "activity" => include_str!("../shortcuts/activity.json"),
+        "debug" => include_str!("../shortcuts/debug.json"),
+        "file_manager" => include_str!("../shortcuts/file_manager.json"),
+        "settings" => include_str!("../shortcuts/settings.json"),
+        "terminal" => include_str!("../shortcuts/terminal.json"),
+        _ => return None,
+    })
+}
+
+/// Copy a verified bundle directory, rejecting anything but regular files and
+/// directories. Entries are visited in sorted order for reproducible images.
+fn copy_bundle(source: &Path, destination: &Path) -> Result<(), Box<dyn Error>> {
+    fs::create_dir(destination)?;
+    let mut entries = fs::read_dir(source)?
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<std::io::Result<Vec<_>>>()?;
+    entries.sort();
+    for path in entries {
+        let metadata = fs::symlink_metadata(&path)?;
+        let target = destination.join(path.file_name().ok_or("invalid bundle entry")?);
+        if metadata.is_dir() {
+            copy_bundle(&path, &target)?;
+        } else if metadata.is_file() {
+            fs::copy(&path, &target)?;
+        } else {
+            return Err(format!("bundle entry is not a regular file: {}", path.display()).into());
+        }
+    }
+    Ok(())
+}
+
+/// Stage a seed profile from verified bundle directories named by package
+/// identifier (`<bundles>/xila.clock/.xila/manifest.json`, ...), as produced by
+/// `xila-prepare-applications` or `xila-package bundle build`.
+pub fn prepare(profile: &str, bundles: &Path) -> Result<Staging, Box<dyn Error>> {
     let manifest = match profile {
         "native" => include_str!("../profiles/native.txt"),
         "wasm" => include_str!("../profiles/browser.txt"),
@@ -37,7 +78,7 @@ pub fn prepare(profile: &str, applications: &Path) -> Result<Staging, Box<dyn Er
         "system/executables",
         "system/libraries",
         "system/services",
-        "configuration/system",
+        "configuration/system/packages",
         "configuration/applications",
         "configuration/shared/applications/shortcuts",
         "devices/audio",
@@ -51,6 +92,7 @@ pub fn prepare(profile: &str, applications: &Path) -> Result<Staging, Box<dyn Er
         "devices/time",
         "applications/executables",
         "applications/libraries",
+        "applications/bundles",
         "data/system/logs",
         "data/applications",
         "data/shared",
@@ -64,32 +106,33 @@ pub fn prepare(profile: &str, applications: &Path) -> Result<Staging, Box<dyn Er
         authentication::SEED_PENDING_CONTENT,
     )?;
     for name in &guests {
-        let source = applications.join(format!("{name}.wasm"));
-        if !fs::symlink_metadata(&source)?.is_file() {
-            return Err("guest binary must be a regular file".into());
+        let identifier = package_identifier(name);
+        let source = bundles.join(&identifier);
+        if !fs::symlink_metadata(source.join(".xila/manifest.json"))
+            .is_ok_and(|metadata| metadata.is_file())
+        {
+            return Err(format!("missing bundle {identifier} in {}", bundles.display()).into());
         }
-        fs::copy(
-            source,
-            staging.0.join(format!("applications/executables/{name}")),
+        copy_bundle(
+            &source,
+            &staging.0.join("applications/bundles").join(&identifier),
         )?;
-        fs::create_dir_all(staging.0.join(format!("data/applications/{name}")))?;
     }
+    // Native applications are linked into the runtime; only their shortcuts are seeded.
     let native_shortcuts = match profile {
         "native" => include_str!("../profiles/native-shortcuts.txt"),
         "wasm" => include_str!("../profiles/browser-shortcuts.txt"),
         _ => unreachable!(),
     };
-    for name in guests
-        .iter()
-        .copied()
-        .chain(native_shortcuts.lines())
-        .filter(|name| cfg!(unix) || *name != "debug")
+    for name in native_shortcuts
+        .lines()
+        .filter(|name| !name.is_empty() && (cfg!(unix) || *name != "debug"))
     {
         fs::write(
             staging.0.join(format!(
                 "configuration/shared/applications/shortcuts/{name}.json"
             )),
-            application_shortcuts::shortcut(name).ok_or("unknown application")?,
+            native_shortcut(name).ok_or("unknown native application")?,
         )?;
     }
     println!("Prepared {profile} bundle: {}", guests.join(","));

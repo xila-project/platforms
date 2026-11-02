@@ -49,8 +49,10 @@ class PlatformWorkflowPolicy(unittest.TestCase):
 
     def test_docker_consumes_separately_built_guests(self):
         dockerfile = read('Dockerfile.runtime')
-        self.assertIn('COPY --from=applications / /applications/', dockerfile)
-        self.assertIn('--applications-dir /applications', dockerfile)
+        self.assertIn('COPY --from=applications / /bundles/', dockerfile)
+        self.assertIn('--bundles-dir /bundles', dockerfile)
+        runtime = read('.github/workflows/runtime.yml')
+        self.assertEqual(runtime.count('XILA_BUNDLES_DIR=.application-artifacts mise run ci:bundle-applications'), 2)
         self.assertNotIn('--package xila-calculator', dockerfile)
         self.assertIn('USER 10001:10001', dockerfile)
         self.assertIn('ENTRYPOINT ["/usr/bin/xila-runtime"]', dockerfile)
@@ -96,9 +98,9 @@ class PlatformWorkflowPolicy(unittest.TestCase):
                 import os, pathlib, sys
                 args = sys.argv[1:]
                 output = pathlib.Path(args[args.index('--') + 1])
-                apps = pathlib.Path(args[args.index('--applications-dir') + 1])
+                bundles = pathlib.Path(args[args.index('--bundles-dir') + 1])
                 locale = os.environ['EMBEDDED_I18N_LOCALE']
-                assert (apps / 'calculator.wasm').read_text() == locale
+                assert (bundles / 'xila.calculator/executables/calculator.wasm').read_text() == locale
                 bundle = args[args.index('--bundle') + 1]
                 with output.open('x') as image:
                     image.write(locale + ':' + bundle)
@@ -112,6 +114,11 @@ class PlatformWorkflowPolicy(unittest.TestCase):
                   ci:build-applications)
                     mkdir -p "$CARGO_TARGET_DIR/wasm32-wasip1/release-wasm"
                     printf '%s' "$EMBEDDED_I18N_LOCALE" > "$CARGO_TARGET_DIR/wasm32-wasip1/release-wasm/calculator.wasm"
+                    ;;
+                  ci:bundle-applications)
+                    mkdir "$XILA_BUNDLES_DIR"
+                    mkdir -p "$XILA_BUNDLES_DIR/xila.calculator/executables"
+                    cp "$CARGO_TARGET_DIR/wasm32-wasip1/release-wasm/calculator.wasm" "$XILA_BUNDLES_DIR/xila.calculator/executables/"
                     ;;
                   pages:demo)
                     test "$(cat target/seed/wasm/seed.img)" = "$EMBEDDED_I18N_LOCALE:wasm"

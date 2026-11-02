@@ -35,7 +35,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     };
     let mut root = None;
     let mut bundle = None;
-    let mut applications = None;
+    let mut bundles = None;
     while let Some(flag) = arguments.next() {
         match flag.to_str() {
             Some("--root") => {
@@ -46,24 +46,24 @@ fn run() -> Result<(), Box<dyn Error>> {
             Some("--bundle") => {
                 bundle = Some(arguments.next().ok_or("--bundle requires native or wasm")?)
             }
-            Some("--applications-dir") => {
-                applications = Some(PathBuf::from(
+            Some("--bundles-dir") => {
+                bundles = Some(PathBuf::from(
                     arguments
                         .next()
-                        .ok_or("--applications-dir requires a directory")?,
+                        .ok_or("--bundles-dir requires a directory")?,
                 ))
             }
             _ => return Err("unknown argument".into()),
         }
     }
-    let staging = match (bundle, applications) {
+    let staging = match (bundle, bundles) {
         (Some(profile), Some(directory)) if root.is_none() => Some(bundle::prepare(
             profile.to_str().ok_or("invalid bundle")?,
             &directory,
         )?),
         (None, None) => None,
         _ => {
-            return Err("use --root or --bundle native|wasm --applications-dir <directory>".into());
+            return Err("use --root or --bundle native|wasm --bundles-dir <directory>".into());
         }
     };
     let root = staging.as_ref().map(|s| s.0.as_path()).or(root.as_deref());

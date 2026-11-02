@@ -10,7 +10,8 @@ requires access to perf events; a permission error is reported in the run log.
 Build before recording, after mise has installed the project tools:
 
 ```bash
-XILA_APPLICATIONS_DIR=/path/to/applications/target/wasm32-wasip1/release-wasm mise run image:native
+# Released bundles; for locally built guests set XILA_BUNDLES_DIR (see tools/fs_image).
+mise run image:native
 mise run build:profiling -- --features prebuilt-applications
 cargo run --manifest-path tools/profiling/Cargo.toml -- measure \
   --scenario terminal-idle --output target/profiles/before --runs 3 --duration 30 \
