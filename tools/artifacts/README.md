@@ -1,17 +1,21 @@
 # Prepare a pinned application artifact
 
-`xila-prepare-applications ARCHIVE SHA256 NAME VERSION MAX_ABI OUTPUT.wasm` verifies an archive against the supplied lowercase SHA-256, checks its package identity and version, requires `wasm32-wasip1` and rejects an ABI requirement above `MAX_ABI`. It validates every archive entry with `xila-package-reader` before extracting the single Wasm payload; it validates the module with memory64 disabled. A valid module and declared ABI do not prove that every import is supported by a particular runtime. The output must not already exist. The accepted ABI cannot exceed the Core ABI version compiled into the tool. Supply a lower value when targeting an older versioned runtime; unversioned historical runtimes have no declared compatibility.
+`xila-prepare-applications ARCHIVE SHA256 NAME VERSION MAX_ABI OUTPUT_DIR [PUBLIC_KEY]` verifies an archive against the supplied lowercase SHA-256, checks its package identity and version, requires `wasm32-wasip1`, rejects an ABI requirement above `MAX_ABI`, and validates the Wasm entrypoint with memory64 disabled. Every archive entry is checked with `xila-package-reader`; with `PUBLIC_KEY` (a raw 32-byte Ed25519 key) the publisher signature is required too. It then extracts the **complete bundle** (`.xila/manifest.json`, `.xila/manifest.sig` when signed, and every declared file) into `OUTPUT_DIR`, which must not exist. A valid module and declared ABI do not prove that every import is supported by a particular runtime. The accepted ABI cannot exceed the Core ABI version compiled into the tool.
 
-This is an integrity check for pinned development artifacts. The checksum and unsigned package do not authenticate a publisher. Supply separately trusted checksums, and do not treat this tool as a production trust policy.
+To prepare an entire seed profile, `tools/prepare_seed.py` reads a JSON lockfile (default [`tools/fs_image/profiles/bundles.lock.json`](../fs_image/profiles/bundles.lock.json)) with an entry per application, for example:
 
-To prepare an entire seed profile, create a TOML lockfile with an entry for each selected application, for example:
-
-```toml
-[applications.clock]
-archive = "archives/xila.clock-0.1.0-wasm32-wasip1.xpk"
-name = "xila.clock"
-version = "0.1.0"
-sha256 = "<64 lowercase hex characters from a trusted pinned source>"
+```json
+{
+  "publisher_key": "<base64 raw Ed25519 public key>",
+  "applications": {
+    "clock": {
+      "name": "xila.clock",
+      "version": "0.1.0",
+      "url": "https://github.com/xila-project/applications/releases/download/xila.clock-v0.1.0/xila.clock-0.1.0-wasm32-wasip1.xpk",
+      "sha256": "<64 lowercase hex characters>"
+    }
+  }
+}
 ```
 
-Resolve and verify the checksum source separately; do not use the illustrative placeholder. Build `xila-prepare-applications`, then run `python3 tools/prepare_seed.py --profile native --lockfile versions.toml --output prepared --tool target/debug/xila-prepare-applications --max-abi 1`. The output directory must not exist. Pass that directory to `xila-fs-image --bundle native --applications-dir prepared`. Use `--profile browser` and `--bundle wasm` for the browser set. This step consumes local archives and does not fetch releases or establish publisher trust.
+Use `"archive": "<path relative to the lockfile>"` instead of `url` for a local archive; URLs must be HTTPS. Build `xila-prepare-applications`, then run `python3 tools/prepare_seed.py --profile native --output bundles --tool target/debug/xila-prepare-applications --max-abi 1` and pass the directory to `xila-fs-image --bundle native --bundles-dir bundles`. Use `--profile browser` and `--bundle wasm` for the browser set. The signature proves which key signed a bundle; whether to trust that key is decided by the pinned `publisher_key` (see `xila-project/registry`).

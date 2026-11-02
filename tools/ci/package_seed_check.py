@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""Exercise the package-manager-to-seed pipeline with already built guests."""
+"""Exercise the package-manager-to-seed pipeline with already built guests.
+
+Packages each guest with the reusable workflow's packager, extracts the
+archives through prepare_seed.py, and checks that the resulting images equal
+those built from locally bundled guests (tools/bundle_applications.sh).
+"""
 import argparse
+import json
+import os
 from pathlib import Path
 import subprocess
-import re
 import tempfile
 
 PLATFORMS = Path(__file__).resolve().parents[2]
@@ -17,7 +23,7 @@ def main() -> None:
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="xila-package-seed-check-") as directory:
         root = Path(directory)
-        lock = []
+        lock = {"applications": {}}
         for app in APPS:
             package = "xila." + app.replace("_", "-")
             filename = f"{package}-0.1.0-wasm32-wasip1.xpk"
@@ -30,26 +36,30 @@ def main() -> None:
                 "--output", str(root / "packages"), "--builder", str(args.builder),
             ], check=True)
             checksum = (root / "packages" / f"{filename}.sha256").read_text().split()[0]
-            lock.extend([f"[applications.{app}]", f'archive = "packages/{filename}"',
-                         f'name = "{package}"', 'version = "0.1.0"', f'sha256 = "{checksum}"', ""])
-        lockfile = root / "versions.toml"
-        lockfile.write_text("\n".join(lock))
+            lock["applications"][app] = {"name": package, "version": "0.1.0",
+                                         "archive": f"packages/{filename}", "sha256": checksum}
+        lockfile = root / "bundles.lock.json"
+        lockfile.write_text(json.dumps(lock))
+        direct = root / "direct-bundles"
+        subprocess.run(["bash", str(PLATFORMS / "tools/bundle_applications.sh"), str(args.applications),
+                        str(args.wasm_dir), str(direct)], check=True,
+                       env=dict(os.environ, XILA_PACKAGE=str(args.builder)))
         for profile, bundle in (("native", "native"), ("browser", "wasm")):
-            prepared = root / f"{profile}-guests"
+            packaged = root / f"{profile}-bundles"
             subprocess.run(["python3", str(PLATFORMS / "tools/prepare_seed.py"), "--profile", profile,
-                            "--lockfile", str(lockfile), "--output", str(prepared), "--tool", str(args.preparer),
+                            "--lockfile", str(lockfile), "--output", str(packaged), "--tool", str(args.preparer),
                             "--max-abi", "1"], check=True)
-            for suffix, app_dir in (("packaged", prepared), ("direct", args.wasm_dir)):
+            for suffix, bundles in (("packaged", packaged), ("direct", direct)):
                 subprocess.run([str(args.fs_image), str(root / f"{profile}-{suffix}.img"), "16777216",
-                                "--bundle", bundle, "--applications-dir", str(app_dir)], check=True)
+                                "--bundle", bundle, "--bundles-dir", str(bundles)], check=True)
             if (root / f"{profile}-packaged.img").read_bytes() != (root / f"{profile}-direct.img").read_bytes():
-                raise SystemExit(f"{profile}: packaged and direct seed images differ")
-        bad = re.sub(r'(sha256 = ")([0-9a-f])',
-                     lambda match: match.group(1) + ("0" if match.group(2) != "0" else "1"),
-                     lockfile.read_text(), count=1)
-        (root / "bad.toml").write_text(bad)
+                raise SystemExit(f"{profile}: packaged and locally bundled seed images differ")
+        bad = json.loads(lockfile.read_text())
+        digest = bad["applications"]["calculator"]["sha256"]
+        bad["applications"]["calculator"]["sha256"] = ("0" if digest[0] != "0" else "1") + digest[1:]
+        (root / "bad.json").write_text(json.dumps(bad))
         result = subprocess.run(["python3", str(PLATFORMS / "tools/prepare_seed.py"), "--profile", "native",
-                                 "--lockfile", str(root / "bad.toml"), "--output", str(root / "invalid"),
+                                 "--lockfile", str(root / "bad.json"), "--output", str(root / "invalid"),
                                  "--tool", str(args.preparer), "--max-abi", "1"])
         if result.returncode == 0 or (root / "invalid").exists():
             raise SystemExit("invalid checksum was not rejected cleanly")

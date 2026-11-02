@@ -53,6 +53,17 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", compone
 ] }
 run = "cargo build --locked --manifest-path .application-src/Cargo.toml --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth"
 
+[tasks."ci:bundle-applications"]
+description = "Package the built Applications guests as unsigned bundles with their own manifests and shortcuts"
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal" }
+run = '''
+set -eu
+: "${XILA_BUNDLES_DIR:?set XILA_BUNDLES_DIR to a new output directory}"
+bash tools/bundle_applications.sh "${XILA_APPLICATIONS_SOURCE:-.application-src}" \
+  "${XILA_APPLICATIONS_WASM:-${CARGO_TARGET_DIR:-.application-src/target}/wasm32-wasip1/release-wasm}" \
+  "$XILA_BUNDLES_DIR"
+'''
+
 [tasks."ci:runtime-smoke"]
 tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets = [
   "wasm32-wasip1",
@@ -87,12 +98,15 @@ for locale in ${XILA_DEMO_LOCALES:-en fr es de pt-BR it pl}; do
   export CARGO_TARGET_DIR="${CARGO_TARGET_ROOT:-$PWD/target/pages}/$locale"
   mise run ci:build-applications
   mkdir -p "$CARGO_TARGET_DIR/seed/wasm" target/seed/wasm
-  cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/seed.img" 16777216 --bundle wasm --applications-dir "$CARGO_TARGET_DIR/wasm32-wasip1/release-wasm"
-  cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/repeated.img" 16777216 --bundle wasm --applications-dir "$CARGO_TARGET_DIR/wasm32-wasip1/release-wasm"
+  # Translations are compiled into each guest, so bundle this locale's build.
+  rm -rf "$CARGO_TARGET_DIR/seed/bundles"
+  XILA_BUNDLES_DIR="$CARGO_TARGET_DIR/seed/bundles" mise run ci:bundle-applications
+  cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/seed.img" 16777216 --bundle wasm --bundles-dir "$CARGO_TARGET_DIR/seed/bundles"
+  cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/repeated.img" 16777216 --bundle wasm --bundles-dir "$CARGO_TARGET_DIR/seed/bundles"
   cmp "$CARGO_TARGET_DIR/seed/wasm/seed.img" "$CARGO_TARGET_DIR/seed/wasm/repeated.img"
   rm "$CARGO_TARGET_DIR/seed/wasm/repeated.img"
-  cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/native.img" 16777216 --bundle native --applications-dir "$CARGO_TARGET_DIR/wasm32-wasip1/release-wasm"
-  cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/native-repeated.img" 16777216 --bundle native --applications-dir "$CARGO_TARGET_DIR/wasm32-wasip1/release-wasm"
+  cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/native.img" 16777216 --bundle native --bundles-dir "$CARGO_TARGET_DIR/seed/bundles"
+  cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/native-repeated.img" 16777216 --bundle native --bundles-dir "$CARGO_TARGET_DIR/seed/bundles"
   cmp "$CARGO_TARGET_DIR/seed/wasm/native.img" "$CARGO_TARGET_DIR/seed/wasm/native-repeated.img"
   rm "$CARGO_TARGET_DIR/seed/wasm/native-repeated.img"
   mkdir -p "target/reference-filesystem-images/$locale"

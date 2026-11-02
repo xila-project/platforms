@@ -76,9 +76,27 @@ fn out_of_space_removes_incomplete_output() {
     assert!(!f.0.join("full.img").exists());
 }
 
+fn write_bundle(root: &std::path::Path, app: &str) {
+    let bundle = root.join(format!("xila.{}", app.replace('_', "-")));
+    fs::create_dir_all(bundle.join(".xila")).unwrap();
+    fs::create_dir_all(bundle.join("executables")).unwrap();
+    fs::write(
+        bundle.join(".xila/manifest.json"),
+        format!("manifest for {app}"),
+    )
+    .unwrap();
+    fs::write(
+        bundle.join(format!("executables/{app}.wasm")),
+        format!("guest fixture for {app}"),
+    )
+    .unwrap();
+    fs::write(bundle.join("shortcut.json"), format!("shortcut for {app}")).unwrap();
+}
+
 #[test]
 fn browser_and_native_bundles_contain_their_declared_apps() {
     let f = Fixture::new();
+    let bundles = f.0.join("bundles");
     for app in [
         "calculator",
         "weather",
@@ -87,18 +105,14 @@ fn browser_and_native_bundles_contain_their_declared_apps() {
         "synth",
         "text_editor",
     ] {
-        fs::write(
-            f.0.join(format!("{app}.wasm")),
-            format!("guest fixture for {app}"),
-        )
-        .unwrap();
+        write_bundle(&bundles, app);
     }
     for profile in ["native", "wasm"] {
         let output = Command::new(env!("CARGO_BIN_EXE_fs_image"))
             .arg(f.0.join(format!("{profile}.img")))
             .arg("4194304")
-            .args(["--bundle", profile, "--applications-dir"])
-            .arg(&f.0)
+            .args(["--bundle", profile, "--bundles-dir"])
+            .arg(&bundles)
             .output()
             .unwrap();
         assert!(
@@ -109,33 +123,42 @@ fn browser_and_native_bundles_contain_their_declared_apps() {
         let text = String::from_utf8_lossy(&output.stdout);
         assert!(text.contains("calculator,clock,pixel_painter,synth,text_editor"));
         let image = fs::read(f.0.join(format!("{profile}.img"))).unwrap();
+        let contains = |content: &[u8]| image.windows(content.len()).any(|bytes| bytes == content);
         for app in ["synth", "text_editor"] {
-            let fixture = format!("guest fixture for {app}");
-            let shortcut = application_shortcuts::shortcut(app).unwrap();
-            for content in [fixture.as_bytes(), shortcut.as_bytes()] {
-                assert!(image.windows(content.len()).any(|bytes| bytes == content));
+            for content in [
+                format!("guest fixture for {app}"),
+                format!("shortcut for {app}"),
+                format!("manifest for {app}"),
+            ] {
+                assert!(contains(content.as_bytes()), "{profile}: {content}");
             }
         }
         assert_eq!(text.contains(",weather"), profile == "native");
-        let activity = b"/applications/executables/activity";
+        assert_eq!(contains(b"guest fixture for weather"), profile == "native");
         assert_eq!(
-            image.windows(activity.len()).any(|bytes| bytes == activity),
+            contains(b"/applications/executables/activity"),
             profile == "native"
         );
+        assert!(contains(b"/applications/executables/terminal"));
     }
 }
 
 #[test]
-fn missing_bundle_binary_is_an_error_without_output() {
+fn missing_bundle_is_an_error_without_output() {
     let f = Fixture::new();
+    let bundles = f.0.join("bundles");
+    for app in ["calculator", "clock", "pixel_painter", "synth"] {
+        write_bundle(&bundles, app);
+    }
     let output = Command::new(env!("CARGO_BIN_EXE_fs_image"))
         .arg(f.0.join("missing.img"))
         .arg("4194304")
-        .args(["--bundle", "wasm", "--applications-dir"])
-        .arg(&f.0)
+        .args(["--bundle", "wasm", "--bundles-dir"])
+        .arg(&bundles)
         .output()
         .unwrap();
     assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("missing bundle xila.text-editor"));
     assert!(!f.0.join("missing.img").exists());
 }
 

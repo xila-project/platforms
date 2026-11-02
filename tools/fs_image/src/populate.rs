@@ -44,7 +44,13 @@ fn attributes(path: &str, kind: Kind) -> Attributes {
     ) {
         result = result.set_permissions(Permissions::from_octal(0o700).unwrap());
     }
-    if path.starts_with("/data/applications/") {
+    // Global application state is root-only (Core enforces the same at boot);
+    // applications keep their data under /users/<uid>/applications/.
+    if path == "/data/applications"
+        || path.starts_with("/data/applications/")
+        || path == "/configuration/applications"
+        || path.starts_with("/configuration/applications/")
+    {
         result = result
             .set_user(users::UserIdentifier::ROOT)
             .set_group(users::GroupIdentifier::ROOT)

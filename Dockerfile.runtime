@@ -37,13 +37,13 @@ RUN npm ci --ignore-scripts
 
 COPY . .
 
-# Applications are independently built and supplied as a named BuildKit context.
-COPY --from=applications / /applications/
+# Application bundles are independently built and supplied as a named BuildKit context.
+COPY --from=applications / /bundles/
 RUN mkdir -p target/seed/native \
     && cargo run --locked --package xila-fs-image -- \
         target/seed/native/seed.img 16777216 \
         --bundle native \
-        --applications-dir /applications \
+        --bundles-dir /bundles \
     && cargo build --locked --package xila-native-example --bin xila-runtime --release \
     && test -s target/release/xila-runtime \
     && test -s target/seed/native/seed.img \

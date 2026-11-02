@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/xila-project/applications/main/schemas/shell-shortcut.schema.json",
+  "name": "File manager",
+  "command": "/applications/executables/file_manager",
+  "arguments": [],
+  "terminal": false,
+  "icon_string": "Fm",
+  "icon_color": [0, 188, 212]
+}

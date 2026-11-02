@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/xila-project/applications/main/schemas/shell-shortcut.schema.json",
+  "name": "Terminal",
+  "command": "/applications/executables/terminal",
+  "arguments": [],
+  "terminal": false,
+  "icon_string": ">_",
+  "icon_color": [0, 0, 0]
+}

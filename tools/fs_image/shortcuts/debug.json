@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/xila-project/applications/main/schemas/shell-shortcut.schema.json",
+  "name": "Debug",
+  "command": "/applications/executables/debug",
+  "arguments": [],
+  "terminal": false,
+  "icon_string": "Db",
+  "icon_color": [235, 87, 87]
+}

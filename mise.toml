@@ -18,21 +18,35 @@ description = "Test filesystem images and package verification"
 run = "cargo test --locked -p xila-fs-image -p xila-prepare-applications"
 
 [tasks."image:native"]
-description = "Create a native seed from already built Wasm applications"
+description = "Create a native seed from the released bundles in bundles.lock.json, or from XILA_BUNDLES_DIR"
 run = '''
 set -eu
-: "${XILA_APPLICATIONS_DIR:?set XILA_APPLICATIONS_DIR to the directory of built .wasm applications}"
 mkdir -p target/seed/native
-cargo run --locked -p xila-fs-image -- target/seed/native/seed.img 16777216 --bundle native --applications-dir "$XILA_APPLICATIONS_DIR"
+bundles="${XILA_BUNDLES_DIR:-}"
+if [ -z "$bundles" ]; then
+  bundles=target/seed/native/bundles
+  rm -rf "$bundles"
+  cargo build --locked -p xila-prepare-applications
+  python3 tools/prepare_seed.py --profile native --output "$bundles" \
+    --tool "${CARGO_TARGET_DIR:-target}/debug/xila-prepare-applications" --max-abi 1
+fi
+cargo run --locked -p xila-fs-image -- target/seed/native/seed.img 16777216 --bundle native --bundles-dir "$bundles"
 '''
 
 [tasks."image:browser"]
-description = "Create a browser seed from already built Wasm applications"
+description = "Create a browser seed from the released bundles in bundles.lock.json, or from XILA_BUNDLES_DIR"
 run = '''
 set -eu
-: "${XILA_APPLICATIONS_DIR:?set XILA_APPLICATIONS_DIR to the directory of built .wasm applications}"
 mkdir -p target/seed/browser
-cargo run --locked -p xila-fs-image -- target/seed/browser/seed.img 16777216 --bundle wasm --applications-dir "$XILA_APPLICATIONS_DIR"
+bundles="${XILA_BUNDLES_DIR:-}"
+if [ -z "$bundles" ]; then
+  bundles=target/seed/browser/bundles
+  rm -rf "$bundles"
+  cargo build --locked -p xila-prepare-applications
+  python3 tools/prepare_seed.py --profile browser --output "$bundles" \
+    --tool "${CARGO_TARGET_DIR:-target}/debug/xila-prepare-applications" --max-abi 1
+fi
+cargo run --locked -p xila-fs-image -- target/seed/browser/seed.img 16777216 --bundle wasm --bundles-dir "$bundles"
 '''
 
 [tasks."firmware:test"]
