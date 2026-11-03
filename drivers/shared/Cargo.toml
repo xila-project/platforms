@@ -24,6 +24,12 @@ getrandom = { version = "0.4.2" }
 sha2 = { version = "0.11" }
 
 [dev-dependencies]
+task = { workspace = true, features = ["test_harness"] }
+testing = { workspace = true }
+drivers_std = { workspace = true }
+abi_definitions = { workspace = true }
+time = { workspace = true }
+virtual_file_system = { workspace = true }
 critical-section = { workspace = true, features = ["std"] }
 
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dev-dependencies]
