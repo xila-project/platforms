@@ -49,6 +49,8 @@ embassy-executor = { workspace = true, default-features = false, features = [
 arboard = { version = "3.6", features = ["wayland-data-control"] }
 
 [dev-dependencies]
+little_fs = { workspace = true }
+time = { workspace = true }
 task = { workspace = true, features = ["test_harness"] }
 testing = { workspace = true }
 abi_definitions = { workspace = true }

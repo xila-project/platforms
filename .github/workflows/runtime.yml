@@ -71,7 +71,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: xila-project/applications
-          ref: 1df34f33f5084ba0bdb2eb326c13ab26f8412319
+          ref: 549ff5149ae6e35892d3efcc3f40172b64e15d02
           path: .application-src
           persist-credentials: false
       - run: mise run ci:build-applications
@@ -178,7 +178,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: xila-project/applications
-          ref: 1df34f33f5084ba0bdb2eb326c13ab26f8412319
+          ref: 549ff5149ae6e35892d3efcc3f40172b64e15d02
           path: .application-src
           persist-credentials: false
       - name: Build independent WASI guest artifacts
