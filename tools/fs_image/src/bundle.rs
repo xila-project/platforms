@@ -79,6 +79,8 @@ pub fn prepare(profile: &str, bundles: &Path) -> Result<Staging, Box<dyn Error>>
         "system/libraries",
         "system/services",
         "configuration/system/packages",
+        "configuration/system/packages/repositories",
+        "configuration/system/packages/installed",
         "configuration/applications",
         "configuration/shared/applications/shortcuts",
         "devices/audio",
@@ -135,6 +137,15 @@ pub fn prepare(profile: &str, bundles: &Path) -> Result<Staging, Box<dyn Error>>
             native_shortcut(name).ok_or("unknown native application")?,
         )?;
     }
+    // The official registry, trusted by its root key (fingerprint
+    // f0df 8609 b382 1414 7e39 51c0 b40b c2ea), so `package install` works
+    // without a trust prompt. Versions start at 0 and only increase.
+    fs::write(
+        staging
+            .0
+            .join("configuration/system/packages/repositories/xila.json"),
+        include_str!("../repositories/xila.json"),
+    )?;
     println!("Prepared {profile} bundle: {}", guests.join(","));
     Ok(staging)
 }

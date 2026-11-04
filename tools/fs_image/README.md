@@ -14,6 +14,13 @@ cargo run -p xila-fs-image -- native.img 16777216 --bundle native --bundles-dir 
 cargo run -p xila-fs-image -- browser.img 16777216 --bundle wasm --bundles-dir bundles
 ```
 
+The official package registry is seeded as the `xila` repository
+([`repositories/xila.json`](repositories/xila.json), in
+`/configuration/system/packages/repositories/`), pinned to its root key
+`AJEDFQ2MPtUO0vu/BnC7xX5Ag8sBuq6DF5+ShKfCQgU=` (fingerprint
+`f0df 8609 b382 1414 7e39 51c0 b40b c2ea`), so `package install <name>` needs no
+trust prompt.
+
 Each application is seeded as a self-contained bundle at
 `/applications/bundles/<package-id>/` (`.xila/manifest.json`, `executables/`,
 `shortcut.json`, ...), exactly as an installed package. Bundle directories come

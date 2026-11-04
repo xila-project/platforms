@@ -140,6 +140,9 @@ fn browser_and_native_bundles_contain_their_declared_apps() {
             profile == "native"
         );
         assert!(contains(b"/applications/executables/terminal"));
+        assert!(contains(
+            br#""name":"xila","url":"https://registry.xila.dev","root_key":"AJEDFQ2MPtUO0vu/BnC7xX5Ag8sBuq6DF5+ShKfCQgU=""#
+        ));
     }
 }
 
