@@ -5148,7 +5148,7 @@ dependencies = [
 [[package]]
 name = "xila-activity"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=1075f724d5c21c4c28678c789a6f75dfb17e1f5e#1075f724d5c21c4c28678c789a6f75dfb17e1f5e"
+source = "git+https://github.com/xila-project/applications?rev=68318786318503557053c06cf803236f1dba99de#68318786318503557053c06cf803236f1dba99de"
 dependencies = [
  "embassy-futures",
  "xila",
@@ -5190,7 +5190,7 @@ dependencies = [
 [[package]]
 name = "xila-command-line-shell"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=1075f724d5c21c4c28678c789a6f75dfb17e1f5e#1075f724d5c21c4c28678c789a6f75dfb17e1f5e"
+source = "git+https://github.com/xila-project/applications?rev=68318786318503557053c06cf803236f1dba99de#68318786318503557053c06cf803236f1dba99de"
 dependencies = [
  "getargs",
  "getargs-derive",
@@ -5200,7 +5200,7 @@ dependencies = [
 [[package]]
 name = "xila-debug-application"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=1075f724d5c21c4c28678c789a6f75dfb17e1f5e#1075f724d5c21c4c28678c789a6f75dfb17e1f5e"
+source = "git+https://github.com/xila-project/applications?rev=68318786318503557053c06cf803236f1dba99de#68318786318503557053c06cf803236f1dba99de"
 dependencies = [
  "serde_json",
  "xila",
@@ -5395,7 +5395,7 @@ dependencies = [
 [[package]]
 name = "xila-file-manager"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=1075f724d5c21c4c28678c789a6f75dfb17e1f5e#1075f724d5c21c4c28678c789a6f75dfb17e1f5e"
+source = "git+https://github.com/xila-project/applications?rev=68318786318503557053c06cf803236f1dba99de#68318786318503557053c06cf803236f1dba99de"
 dependencies = [
  "xila",
 ]
@@ -5468,7 +5468,7 @@ dependencies = [
 [[package]]
 name = "xila-graphical-shell"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=1075f724d5c21c4c28678c789a6f75dfb17e1f5e#1075f724d5c21c4c28678c789a6f75dfb17e1f5e"
+source = "git+https://github.com/xila-project/applications?rev=68318786318503557053c06cf803236f1dba99de#68318786318503557053c06cf803236f1dba99de"
 dependencies = [
  "getargs",
  "getargs-derive",
@@ -5598,13 +5598,14 @@ dependencies = [
 [[package]]
 name = "xila-package-application"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=1075f724d5c21c4c28678c789a6f75dfb17e1f5e#1075f724d5c21c4c28678c789a6f75dfb17e1f5e"
+source = "git+https://github.com/xila-project/applications?rev=68318786318503557053c06cf803236f1dba99de#68318786318503557053c06cf803236f1dba99de"
 dependencies = [
  "getargs",
  "getargs-derive",
  "tar-no-std 0.5.0 (git+https://github.com/AlixANNERAUD/tar-no-std?rev=ecdd39990ae4143d36b7f2adcf3eff2f971fea11)",
  "xila",
  "xila-abi-declarations",
+ "xila-package-manager",
  "xila-package-manifest",
  "xila-package-reader",
  "xila-package-verification",
@@ -5612,8 +5613,17 @@ dependencies = [
 
 [[package]]
 name = "xila-package-bundle"
-version = "0.2.0"
-source = "git+https://github.com/xila-project/package_manager?rev=277d017c2da182b7d72081e4ca1dd555425c35bf#277d017c2da182b7d72081e4ca1dd555425c35bf"
+version = "0.3.0"
+source = "git+https://github.com/xila-project/package_manager?rev=d0ace2eb803745a596fe6c5618fb6812ef20a9cb#d0ace2eb803745a596fe6c5618fb6812ef20a9cb"
+dependencies = [
+ "xila-package-manifest",
+ "xila-package-verification",
+]
+
+[[package]]
+name = "xila-package-manager"
+version = "0.3.0"
+source = "git+https://github.com/xila-project/package_manager?rev=d0ace2eb803745a596fe6c5618fb6812ef20a9cb#d0ace2eb803745a596fe6c5618fb6812ef20a9cb"
 dependencies = [
  "xila-package-manifest",
  "xila-package-verification",
@@ -5621,16 +5631,16 @@ dependencies = [
 
 [[package]]
 name = "xila-package-manifest"
-version = "0.2.0"
-source = "git+https://github.com/xila-project/package_manager?rev=277d017c2da182b7d72081e4ca1dd555425c35bf#277d017c2da182b7d72081e4ca1dd555425c35bf"
+version = "0.3.0"
+source = "git+https://github.com/xila-project/package_manager?rev=d0ace2eb803745a596fe6c5618fb6812ef20a9cb#d0ace2eb803745a596fe6c5618fb6812ef20a9cb"
 dependencies = [
  "miniserde",
 ]
 
 [[package]]
 name = "xila-package-reader"
-version = "0.2.0"
-source = "git+https://github.com/xila-project/package_manager?rev=277d017c2da182b7d72081e4ca1dd555425c35bf#277d017c2da182b7d72081e4ca1dd555425c35bf"
+version = "0.3.0"
+source = "git+https://github.com/xila-project/package_manager?rev=d0ace2eb803745a596fe6c5618fb6812ef20a9cb#d0ace2eb803745a596fe6c5618fb6812ef20a9cb"
 dependencies = [
  "tar-no-std 0.5.0 (git+https://github.com/AlixANNERAUD/tar-no-std?rev=ecdd39990ae4143d36b7f2adcf3eff2f971fea11)",
  "xila-package-bundle",
@@ -5641,7 +5651,7 @@ dependencies = [
 [[package]]
 name = "xila-package-verification"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/package_manager?rev=277d017c2da182b7d72081e4ca1dd555425c35bf#277d017c2da182b7d72081e4ca1dd555425c35bf"
+source = "git+https://github.com/xila-project/package_manager?rev=d0ace2eb803745a596fe6c5618fb6812ef20a9cb#d0ace2eb803745a596fe6c5618fb6812ef20a9cb"
 dependencies = [
  "ed25519-dalek",
  "sha2 0.11.1",
@@ -5650,8 +5660,8 @@ dependencies = [
 
 [[package]]
 name = "xila-package-writer"
-version = "0.2.0"
-source = "git+https://github.com/xila-project/package_manager?rev=277d017c2da182b7d72081e4ca1dd555425c35bf#277d017c2da182b7d72081e4ca1dd555425c35bf"
+version = "0.3.0"
+source = "git+https://github.com/xila-project/package_manager?rev=d0ace2eb803745a596fe6c5618fb6812ef20a9cb#d0ace2eb803745a596fe6c5618fb6812ef20a9cb"
 dependencies = [
  "tar",
  "xila-package-bundle",
@@ -5676,7 +5686,7 @@ dependencies = [
 [[package]]
 name = "xila-settings"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=1075f724d5c21c4c28678c789a6f75dfb17e1f5e#1075f724d5c21c4c28678c789a6f75dfb17e1f5e"
+source = "git+https://github.com/xila-project/applications?rev=68318786318503557053c06cf803236f1dba99de#68318786318503557053c06cf803236f1dba99de"
 dependencies = [
  "const_format",
  "embassy-futures",
@@ -5732,7 +5742,7 @@ dependencies = [
 [[package]]
 name = "xila-terminal"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=1075f724d5c21c4c28678c789a6f75dfb17e1f5e#1075f724d5c21c4c28678c789a6f75dfb17e1f5e"
+source = "git+https://github.com/xila-project/applications?rev=68318786318503557053c06cf803236f1dba99de#68318786318503557053c06cf803236f1dba99de"
 dependencies = [
  "xila",
 ]
@@ -5802,7 +5812,7 @@ dependencies = [
 [[package]]
 name = "xila-wasm"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?rev=1075f724d5c21c4c28678c789a6f75dfb17e1f5e#1075f724d5c21c4c28678c789a6f75dfb17e1f5e"
+source = "git+https://github.com/xila-project/applications?rev=68318786318503557053c06cf803236f1dba99de#68318786318503557053c06cf803236f1dba99de"
 dependencies = [
  "embassy-time",
  "getargs",
