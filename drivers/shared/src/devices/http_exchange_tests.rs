@@ -78,6 +78,22 @@ fn premature_eof_and_header_limit() {
     assert_eq!(replay(&wire, 10, 8), Err(Error::FileTooLarge));
 }
 #[test]
+fn large_redirect_head_fits() {
+    // Shape of a GitHub release download redirect: one ~4 KB header line and a
+    // ~1 KB Location, about 5.5 KB in total.
+    let head = [
+        b"HTTP/1.1 302 Found\r\nContent-Security-Policy: ".as_slice(),
+        &std::vec![b'p'; 3995],
+        b"\r\nLocation: https://release-assets.example/",
+        &std::vec![b'l'; 900],
+        b"\r\nContent-Length: 0\r\n\r\n",
+    ]
+    .concat();
+    assert!(head.len() > 5000 && head.len() < RESPONSE_BUFFER_SIZE);
+    assert_eq!(replay(&head, 10, 8).unwrap(), head);
+}
+
+#[test]
 fn close_retires_generation_and_wakes_producer() {
     let mut context = ClientContext::new();
     let old = context.exchange.begin().unwrap();
@@ -216,7 +232,11 @@ mod memory {
         let small = download(4096);
         let large = download(4 * 1024 * 1024);
         assert_eq!(small, large);
-        assert!(large < 4096, "exchange peak: {large}");
+        // One response buffer plus bookkeeping, whatever the body size.
+        assert!(
+            large < RESPONSE_BUFFER_SIZE + 1024,
+            "exchange peak: {large}"
+        );
         std::println!("HTTP exchange heap peak: {small} bytes (4 KiB and 4 MiB bodies)");
     }
 }
