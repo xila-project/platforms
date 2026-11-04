@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: xila-project/applications
-          ref: 549ff5149ae6e35892d3efcc3f40172b64e15d02
+          ref: 1075f724d5c21c4c28678c789a6f75dfb17e1f5e
           path: .application-src
           persist-credentials: false
       - uses: xila-project/workspace/.github/actions/setup-rust@d4ff44239bcfa0bc662e37f38d00f3d23f8f04db
