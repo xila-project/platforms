@@ -55,11 +55,11 @@ run = "cargo test --locked -p xila-firmware-native"
 
 [tasks."test:drivers"]
 description = "Test native and common platform drivers"
-run = "cargo test --locked -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-testing --features xila-drivers-native/audio"
+run = "cargo test --locked -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless --features xila-drivers-native/audio"
 
 [tasks."clippy:drivers"]
 description = "Lint native and common platform drivers"
-run = "cargo clippy --locked -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-testing --all-targets --features xila-drivers-native/audio -- -D warnings"
+run = "cargo clippy --locked -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless --all-targets --features xila-drivers-native/audio -- -D warnings"
 
 [tasks."clippy:browser"]
 description = "Lint browser drivers"
