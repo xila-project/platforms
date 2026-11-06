@@ -4,6 +4,19 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+critical-section = { workspace = true }
+drivers_core = { workspace = true }
+embedded-hal = { workspace = true }
+peripherals = { workspace = true, features = ["gpio"] }
+task = { workspace = true }
+virtual_file_system = { workspace = true }
+
+[target.'cfg(any(target_arch = "xtensa", target_arch = "riscv32"))'.dependencies]
+esp-hal = { version = "=1.2.2", default-features = false, features = ["unstable"] }
+
+[features]
+esp32 = ["esp-hal/esp32"]
+esp32s3 = ["esp-hal/esp32s3"]
 
 [lib]
 name = "drivers_espressif"

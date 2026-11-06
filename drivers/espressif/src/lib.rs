@@ -1,4 +1,4 @@
-#![cfg(target_vendor = "espressif")]
+#![cfg(any(target_arch = "xtensa", target_arch = "riscv32"))]
 
 pub mod chips;
 
