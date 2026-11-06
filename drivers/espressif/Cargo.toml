@@ -7,7 +7,8 @@ edition = "2024"
 critical-section = { workspace = true }
 drivers_core = { workspace = true }
 embedded-hal = { workspace = true }
-peripherals = { workspace = true, features = ["gpio"] }
+embedded-io = { workspace = true }
+peripherals = { workspace = true, features = ["gpio", "i2c", "spi", "uart"] }
 task = { workspace = true }
 virtual_file_system = { workspace = true }
 

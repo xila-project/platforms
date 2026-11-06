@@ -3,3 +3,5 @@
 pub mod chips;
 
 pub mod shared;
+
+pub mod peripherals;
