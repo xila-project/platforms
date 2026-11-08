@@ -1,4 +1,13 @@
-# Xila Platforms
+<h1>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/brand/header-dark.svg">
+  <img src=".github/brand/header-light.svg" alt="Xila Platforms — Platform drivers and runtime assembly." width="1280">
+</picture>
+</h1>
+
+[Documentation](https://www.xila.dev/docs/) ·
+[Try Xila](https://platforms.xila.dev/) ·
+[Community](https://matrix.to/#/#xila:anneraud.fr)
 
 This workspace assembles Xila runtimes, drivers, the integration harness and seed images. Core and Applications are pinned Git dependencies in `Cargo.toml`; the current branches are part of an unfinished coordinated migration.
 
@@ -54,3 +63,13 @@ currently requires a root (UID 0) Xila task; the seeded administrator login
 is UID 1000 and has no implicit privilege escalation. A privileged package
 service is future work. See [the CLI README](https://github.com/xila-project/applications/tree/main/executables/package)
 for limitations and security assumptions.
+
+<!-- xila:footer:start -->
+
+---
+
+Part of **[Xila](https://www.xila.dev/)** ·
+[Repositories](https://github.com/xila-project) ·
+[Community](https://matrix.to/#/#xila:anneraud.fr)
+
+<!-- xila:footer:end -->
