@@ -2,15 +2,6 @@ name: Cross-repository integration
 on:
   pull_request:
   workflow_dispatch:
-    inputs:
-      core_ref:
-        description: Explicit Core commit SHA
-        required: true
-        type: string
-      applications_ref:
-        description: Explicit Applications commit SHA
-        required: true
-        type: string
 permissions:
   contents: read
 jobs:
@@ -38,14 +29,14 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: xila-project/core
-          ref: ${{ inputs.core_ref || steps.locked.outputs.core }}
+          ref: ${{ steps.locked.outputs.core }}
           path: core
           persist-credentials: false
       - name: "Setup | Checkout applications"
         uses: actions/checkout@v7
         with:
           repository: xila-project/applications
-          ref: ${{ inputs.applications_ref || steps.locked.outputs.applications }}
+          ref: ${{ steps.locked.outputs.applications }}
           path: applications
           persist-credentials: false
       - name: "Setup | Checkout package_manager"
