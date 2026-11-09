@@ -4,9 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-firmware_update = { package = "xila-firmware-update", git = "https://github.com/xila-project/core", rev = "0c7ccab85c0f360b8b93d7e61408b287b762ff96", features = [
-  "native",
-] }
+firmware_update = { workspace = true, features = ["native"] }
 file_system = { workspace = true }
 virtual_file_system = { workspace = true }
 task = { workspace = true, features = ["test_harness"] }
