@@ -28,7 +28,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     sections = {
-        "https://github.com/xila-project/core": (args.core, ["core", "libraries", "subsystems", "drivers/core"]),
+        "https://github.com/xila-project/core": (args.core, ["core", "devices", "drivers", "libraries", "subsystems"]),
         "https://github.com/xila-project/platforms": (args.platforms, ["drivers"]),
         "https://github.com/xila-project/applications": (args.applications, ["executables"]),
         **({"https://github.com/xila-project/package_manager": (args.package_manager, ["crates"])} if args.package_manager else {}),
