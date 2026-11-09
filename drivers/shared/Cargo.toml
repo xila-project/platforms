@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 neural_network = { workspace = true, optional = true }
+neural_network_driver = { workspace = true, optional = true }
 nanoglia = { workspace = true, optional = true, features = [
   "alloc",
   "kernels",
@@ -34,6 +35,7 @@ sha2 = { version = "0.11" }
 [features]
 neural-network = [
   "dep:neural_network",
+  "dep:neural_network_driver",
   "dep:nanoglia",
   "dep:virtual_file_system",
 ]

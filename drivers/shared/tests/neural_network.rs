@@ -2,7 +2,7 @@
 #[cfg(feature = "neural-network-cmsis-nn")]
 use file_system::{BaseOperations, Context};
 use file_system::{ControlCommand, ControlCommandIdentifier};
-use neural_network::{
+use neural_network_driver::{
     COMPUTE, GET_INPUT_COUNT, GET_INPUT_INFO, GET_INPUT_QUANTIZATION, GET_OUTPUT_COUNT,
     GET_OUTPUT_INFO, GET_OUTPUT_QUANTIZATION, QuantizationEntry, QuantizationRequest,
     SET_INPUT_INDEX, SET_OUTPUT_INDEX,

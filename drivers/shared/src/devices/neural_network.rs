@@ -1,9 +1,8 @@
 //! Nanoglia model ownership and accelerator selection for platform assemblies.
 use file_system::{Error, Result};
 use nanoglia::{Encoding, Graph, GraphExecutionContext, GraphHandle, OwnedGraph};
-use neural_network::{
-    Backend, MAX_TENSOR_RANK, NeuralNetworkDevice, QuantizationEntry, TensorInfo,
-};
+use neural_network::{Backend, QuantizationEntry, TensorInfo};
+use neural_network_driver::{MAX_TENSOR_RANK, NeuralNetworkDevice};
 use synchronization::Arc;
 
 pub use nanoglia::{Global, Target};

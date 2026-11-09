@@ -18,6 +18,7 @@ repository = "https://github.com/xila-project/core"
 [workspace.dependencies]
 firmware_update = { package = "xila-firmware-update", git = "https://github.com/xila-project/core", branch = "main" }
 neural_network = { package = "xila-neural-network", git = "https://github.com/xila-project/core", branch = "main" }
+neural_network_driver = { package = "xila-neural-network-driver", git = "https://github.com/xila-project/core", branch = "main" }
 nanoglia = { git = "https://github.com/AlixANNERAUD/nanoglia", rev = "eec3404a606c21c12a498027f51f7bd1d18e198f", default-features = false }
 xila = { git = "https://github.com/xila-project/core", branch = "main" }
 xila_http = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
