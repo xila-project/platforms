@@ -1,11 +1,11 @@
 mod support;
 use file_system::{AccessFlags, MemoryDevice, Permissions};
 use firmware_update::device::*;
-use firmware_update::nor::MemoryNor;
-use firmware_update::simulator::{FLASH_SIZE, Simulator};
 use support::*;
 use users::{GroupIdentifier, UserIdentifier};
 use virtual_file_system::{Error, File, ItemStatic, VirtualFileSystem};
+use xila_firmware_native::nor::MemoryNor;
+use xila_firmware_native::simulator::{FLASH_SIZE, Simulator};
 extern crate abi_definitions;
 drivers_std::memory::instantiate_global_allocator!();
 

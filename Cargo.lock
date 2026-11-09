@@ -5513,17 +5513,9 @@ name = "xila-firmware-update"
 version = "0.1.0"
 source = "git+https://github.com/xila-project/core?rev=e2f221a8a489b6b989a3926c6bbbd20bc152e06c#e2f221a8a489b6b989a3926c6bbbd20bc152e06c"
 dependencies = [
- "critical-section",
- "verification",
- "xila-abi-definitions",
  "xila-file-system",
- "xila-little-fs",
  "xila-shared",
  "xila-synchronization",
- "xila-task",
- "xila-time",
- "xila-users",
- "xila-virtual-file-system",
 ]
 
 [[package]]
