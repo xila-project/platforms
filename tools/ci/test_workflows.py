@@ -21,7 +21,34 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         self.assertNotIn('LITTLEFS_CONFIG', read('.cargo/config.toml'))
         binding = tomllib.loads(read('Cargo.toml'))['patch']['crates-io']['littlefs2-sys']
         self.assertEqual(binding['git'], 'https://github.com/xila-project/core')
-        self.assertRegex(binding['rev'], r'^[0-9a-f]{40}$')
+        # Xila sources track main by branch; Cargo.lock holds the exact commit.
+        self.assertEqual(binding.get('branch'), 'main')
+        self.assertNotIn('rev', binding)
+
+    def test_xila_git_sources_track_main(self):
+        # Cargo.lock holds the exact commit; every Xila repository must use the same
+        # `branch = "main"` reference so Cargo unifies Core, Applications and
+        # package_manager instead of resolving duplicate copies.
+        manifests = [tomllib.loads(read('Cargo.toml')), tomllib.loads(read('tools/artifacts/Cargo.toml'))]
+        sections = []
+        for cargo in manifests:
+            sections.append(cargo.get('workspace', {}).get('dependencies', {}))
+            sections.append(cargo.get('dependencies', {}))
+            sections.extend(cargo.get('patch', {}).values())
+        for dependencies in sections:
+            for key, item in dependencies.items():
+                if isinstance(item, dict) and item.get('git', '').startswith('https://github.com/xila-project/'):
+                    self.assertEqual(item.get('branch'), 'main', key)
+                    self.assertFalse({'rev', 'tag'} & item.keys(), key)
+        locked = {}
+        for package in tomllib.loads(read('Cargo.lock'))['package']:
+            match = re.match(r'git\+https://github\.com/xila-project/([a-z_]+)\?(.*)#([0-9a-f]{40})$',
+                             package.get('source', ''))
+            if match:
+                self.assertEqual(match.group(2), 'branch=main', package['name'])
+                locked.setdefault(match.group(1), set()).add(match.group(3))
+        for repository, revisions in locked.items():
+            self.assertEqual(len(revisions), 1, repository)
 
     def test_runtime_pr_has_no_publish_permissions_and_runs_smoke(self):
         workflow = read('.github/workflows/runtime.yml')

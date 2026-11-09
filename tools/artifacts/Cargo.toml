@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-xila-package-manifest = { git = "https://github.com/xila-project/package_manager", rev = "277d017c2da182b7d72081e4ca1dd555425c35bf" }
+xila-package-manifest = { git = "https://github.com/xila-project/package_manager", branch = "main" }
 wasmparser = "0.228"
 abi_declarations = { workspace = true }
-xila-package-reader = { git = "https://github.com/xila-project/package_manager", rev = "277d017c2da182b7d72081e4ca1dd555425c35bf" }
-xila-package-verification = { git = "https://github.com/xila-project/package_manager", rev = "277d017c2da182b7d72081e4ca1dd555425c35bf", default-features = false, features = [
+xila-package-reader = { git = "https://github.com/xila-project/package_manager", branch = "main" }
+xila-package-verification = { git = "https://github.com/xila-project/package_manager", branch = "main", default-features = false, features = [
   "sha256",
   "ed25519",
 ] }
@@ -16,4 +16,4 @@ tar-no-std = { version = "0.5.0", default-features = false }
 
 [dev-dependencies]
 ed25519-dalek = { version = "3.0", default-features = false }
-xila-package-writer = { git = "https://github.com/xila-project/package_manager", rev = "277d017c2da182b7d72081e4ca1dd555425c35bf" }
+xila-package-writer = { git = "https://github.com/xila-project/package_manager", branch = "main" }
