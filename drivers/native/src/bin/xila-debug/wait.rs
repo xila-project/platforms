@@ -16,27 +16,54 @@ const MAX_TIMEOUT_MS: u64 = 60_000;
 pub fn run(
     endpoint: Option<std::path::PathBuf>,
     mut args: impl Iterator<Item = String>,
+    default_timeout: Option<u64>,
 ) -> Result<bool, String> {
-    let mut text = None;
-    let mut timeout = 3000;
+    let mut selector = super::selector::Selector::default();
+    let mut stable_ms = 0u64;
+    let mut stable_since = None;
+    let mut stable_value = None;
+    let mut timeout = default_timeout.unwrap_or(3000);
+    let mut timeout_seen = false;
+    let mut stable_seen = false;
     while let Some(flag) = args.next() {
         match flag.as_str() {
-            "--text" if text.is_none() => {
-                text = Some(args.next().ok_or("--text requires a value")?)
+            "--stable-ms" => {
+                if stable_seen {
+                    return Err("duplicate --stable-ms".into());
+                }
+                stable_seen = true;
+                stable_ms = args
+                    .next()
+                    .ok_or("--stable-ms requires a value")?
+                    .parse()
+                    .map_err(|_| "invalid stable interval")?;
+            }
+            "--text" | "--name" | "--role" | "--button" | "--value" | "--checked" | "--focused"
+            | "--enabled" | "--layer" => {
+                selector.set(&flag, args.next().ok_or("selector flag requires a value")?)?
             }
             "--timeout-ms" => {
+                if timeout_seen {
+                    return Err("duplicate --timeout-ms".into());
+                }
+                timeout_seen = true;
                 timeout = args
                     .next()
                     .ok_or("--timeout-ms requires a value")?
                     .parse()
                     .map_err(|_| "invalid timeout")?
             }
-            _ => return Err("wait-for expects --text TEXT [--timeout-ms 1..60000]".into()),
+            _ => {
+                return Err(
+                    "wait-for expects selectors [--stable-ms MS] [--timeout-ms 1..60000]".into(),
+                );
+            }
         }
     }
-    let text = text
-        .filter(|text| !text.is_empty())
-        .ok_or("--text requires nonempty text")?;
+    selector.validate()?;
+    if stable_ms > timeout {
+        return Err("stable interval exceeds timeout".into());
+    }
     if !(1..=MAX_TIMEOUT_MS).contains(&timeout) {
         return Err("timeout must be between 1 and 60000 ms".into());
     }
@@ -76,16 +103,38 @@ pub fn run(
             return invalid_response("missing truncation status");
         };
         saw_truncation |= truncated;
-        if let Some(found) = elements
+        let found = elements
             .iter()
-            .filter_map(|element| element["text"].as_str())
-            .find(|value| value.contains(&text))
-        {
-            println!(
-                "{}",
-                json!({"ok": true, "result": {"matched_text": found, "truncated": result["truncated"]}})
-            );
-            return Ok(true);
+            .find(|element| selector.matches(element, true));
+        if let Some(found) = found {
+            if stable_ms > 0
+                && elements
+                    .iter()
+                    .filter(|e| selector.matches(e, true))
+                    .count()
+                    > 1
+            {
+                println!(
+                    "{}",
+                    json!({"ok":false,"error":{"code":"ambiguous_target","message":"Stable waits require a unique matching widget."}})
+                );
+                return Ok(false);
+            }
+            let signature = stable_signature(found);
+            if stable_value.as_ref() != Some(&signature) {
+                stable_since = Some(Instant::now());
+                stable_value = Some(signature);
+            }
+            if stable_since.is_some_and(|t| t.elapsed() >= Duration::from_millis(stable_ms)) {
+                println!(
+                    "{}",
+                    json!({"ok":true,"result":{"matched_text":found["text"],"element":found,"truncated":truncated,"status":"observed"}})
+                );
+                return Ok(true);
+            }
+        } else {
+            stable_since = None;
+            stable_value = None;
         }
         let remaining = match deadline.checked_duration_since(Instant::now()) {
             Some(time) if !time.is_zero() => time,
@@ -106,7 +155,7 @@ fn invalid_response(reason: &str) -> Result<bool, String> {
 fn timeout_response(truncated: bool) -> Result<bool, String> {
     println!(
         "{}",
-        json!({"ok": false, "error": {"code": "timeout", "message": "Text was not observed before the deadline.", "truncated": truncated}})
+        json!({"ok": false, "error": {"code": "timeout", "message": "Matching widget state was not observed before the deadline.", "truncated": truncated}})
     );
     Ok(false)
 }
@@ -115,7 +164,11 @@ fn timed_out() -> io::Error {
     io::Error::new(io::ErrorKind::TimedOut, "wait deadline elapsed")
 }
 
-fn ready(stream: &UnixStream, event: libc::c_short, deadline: Instant) -> io::Result<()> {
+pub(super) fn ready(
+    stream: &UnixStream,
+    event: libc::c_short,
+    deadline: Instant,
+) -> io::Result<()> {
     loop {
         let remaining = deadline
             .checked_duration_since(Instant::now())
@@ -151,7 +204,7 @@ fn ready(stream: &UnixStream, event: libc::c_short, deadline: Instant) -> io::Re
     }
 }
 
-fn connect(endpoint: &Path, deadline: Instant) -> io::Result<UnixStream> {
+pub(super) fn connect(endpoint: &Path, deadline: Instant) -> io::Result<UnixStream> {
     let name = endpoint.as_os_str().as_bytes();
     // SAFETY: an all-zero sockaddr_un is valid and is populated before use.
     let mut address: libc::sockaddr_un = unsafe { std::mem::zeroed() };
@@ -209,7 +262,7 @@ fn connect(endpoint: &Path, deadline: Instant) -> io::Result<UnixStream> {
     Ok(stream)
 }
 
-fn query(endpoint: &Path, deadline: Instant) -> io::Result<Value> {
+pub(super) fn query(endpoint: &Path, deadline: Instant) -> io::Result<Value> {
     exchange(
         endpoint,
         deadline,
@@ -271,5 +324,26 @@ pub(super) fn exchange(endpoint: &Path, deadline: Instant, request: &[u8]) -> io
             return serde_json::from_slice(&bytes)
                 .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error));
         }
+    }
+}
+
+fn stable_signature(element: &Value) -> Value {
+    let mut signature = element.clone();
+    if let Some(object) = signature.as_object_mut() {
+        object.remove("id");
+        object.remove("parent_id");
+    }
+    signature
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn stable_observation_ignores_snapshot_indexes_but_not_state() {
+        let a = json!({"id":3,"parent_id":1,"value":42});
+        let b = json!({"id":9,"parent_id":5,"value":42});
+        assert_eq!(stable_signature(&a), stable_signature(&b));
+        assert_ne!(stable_signature(&a), stable_signature(&json!({"value":43})));
     }
 }
