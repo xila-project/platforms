@@ -72,6 +72,12 @@ run = "rustc --edition=2021 --target wasm32-wasip1 -O tests/container/runtime_sm
 
 [tasks."firmware:test"]
 extends = "ci:rust"
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "clippy",
+  "rustfmt",
+], targets = [
+  "wasm32-unknown-unknown",
+] }
 
 [tasks."pages:demo"]
 dir = "examples/wasm"

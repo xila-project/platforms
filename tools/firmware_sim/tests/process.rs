@@ -135,7 +135,7 @@ fn child_process_close_does_not_activate_and_fault_is_persistent() {
 }
 #[test]
 fn file_medium_requires_exclusive_process_ownership() {
-    use firmware_update::nor::FileNor;
+    use xila_firmware_native::nor::FileNor;
     let f = fixture();
     let _locked = FileNor::open(&f.0.join("flash.img"), None).unwrap();
     assert!(FileNor::open(&f.0.join("flash.img"), None).is_err());

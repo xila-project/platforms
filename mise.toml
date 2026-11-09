@@ -51,7 +51,12 @@ cargo run --locked -p xila-fs-image -- target/seed/browser/seed.img 16777216 --b
 
 [tasks."firmware:test"]
 description = "Test the native firmware simulator and VFS integration"
-run = "cargo test --locked -p xila-firmware-native"
+run = '''
+set -eu
+cargo test --locked -p xila-firmware-native
+cargo clippy --locked -p xila-firmware-native --all-targets -- -D warnings
+cargo check --locked -p xila-firmware-native --no-default-features --lib --target wasm32-unknown-unknown
+'''
 
 [tasks."test:drivers"]
 description = "Test native and common platform drivers"

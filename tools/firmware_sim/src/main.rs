@@ -1,13 +1,13 @@
 //! Native reference harness. All update/confirmation operations use the real VFS.
 extern crate abi_definitions;
 use file_system::{AccessFlags, MemoryDevice, Permissions};
-use firmware_update::{
-    device::*,
+use firmware_update::device::*;
+use std::{collections::BTreeMap, fmt::Debug, fs::File as HostFile, io::Read, path::Path};
+use virtual_file_system::{File, ItemStatic, VirtualFileSystem};
+use xila_firmware_native::{
     nor::{Fault, FileNor, PAGE},
     simulator::{FLASH_SIZE, IMAGE_CAPACITY, MANIFEST_SIZE, Simulator},
 };
-use std::{collections::BTreeMap, fmt::Debug, fs::File as HostFile, io::Read, path::Path};
-use virtual_file_system::{File, ItemStatic, VirtualFileSystem};
 static MANAGER: task::Manager = task::Manager::new();
 type Result<T> = std::result::Result<T, String>;
 fn checked<T, E: Debug>(r: std::result::Result<T, E>) -> Result<T> {
