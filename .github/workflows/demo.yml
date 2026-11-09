@@ -39,17 +39,21 @@ jobs:
           repository: xila-project/platforms
           ref: ${{ inputs.platform_ref || github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
-      - uses: actions/checkout@v7
-        with:
-          repository: xila-project/applications
-          ref: 1075f724d5c21c4c28678c789a6f75dfb17e1f5e
-          path: .application-src
-          persist-credentials: false
       - uses: xila-project/workspace/.github/actions/setup-rust@d4ff44239bcfa0bc662e37f38d00f3d23f8f04db
         with:
           cache-mode: objects
           cache-generation: v1-platforms-pages-all-locales
           save-on-workflow-dispatch: ${{ github.ref == 'refs/heads/main' }}
+      - name: "Setup | Resolve locked Xila revisions"
+        id: locked
+        run: mise run ci:locked-revisions
+      - name: "Setup | Checkout locked Applications revision"
+        uses: actions/checkout@v7
+        with:
+          repository: xila-project/applications
+          ref: ${{ steps.locked.outputs.applications }}
+          path: .application-src
+          persist-credentials: false
       - run: mise run ci:deps-npm
       - run: mise run ci:packages-host
       - name: Build localized demonstrations and verify filesystem images
