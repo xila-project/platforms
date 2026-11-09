@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+neural_network = { workspace = true, optional = true }
+nanoglia = { workspace = true, optional = true, features = [
+  "alloc",
+  "kernels",
+  "float",
+  "int16",
+] }
+virtual_file_system = { workspace = true, optional = true }
 xila_http = { workspace = true }
 file_system = { workspace = true }
 log = { workspace = true }
@@ -23,7 +31,18 @@ rand_core_06 = { package = "rand_core", version = "0.6", default-features = fals
 getrandom = { version = "0.4.2" }
 sha2 = { version = "0.11" }
 
+[features]
+neural-network = [
+  "dep:neural_network",
+  "dep:nanoglia",
+  "dep:virtual_file_system",
+]
+neural-network-cmsis-nn = ["neural-network", "nanoglia/cmsis-nn"]
+neural-network-esp-nn = ["neural-network", "nanoglia/esp-nn"]
+
 [dev-dependencies]
+users = { workspace = true }
+little_fs = { workspace = true }
 task = { workspace = true, features = ["test_harness"] }
 testing = { workspace = true }
 drivers_std = { workspace = true }
