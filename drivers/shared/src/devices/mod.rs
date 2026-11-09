@@ -10,3 +10,6 @@ pub use https_client::*;
 pub use random::*;
 
 mod http_exchange;
+
+#[cfg(feature = "neural-network")]
+pub mod neural_network;
