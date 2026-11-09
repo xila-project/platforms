@@ -3,8 +3,8 @@
 extern crate abi_definitions;
 extern crate critical_section;
 testing::instantiate_global_allocator!();
+use drivers_neural_network::{COMPUTE, GET_INPUT_INFO};
 use file_system::{AccessFlags, Flags, MemoryDevice, Position};
-use neural_network::{COMPUTE, GET_INPUT_INFO};
 use virtual_file_system::File;
 
 #[task::test]
