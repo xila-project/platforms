@@ -1,12 +1,12 @@
 #![cfg(feature = "neural-network-cmsis-nn")]
-#[cfg(feature = "neural-network-cmsis-nn")]
-use file_system::{BaseOperations, Context};
-use file_system::{ControlCommand, ControlCommandIdentifier};
-use neural_network_driver::{
+use drivers_neural_network::{
     COMPUTE, GET_INPUT_COUNT, GET_INPUT_INFO, GET_INPUT_QUANTIZATION, GET_OUTPUT_COUNT,
     GET_OUTPUT_INFO, GET_OUTPUT_QUANTIZATION, QuantizationEntry, QuantizationRequest,
     SET_INPUT_INDEX, SET_OUTPUT_INDEX,
 };
+#[cfg(feature = "neural-network-cmsis-nn")]
+use file_system::{BaseOperations, Context};
+use file_system::{ControlCommand, ControlCommandIdentifier};
 
 #[repr(C, align(16))]
 #[cfg(feature = "neural-network-cmsis-nn")]

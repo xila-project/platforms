@@ -1,7 +1,7 @@
 #![cfg(feature = "neural-network-cmsis-nn")]
 //! Count all Rust heap allocations in the VFS driver path after open.
+use drivers_neural_network::{COMPUTE, GET_INPUT_INFO};
 use file_system::{BaseOperations, Context, ControlCommand};
-use neural_network_driver::{COMPUTE, GET_INPUT_INFO};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
@@ -39,7 +39,7 @@ struct Aligned<const N: usize>([u8; N]);
 static MODEL: Aligned<{ include_bytes!("fixtures/classifier.tflite").len() }> =
     Aligned(*include_bytes!("fixtures/classifier.tflite"));
 
-fn exercise<B: neural_network::Backend>(device: &neural_network_driver::NeuralNetworkDevice<B>) {
+fn exercise<B: neural_network::Backend>(device: &drivers_neural_network::NeuralNetworkDevice<B>) {
     let mut context = Context::new_empty();
     ALLOCATIONS.with(|count| count.set(Some(0)));
     device.open(&mut context).unwrap();
