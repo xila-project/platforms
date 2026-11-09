@@ -198,6 +198,15 @@ description = "Install locked dependencies in the explicitly checked-out Applica
 tools.node = "{{ vars.node_version }}"
 run = "npm ci --prefix ../applications"
 
+[tasks."ci:locked-revisions"]
+description = "Write the Core, Applications and package_manager commits locked in Cargo.lock to the step output"
+run = """
+set -eu
+for repository in core applications package_manager; do
+  python3 tools/ci/locked_revision.py "$repository" "$repository" >> "$GITHUB_OUTPUT"
+done
+"""
+
 [tasks."ci:integration-toolchain"]
 description = "Install pinned WASI and native integration Rust targets via mise"
 tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [

@@ -8,6 +8,8 @@ import textwrap
 import tomllib
 import unittest
 
+from locked_revision import locked_revision
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -21,7 +23,36 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         self.assertNotIn('LITTLEFS_CONFIG', read('.cargo/config.toml'))
         binding = tomllib.loads(read('Cargo.toml'))['patch']['crates-io']['littlefs2-sys']
         self.assertEqual(binding['git'], 'https://github.com/xila-project/core')
-        self.assertRegex(binding['rev'], r'^[0-9a-f]{40}$')
+        # Xila sources track main by branch; Cargo.lock holds the exact commit.
+        self.assertEqual(binding.get('branch'), 'main')
+        self.assertNotIn('rev', binding)
+
+    def test_xila_git_sources_track_main(self):
+        # Cargo.lock holds the exact commit; every Xila repository must use the same
+        # `branch = "main"` reference so Cargo unifies Core, Applications and
+        # package_manager instead of resolving duplicate copies.
+        manifests = [tomllib.loads(read('Cargo.toml')), tomllib.loads(read('tools/artifacts/Cargo.toml'))]
+        sections = []
+        for cargo in manifests:
+            sections.append(cargo.get('workspace', {}).get('dependencies', {}))
+            sections.append(cargo.get('dependencies', {}))
+            sections.extend(cargo.get('patch', {}).values())
+        for dependencies in sections:
+            for key, item in dependencies.items():
+                if isinstance(item, dict) and item.get('git', '').startswith('https://github.com/xila-project/'):
+                    self.assertEqual(item.get('branch'), 'main', key)
+                    self.assertFalse({'rev', 'tag'} & item.keys(), key)
+        locked = {}
+        for package in tomllib.loads(read('Cargo.lock'))['package']:
+            match = re.match(r'git\+https://github\.com/xila-project/([a-z_]+)\?(.*)#([0-9a-f]{40})$',
+                             package.get('source', ''))
+            if match:
+                self.assertEqual(match.group(2), 'branch=main', package['name'])
+                locked.setdefault(match.group(1), set()).add(match.group(3))
+        for repository, revisions in locked.items():
+            self.assertEqual(len(revisions), 1, repository)
+        for repository in ('core', 'applications', 'package_manager'):
+            self.assertEqual(locked_revision(repository), next(iter(locked[repository])))
 
     def test_runtime_pr_has_no_publish_permissions_and_runs_smoke(self):
         workflow = read('.github/workflows/runtime.yml')
@@ -178,6 +209,15 @@ class PlatformWorkflowPolicy(unittest.TestCase):
                       'cargo metadata', 'cargo tree', 'package_seed_check.py'):
             self.assertIn(token, workflow)
         self.assertIn('assert not bad', workflow)
+        # Default checkouts follow the commits Platforms locks, not hard-coded SHAs.
+        self.assertIn('run: mise run ci:locked-revisions', workflow)
+        task = tomllib.loads(read('mise.ci.toml'))['tasks']['ci:locked-revisions']['run']
+        self.assertIn('locked_revision.py "$repository" "$repository"', task)
+        for repository, ref in (('core', 'inputs.core_ref || steps.locked.outputs.core'),
+                                ('applications', 'inputs.applications_ref || steps.locked.outputs.applications'),
+                                ('package_manager', 'steps.locked.outputs.package_manager')):
+            self.assertIn('ref: ${{ ' + ref + ' }}', workflow, repository)
+        self.assertLess(workflow.index('Resolve locked Xila revisions'), workflow.index('repository: xila-project/core'))
         self.assertIn('mise run ci:integration-build-applications', workflow)
         tasks = tomllib.loads(read('mise.ci.toml'))
         build = tasks['tasks']['ci:integration-build-applications']

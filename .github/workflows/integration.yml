@@ -21,34 +21,40 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: "Setup | Checkout core"
+      - name: "Setup | Checkout platforms"
         uses: actions/checkout@v7
         with:
           path: platforms
           persist-credentials: false
+      - name: "Setup | Activate mise"
+        uses: jdx/mise-action@v5.2.2
+      - name: "Setup | Resolve locked Xila revisions"
+        id: locked
+        run: mise run ci:locked-revisions
+        working-directory: platforms
+        env:
+          MISE_ENV: ci
       - name: "Setup | Checkout core"
         uses: actions/checkout@v7
         with:
           repository: xila-project/core
-          ref: ${{ inputs.core_ref || '95a07334899797bb8996a8546398696fbcd221a8' }}
+          ref: ${{ inputs.core_ref || steps.locked.outputs.core }}
           path: core
           persist-credentials: false
       - name: "Setup | Checkout applications"
         uses: actions/checkout@v7
         with:
           repository: xila-project/applications
-          ref: ${{ inputs.applications_ref || '1075f724d5c21c4c28678c789a6f75dfb17e1f5e' }}
+          ref: ${{ inputs.applications_ref || steps.locked.outputs.applications }}
           path: applications
           persist-credentials: false
       - name: "Setup | Checkout package_manager"
         uses: actions/checkout@v7
         with:
           repository: xila-project/package_manager
-          ref: 277d017c2da182b7d72081e4ca1dd555425c35bf
+          ref: ${{ steps.locked.outputs.package_manager }}
           path: package-manager
           persist-credentials: false
-      - name: "Setup | Activate mise"
-        uses: jdx/mise-action@v5.2.2
       - name: "Setup | Native and WASI Rust toolchain"
         run: mise run ci:integration-toolchain
         working-directory: platforms
