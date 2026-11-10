@@ -1,6 +1,6 @@
 //! Play a quiet 440 Hz tone through the shared native audio service.
 
-use audio::AudioSystem;
+use drivers_native::audio::System;
 use std::{
     pin::Pin,
     thread,
@@ -10,9 +10,9 @@ use std::{
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     const RATE: u32 = 48_000;
     const FRAMES: usize = 128;
-    let system = Box::leak(Box::new(AudioSystem::new()?));
+    let system = Box::leak(Box::new(System::new()?));
     // SAFETY: the leaked audio service can never move or be freed.
-    let system: Pin<&'static AudioSystem> = unsafe { Pin::new_unchecked(&*system) };
+    let system: Pin<&'static System> = unsafe { Pin::new_unchecked(&*system) };
     let stream = system.open_stream()?;
     stream.set_volume(25)?;
     stream.start()?;

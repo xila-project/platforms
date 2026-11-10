@@ -29,7 +29,8 @@ getargs = { version = "0.5" }
 getargs-derive = { workspace = true }
 
 [features]
-default = []
+# Host audio backs `/devices/audio/playback`; without it, audio apps stay silent.
+default = ["audio"]
 audio = ["dep:audio", "drivers_native/audio"]
 # Compatibility flag: bundled applications now always come from the seed.
 prebuilt-applications = []
