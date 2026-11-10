@@ -246,7 +246,7 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         profiles = ROOT / 'tools/fs_image/profiles'
         native = (profiles / 'native.txt').read_text().splitlines()
         browser = (profiles / 'browser.txt').read_text().splitlines()
-        self.assertEqual(native, ['calculator', 'clock', 'pixel_painter', 'synth', 'text_editor', 'weather'])
+        self.assertEqual(native, ['calculator', 'clock', 'digits', 'pixel_painter', 'synth', 'text_editor', 'weather'])
         self.assertEqual(browser, native[:-1])
 
 

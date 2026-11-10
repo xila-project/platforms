@@ -14,6 +14,12 @@
       "url": "https://github.com/xila-project/applications/releases/download/xila.clock-v0.1.0/xila.clock-0.1.0-wasm32-wasip1.xpk",
       "sha256": "6976f8d118066b7294ac051160505b2c410fa9213cffa6a7c889946cf6fdbfcd"
     },
+    "digits": {
+      "name": "xila.digits",
+      "version": "0.1.0",
+      "url": "https://github.com/xila-project/applications/releases/download/xila.digits-v0.1.0/xila.digits-0.1.0-wasm32-wasip1.xpk",
+      "sha256": "91c5edefc5eb49c2723cfb8b3c6d3510301efd0633c2dd9513c73c05db012ebc"
+    },
     "pixel_painter": {
       "name": "xila.pixel-painter",
       "version": "0.1.0",

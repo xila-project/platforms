@@ -210,14 +210,18 @@ usage with asynchronous refresh, explicit unavailable metrics, and a bounded
 start/stop demo workload. See [its metric sources and smoke test](../../executables/activity/README.md).
 It is compiled into the native runtime; it has no guest Wasm binary.
 
-## Local Digits demo
+## Digits demo
 
 The `digits` default feature registers the small CPU MNIST model at
 `/devices/nn/digits`. `--no-default-features` omits it. The model and the guest
 belong to Applications; this runtime selects the portable NN backend.
-During development, use matching Applications/Platforms branches (the runtime
-requires Applications' new `xila-digits` crate). From the multi-repository
-workspace, create a local Cargo patch configuration:
+Both reference image profiles include the signed `xila.digits` release. Build
+`mise run image:native` or `mise run image:browser`, then use a new disk to import
+the updated seed and open **Digits** from the launcher. Existing disks keep their
+installed applications.
+
+For local development from the multi-repository workspace, create a Cargo patch
+configuration:
 
 ```sh
 python3 repositories/platforms/tools/dev/local_overrides.py \

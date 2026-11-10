@@ -12,7 +12,10 @@ rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = 
 ] }
 
 [task_templates."ci:browser".tools]
-rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets = [
+# Guest graphics binding generation invokes rustfmt during the browser build.
+rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "rustfmt",
+], targets = [
   "wasm32-unknown-unknown",
 ] }
 
@@ -51,7 +54,7 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", compone
 ], targets = [
   "wasm32-wasip1",
 ] }
-run = "cargo build --locked --manifest-path .application-src/Cargo.toml --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth"
+run = "cargo build --locked --manifest-path .application-src/Cargo.toml --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth -p xila-digits"
 
 [tasks."ci:bundle-applications"]
 description = "Package the built Applications guests as unsigned bundles with their own manifests and shortcuts"
@@ -139,6 +142,7 @@ extends = "ci:rust"
 extends = "ci:browser"
 tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
   "clippy",
+  "rustfmt",
 ], targets = [
   "wasm32-unknown-unknown",
 ] }
@@ -221,4 +225,4 @@ description = "Build Applications guests with the selected integration checkouts
 tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets = [
   "wasm32-wasip1",
 ] }
-run = 'cargo build --manifest-path ../applications/Cargo.toml --config "$RUNNER_TEMP/xila-local.toml" --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth'
+run = 'cargo build --manifest-path ../applications/Cargo.toml --config "$RUNNER_TEMP/xila-local.toml" --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth -p xila-digits'

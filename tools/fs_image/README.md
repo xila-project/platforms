@@ -55,8 +55,8 @@ applications keep their data per user. Repeating a build with identical
 inputs and tool versions produces identical bytes; host file permissions and
 modification times do not enter the image.
 
-The native profile contains Calculator, Clock, Pixel Painter, Synth, Text Editor and
-Weather; the browser profile contains Calculator, Clock, Pixel Painter, Synth and Text Editor.
+The native profile contains Calculator, Clock, Digits, Pixel Painter, Synth, Text Editor and
+Weather; the browser profile contains Calculator, Clock, Digits, Pixel Painter, Synth and Text Editor.
 Both include native application shortcuts. Set `EMBEDDED_I18N_LOCALE=en`, `fr`, `es`, `de`, `pt-BR`, `it` or `pl`
 while building both guests and images. No passwords or random salts are included.
 An explicit pending marker allows runtime account initialization to finish after

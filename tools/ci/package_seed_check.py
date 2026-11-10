@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 
 PLATFORMS = Path(__file__).resolve().parents[2]
-APPS = ("calculator", "clock", "pixel_painter", "synth", "text_editor", "weather")
+APPS = ("calculator", "clock", "digits", "pixel_painter", "synth", "text_editor", "weather")
 
 
 def main() -> None:

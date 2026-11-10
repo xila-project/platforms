@@ -59,11 +59,7 @@ pub fn prepare(profile: &str, bundles: &Path) -> Result<Staging, Box<dyn Error>>
         "wasm" => include_str!("../profiles/browser.txt"),
         _ => return Err("bundle must be native or wasm".into()),
     };
-    let mut guests: Vec<&str> = manifest.lines().filter(|line| !line.is_empty()).collect();
-    // Locally built demo bundles can be staged before their first release.
-    if bundles.join("xila.digits").exists() {
-        guests.push("digits");
-    }
+    let guests: Vec<&str> = manifest.lines().filter(|line| !line.is_empty()).collect();
     let staging = loop {
         let path = std::env::temp_dir().join(format!(
             "xila-bundle-{}-{}",
