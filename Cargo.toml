@@ -9,6 +9,24 @@ inherits = "release"
 debug = "full"
 strip = false
 
+# Debug runtimes interpret Wasm guests and mix audio in real time. Unoptimized,
+# the interpreter renders Synth slower than playback and audio underruns.
+# Only these hot crates are optimized; host code keeps fast debug builds.
+[profile.dev.package.wasmi]
+opt-level = 3
+
+[profile.dev.package.wasmi_core]
+opt-level = 3
+
+[profile.dev.package.wasmi_ir]
+opt-level = 3
+
+[profile.dev.package.wasmi_collections]
+opt-level = 3
+
+[profile.dev.package.nanoaudio-dsp]
+opt-level = 3
+
 [workspace.package]
 version = "0.1.0"
 edition = "2024"

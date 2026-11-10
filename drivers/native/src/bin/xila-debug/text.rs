@@ -4,11 +4,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-const TIMEOUT: Duration = Duration::from_secs(30);
 const RETRY_DELAY: Duration = Duration::from_millis(20);
 
-pub(super) fn send(endpoint: &Path, text: &str) -> bool {
-    let deadline = Instant::now() + TIMEOUT;
+pub(super) fn send(endpoint: &Path, text: &str, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
     let mut confirmed = 0;
     let mut events = 0;
     while confirmed < text.len() {

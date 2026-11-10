@@ -246,8 +246,8 @@ async fn main(task_manager: &'static xila::task::Manager) {
     #[cfg(feature = "audio")]
     let mut audio_runner = {
         // Keep the mixer pinned for the lifetime of every mounted VFS stream.
-        let audio_system: &'static audio::AudioSystem =
-            Box::leak(Box::new(audio::AudioSystem::new().unwrap()));
+        let audio_system: &'static drivers_native::audio::System =
+            Box::leak(Box::new(drivers_native::audio::System::new().unwrap()));
         // SAFETY: the leaked service can never move or be freed.
         let audio_system = unsafe { core::pin::Pin::new_unchecked(audio_system) };
         match drivers_native::audio::new(audio_system, 1) {

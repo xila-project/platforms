@@ -68,10 +68,14 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@v5.2.2
-      - uses: actions/checkout@v7
+      - name: "Setup | Resolve locked Xila revisions"
+        id: locked
+        run: mise run ci:locked-revisions
+      - name: "Setup | Checkout locked Applications revision"
+        uses: actions/checkout@v7
         with:
           repository: xila-project/applications
-          ref: 1075f724d5c21c4c28678c789a6f75dfb17e1f5e
+          ref: ${{ steps.locked.outputs.applications }}
           path: .application-src
           persist-credentials: false
       - run: mise run ci:build-applications
@@ -174,11 +178,14 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - uses: jdx/mise-action@v5.2.2
-      - name: Check out the pinned Applications revision
+      - name: "Setup | Resolve locked Xila revisions"
+        id: locked
+        run: mise run ci:locked-revisions
+      - name: Check out the locked Applications revision
         uses: actions/checkout@v7
         with:
           repository: xila-project/applications
-          ref: 1075f724d5c21c4c28678c789a6f75dfb17e1f5e
+          ref: ${{ steps.locked.outputs.applications }}
           path: .application-src
           persist-credentials: false
       - name: Build independent WASI guest artifacts

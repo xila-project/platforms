@@ -203,9 +203,24 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         self.assertIn('cache-mode: target', ci)
         self.assertIn('cache-mode: objects', read('.github/workflows/demo.yml'))
 
+    def test_xila_checkouts_use_locked_revisions(self):
+        # Checkouts of Core, Applications and package_manager follow Cargo.lock
+        # (`ci:locked-revisions`) instead of hard-coding commits that drift.
+        checkout = re.compile(
+            r'repository: xila-project/(core|applications|package_manager)\n(?:\s+[a-z-]+: .*\n)*?\s+ref: (.*)')
+        for path in sorted((ROOT / '.github/workflows').glob('*.yml')):
+            workflow = path.read_text()
+            triggers = workflow.split('\njobs:', 1)[0]
+            if not any(event in triggers for event in ('pull_request', 'push:', 'workflow_dispatch', 'workflow_run', 'schedule')):
+                continue  # Reusable workflow: the trusted caller supplies its refs.
+            for repository, ref in checkout.findall(workflow):
+                self.assertEqual(ref.strip(), '${{ steps.locked.outputs.%s }}' % repository, f'{path.name}: {repository}')
+            if 'steps.locked.outputs.' in workflow:
+                self.assertIn('run: mise run ci:locked-revisions', workflow, path.name)
+
     def test_cross_repository_workflow_uses_explicit_refs_and_checks_identity(self):
         workflow = read('.github/workflows/integration.yml')
-        for token in ('core_ref:', 'applications_ref:', 'local_overrides.py',
+        for token in ('local_overrides.py',
                       'cargo metadata', 'cargo tree', 'package_seed_check.py'):
             self.assertIn(token, workflow)
         self.assertIn('assert not bad', workflow)
@@ -213,8 +228,10 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         self.assertIn('run: mise run ci:locked-revisions', workflow)
         task = tomllib.loads(read('mise.ci.toml'))['tasks']['ci:locked-revisions']['run']
         self.assertIn('locked_revision.py "$repository" "$repository"', task)
-        for repository, ref in (('core', 'inputs.core_ref || steps.locked.outputs.core'),
-                                ('applications', 'inputs.applications_ref || steps.locked.outputs.applications'),
+        # No caller-supplied refs: checked-out code always comes from the locked commits.
+        self.assertNotIn('inputs.', workflow)
+        for repository, ref in (('core', 'steps.locked.outputs.core'),
+                                ('applications', 'steps.locked.outputs.applications'),
                                 ('package_manager', 'steps.locked.outputs.package_manager')):
             self.assertIn('ref: ${{ ' + ref + ' }}', workflow, repository)
         self.assertLess(workflow.index('Resolve locked Xila revisions'), workflow.index('repository: xila-project/core'))

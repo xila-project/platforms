@@ -31,7 +31,8 @@ getargs-derive = { workspace = true }
 
 [features]
 digits = ["dep:digits", "drivers_shared/neural-network"]
-default = ["digits"]
+# Host audio and the portable NN demo are available in the default runtime.
+default = ["audio", "digits"]
 audio = ["dep:audio", "drivers_native/audio"]
 # Compatibility flag: bundled applications now always come from the seed.
 prebuilt-applications = []

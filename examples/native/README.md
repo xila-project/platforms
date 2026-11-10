@@ -14,10 +14,12 @@ When packaging the executable, distribute a matching seed alongside it, or pass
 its explicit path. The default disk size is 16 MiB; custom seeds and
 `--disk-size BYTES` must agree.
 
-Host audio support is disabled by default, so builds do not require ALSA
-development files. Enable it with `--features audio`, for example
-`cargo run -p xila-native-example --bin native_example --features audio -- --terminal`. Linux builds with
-audio enabled require ALSA development files.
+Host audio is enabled by default (the `audio` feature), so audio applications
+such as Synth can play through the default host output. Linux builds require
+ALSA development files (`libasound2-dev` and `pkg-config` on Debian/Ubuntu,
+installed by `mise bootstrap packages apply --manager apt`). Build with
+`--no-default-features` for a silent runtime without ALSA, as the container
+image does.
 
 Only an absent live disk is imported. Import validates a temporary copy before
 publishing it without replacement. Existing disks do not require a seed and are
@@ -41,8 +43,16 @@ runtime loading. See the repository's profiling instructions for preparing and
 selecting a seed before measurement.
 
 With the `audio` feature enabled, the example mounts `/devices/audio/playback`
-using the default host audio output. Audio initialization failures are logged
-and leave the rest of the OS usable.
+using the default host audio output, and logs `Native audio ready`. Audio
+initialization failures are logged and leave the rest of the OS usable. To
+check output without speakers, route the runtime to a PipeWire null sink and
+record its monitor:
+
+```sh
+pw-cli create-node adapter '{ factory.name=support.null-audio-sink node.name=xila-test media.class=Audio/Sink object.linger=true audio.position=[FL FR] }'
+pw-record --target xila-test -P '{ stream.capture.sink=true }' capture.wav &
+PIPEWIRE_NODE=xila-test cargo run -p xila-native-example --bin native_example -- --display-driver headless
+```
 See [Synth](../../executables/synth/README.md) for controls, silent mode and checks.
 
 ## Inspecting the graphical UI
@@ -102,6 +112,73 @@ duplicate input. Unicode is passed to LVGL text widgets; native Xila window key
 events still expose only an 8-bit character and guest window events do not expose
 key data. Applications that consume those events cannot reliably receive Unicode;
 verify the destination widget before sending text.
+
+### Selecting controls and waiting for state
+
+Inspect `capabilities` first to discover the protocol version, operations and limits.
+The tree covers the active screen and top/system layers after layout, including
+shell chrome and popups. Screenshots composite those layers in display order.
+Tree IDs are snapshot-local and must never be used as persistent selectors.
+
+```sh
+# Prefix these with cargo run -p xila-drivers-native --bin xila-debug --
+capabilities
+find --role textbox --name 'User name'
+click --role textbox --name 'User name'
+text administrator
+wait-for --role textbox --name 'User name' --text administrator --timeout-ms 3000
+click --role button --name Login
+pointer click 120 80
+wait-for --role buttonmatrix --button 7 --stable-ms 150 --timeout-ms 5000
+click --role buttonmatrix --button 7
+wait-for --role slider --name Volume --value 42 --enabled true
+```
+
+`find` requires exactly one matching visible element and a complete tree.
+`click` resolves a unique control under the graphics lock, hit-tests its current
+clipped center, and atomically queues its pointer click. It rejects ambiguous,
+obscured or truncated results. Click accepts exact `--role`, `--name`, `--text`
+and `--button` predicates; `--button` selects a virtual matrix/keyboard button.
+Roles accept LVGL class names or semantic roles. Other click predicates are
+rejected rather than silently ignored. Coordinate clicks remain available.
+
+`wait-for` accepts these predicates plus `--value`, `--checked`, `--focused`,
+`--enabled` (boolean values are `true` or `false`) and `--layer screen|top|system`.
+Its `--text` predicate is a substring; other string predicates are exact.
+Hidden, fully clipped and transparent elements are excluded. A match describes
+an observation, not general UI idle or input completion. Use widget-specific
+state instead of a launcher label to establish app readiness. `--stable-ms`
+requires a unique matching element's observed properties (excluding snapshot
+indexes) to remain unchanged for that interval;
+it does not freeze clocks, animations or other parts of the UI.
+
+The tree includes geometry/clipping, raw LVGL state, scroll position, main-part
+resolved colors, opacity, padding/gap, layout and font line height. Supported
+range widgets include value/range; dropdowns/rollers include selection text;
+matrices include up to 64 virtual buttons per widget and 128 across a tree.
+Password widgets and their descendants redact text and content, while the
+password textarea's public placeholder remains usable as a selector. Screenshot
+content follows what LVGL visibly renders, including its normal password masking.
+
+Tree responses keep a usable prefix within the 64 KiB header budget and mark
+`truncated` when objects are omitted. Per-field truncation flags and
+`buttons_truncated` expose content caps; UTF-8 is never split mid-character.
+Visibility describes hidden state, geometry and opacity; it does not prove an
+element is unoccluded. Click performs a separate hit-test. Per-app CPU/memory,
+Wasm trap history, log streaming and global frame-idle guarantees are not
+provided; `capabilities` reports unavailable instrumentation explicitly.
+
+All ordinary requests, including the complete screenshot payload and text
+queue retries, have a total deadline. The default is 30 seconds; put a
+`--timeout-ms 1..60000` option before the command to change it:
+
+```sh
+cargo run -p xila-drivers-native --bin xila-debug -- --timeout-ms 500 screenshot /tmp/xila-ui.png
+```
+
+`wait-for` defaults to 3000 ms, honors a global `--timeout-ms` when supplied,
+and lets a command-level `--timeout-ms` override that default. Duplicate flags
+and unknown layer names are rejected.
 
 ## Wi-Fi control-plane demo
 
