@@ -188,6 +188,34 @@ async fn main(task_manager: &'static xila::task::Manager) {
     virtual_file_system::clean_devices(virtual_file_system, task)
         .await
         .unwrap();
+
+    #[cfg(feature = "digits")]
+    {
+        virtual_file_system::ignore_already_exists_error(
+            virtual_file_system
+                .create_directory(task, &"/devices/nn")
+                .await,
+        )
+        .expect("Failed to create NN device directory");
+        // Device nodes persist on disk while their runtime handles do not.
+        virtual_file_system::clean_devices_in_directory(
+            virtual_file_system,
+            task,
+            xila::file_system::Path::from_str("/devices/nn"),
+        )
+        .await
+        .expect("Failed to clean stale NN device nodes");
+        drivers_shared::devices::neural_network::mount_rom(
+            virtual_file_system,
+            task,
+            digits::DEVICE_PATH,
+            &digits::MODEL.0,
+            drivers_shared::devices::neural_network::Target::Cpu,
+        )
+        .await
+        .expect("Failed to mount Digits model");
+    }
+
     let audio_button = web_sys::window()
         .and_then(|window| window.document())
         .and_then(|document| document.get_element_by_id("audio-enable"))

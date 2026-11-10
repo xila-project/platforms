@@ -101,6 +101,7 @@ fn browser_and_native_bundles_contain_their_declared_apps() {
         "calculator",
         "weather",
         "clock",
+        "digits",
         "pixel_painter",
         "synth",
         "text_editor",
@@ -121,10 +122,10 @@ fn browser_and_native_bundles_contain_their_declared_apps() {
             String::from_utf8_lossy(&output.stderr)
         );
         let text = String::from_utf8_lossy(&output.stdout);
-        assert!(text.contains("calculator,clock,pixel_painter,synth,text_editor"));
+        assert!(text.contains("calculator,clock,digits,pixel_painter,synth,text_editor"));
         let image = fs::read(f.0.join(format!("{profile}.img"))).unwrap();
         let contains = |content: &[u8]| image.windows(content.len()).any(|bytes| bytes == content);
-        for app in ["synth", "text_editor"] {
+        for app in ["digits", "synth", "text_editor"] {
             for content in [
                 format!("guest fixture for {app}"),
                 format!("shortcut for {app}"),
@@ -150,7 +151,7 @@ fn browser_and_native_bundles_contain_their_declared_apps() {
 fn missing_bundle_is_an_error_without_output() {
     let f = Fixture::new();
     let bundles = f.0.join("bundles");
-    for app in ["calculator", "clock", "pixel_painter", "synth"] {
+    for app in ["calculator", "clock", "digits", "pixel_painter", "synth"] {
         write_bundle(&bundles, app);
     }
     let output = Command::new(env!("CARGO_BIN_EXE_fs_image"))
@@ -218,4 +219,36 @@ fn unsupported_entries_and_non_utf8_names_are_rejected() {
         fs::read(f.0.join("before.img")).unwrap(),
         fs::read(f.0.join("after.img")).unwrap()
     );
+}
+
+#[test]
+fn both_profiles_require_the_digits_bundle() {
+    let f = Fixture::new();
+    let bundles = f.0.join("bundles");
+    for app in [
+        "calculator",
+        "clock",
+        "pixel_painter",
+        "synth",
+        "text_editor",
+        "weather",
+    ] {
+        write_bundle(&bundles, app);
+    }
+    for profile in ["native", "wasm"] {
+        let image = f.0.join(format!("missing-digits-{profile}.img"));
+        let output = Command::new(env!("CARGO_BIN_EXE_fs_image"))
+            .arg(&image)
+            .arg("4194304")
+            .args(["--bundle", profile, "--bundles-dir"])
+            .arg(&bundles)
+            .output()
+            .unwrap();
+        assert!(
+            !output.status.success(),
+            "{profile} silently omitted Digits"
+        );
+        assert!(String::from_utf8_lossy(&output.stderr).contains("missing bundle xila.digits"));
+        assert!(!image.exists());
+    }
 }
