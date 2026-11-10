@@ -5,6 +5,12 @@ mod text;
 use std::io::{BufReader, Read, Write};
 
 #[cfg(unix)]
+#[path = "xila-debug/connection.rs"]
+mod connection;
+#[cfg(unix)]
+#[path = "xila-debug/selector.rs"]
+mod selector;
+#[cfg(unix)]
 #[path = "xila-debug/wait.rs"]
 mod wait;
 
@@ -14,7 +20,14 @@ fn main() {
     match run() {
         Ok(success) => std::process::exit(if success { 0 } else { 1 }),
         Err(error) => {
-            eprintln!("xila-debug: {error}");
+            if error.contains("deadline elapsed") || error.contains("timed out") {
+                println!(
+                    "{}",
+                    serde_json::json!({"ok":false,"error":{"code":"timeout","message":error}})
+                );
+            } else {
+                eprintln!("xila-debug: {error}");
+            }
             std::process::exit(2);
         }
     }
@@ -23,18 +36,39 @@ fn main() {
 fn run() -> Result<bool, String> {
     let mut arguments = std::env::args().skip(1).peekable();
     let mut endpoint = None;
-    if arguments
-        .peek()
-        .is_some_and(|argument| argument == "--endpoint")
-    {
-        arguments.next();
-        endpoint = Some(arguments.next().ok_or("--endpoint requires a path")?.into());
+    let mut timeout_ms = 30_000u64;
+    let mut timeout_explicit = false;
+    while arguments.peek().is_some_and(|a| a.starts_with("--")) {
+        match arguments.next().as_deref() {
+            Some("--endpoint") => {
+                endpoint = Some(arguments.next().ok_or("--endpoint requires a path")?.into())
+            }
+            Some("--timeout-ms") => {
+                if timeout_explicit {
+                    return Err("duplicate --timeout-ms".into());
+                }
+                timeout_explicit = true;
+                timeout_ms = arguments
+                    .next()
+                    .ok_or("--timeout-ms requires a value")?
+                    .parse()
+                    .map_err(|_| "invalid timeout")?;
+                if !(1..=60000).contains(&timeout_ms) {
+                    return Err("timeout must be 1..60000 ms".into());
+                }
+            }
+            _ => return Err(usage()),
+        }
     }
 
     let operation = arguments.next().ok_or_else(usage)?;
     #[cfg(unix)]
     if operation == "wait-for" {
-        return wait::run(endpoint, arguments);
+        return wait::run(endpoint, arguments, timeout_explicit.then_some(timeout_ms));
+    }
+    #[cfg(unix)]
+    if operation == "find" {
+        return selector::find(endpoint, arguments, timeout_ms);
     }
     let request = parse_operation(&operation, &mut arguments)?;
     let screenshot_path = match &request {
@@ -63,10 +97,17 @@ fn run() -> Result<bool, String> {
                 );
                 return Ok(false);
             }
-            return Ok(text::send(&endpoint, text));
+            return Ok(text::send(
+                &endpoint,
+                text,
+                std::time::Duration::from_millis(timeout_ms),
+            ));
         }
-        let mut stream = std::os::unix::net::UnixStream::connect(&endpoint)
-            .map_err(|error| format!("Cannot connect to {}: {error}", endpoint.display()))?;
+        let mut stream = connection::Connection::new(
+            &endpoint,
+            std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms),
+        )
+        .map_err(|error| format!("Cannot connect to {}: {error}", endpoint.display()))?;
         let mut bytes = serde_json::to_vec(&request).map_err(|error| error.to_string())?;
         bytes.push(b'\n');
         stream
@@ -164,6 +205,12 @@ fn parse_operation(
 ) -> Result<Request, String> {
     match operation {
         "diagnostics" => Ok(Request::Diagnostics),
+        "capabilities" => Ok(Request::Capabilities),
+        #[cfg(unix)]
+        "click" => {
+            let selector = selector::Selector::parse(arguments)?;
+            selector.click_request()
+        }
         "resolution" => Ok(Request::Resolution),
         "screenshot" => Ok(Request::Screenshot {
             path: arguments.next().ok_or("screenshot requires a path")?,
@@ -181,6 +228,18 @@ fn parse_operation(
                 .unwrap_or(24),
         }),
         "pointer" => match arguments.next().as_deref() {
+            Some("click") => Ok(Request::PointerClick {
+                x: arguments
+                    .next()
+                    .ok_or("pointer click requires x")?
+                    .parse()
+                    .map_err(|_| "invalid x")?,
+                y: arguments
+                    .next()
+                    .ok_or("pointer click requires y")?
+                    .parse()
+                    .map_err(|_| "invalid y")?,
+            }),
             Some("move") => Ok(Request::PointerMove {
                 x: arguments
                     .next()
@@ -196,7 +255,7 @@ fn parse_operation(
             Some("button") => Ok(Request::PointerButton {
                 state: parse_state(arguments.next().as_deref())?,
             }),
-            _ => Err("pointer expects `move X Y` or `button press|release`".into()),
+            _ => Err("pointer expects `click X Y`, `move X Y` or `button press|release`".into()),
         },
         "key" => Ok(Request::Key {
             key: arguments.next().ok_or("key requires a name")?,
@@ -222,7 +281,7 @@ fn parse_state(value: Option<&str>) -> Result<InputState, String> {
 }
 
 fn usage() -> String {
-    "usage: xila-debug [--endpoint PATH] diagnostics|resolution|screenshot PATH|ui-tree [MAX_ELEMENTS MAX_DEPTH]|wait-for --text TEXT [--timeout-ms MS]|pointer move X Y|pointer button press|release|key KEY press|release|press-key KEY|text TEXT".into()
+    "usage: xila-debug [--endpoint PATH] [--timeout-ms MS] capabilities|diagnostics|find SELECTOR|click SELECTOR|resolution|screenshot PATH|ui-tree [MAX_ELEMENTS MAX_DEPTH]|wait-for SELECTOR [--stable-ms MS] [--timeout-ms MS]|pointer click X Y|pointer move X Y|pointer button press|release|key KEY press|release|press-key KEY|text TEXT".into()
 }
 
 #[cfg(test)]
