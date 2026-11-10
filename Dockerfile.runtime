@@ -45,6 +45,7 @@ RUN mkdir -p target/seed/native \
         --bundle native \
         --bundles-dir /bundles \
     && cargo build --locked --package xila-native-example --bin xila-runtime --release \
+        --no-default-features \
     && test -s target/release/xila-runtime \
     && test -s target/seed/native/seed.img \
     && ldd target/release/xila-runtime > /tmp/xila-runtime-ldd \

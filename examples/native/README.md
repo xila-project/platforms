@@ -14,10 +14,12 @@ When packaging the executable, distribute a matching seed alongside it, or pass
 its explicit path. The default disk size is 16 MiB; custom seeds and
 `--disk-size BYTES` must agree.
 
-Host audio support is disabled by default, so builds do not require ALSA
-development files. Enable it with `--features audio`, for example
-`cargo run -p xila-native-example --bin native_example --features audio -- --terminal`. Linux builds with
-audio enabled require ALSA development files.
+Host audio is enabled by default (the `audio` feature), so audio applications
+such as Synth can play through the default host output. Linux builds require
+ALSA development files (`libasound2-dev` and `pkg-config` on Debian/Ubuntu,
+installed by `mise bootstrap packages apply --manager apt`). Build with
+`--no-default-features` for a silent runtime without ALSA, as the container
+image does.
 
 Only an absent live disk is imported. Import validates a temporary copy before
 publishing it without replacement. Existing disks do not require a seed and are
@@ -41,8 +43,16 @@ runtime loading. See the repository's profiling instructions for preparing and
 selecting a seed before measurement.
 
 With the `audio` feature enabled, the example mounts `/devices/audio/playback`
-using the default host audio output. Audio initialization failures are logged
-and leave the rest of the OS usable.
+using the default host audio output, and logs `Native audio ready`. Audio
+initialization failures are logged and leave the rest of the OS usable. To
+check output without speakers, route the runtime to a PipeWire null sink and
+record its monitor:
+
+```sh
+pw-cli create-node adapter '{ factory.name=support.null-audio-sink node.name=xila-test media.class=Audio/Sink object.linger=true audio.position=[FL FR] }'
+pw-record --target xila-test -P '{ stream.capture.sink=true }' capture.wav &
+PIPEWIRE_NODE=xila-test cargo run -p xila-native-example --bin native_example -- --display-driver headless
+```
 See [Synth](../../executables/synth/README.md) for controls, silent mode and checks.
 
 ## Inspecting the graphical UI
