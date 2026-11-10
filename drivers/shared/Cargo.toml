@@ -43,6 +43,7 @@ neural-network-cmsis-nn = ["neural-network", "nanoglia/cmsis-nn"]
 neural-network-esp-nn = ["neural-network", "nanoglia/esp-nn"]
 
 [dev-dependencies]
+digits = { workspace = true }
 users = { workspace = true }
 little_fs = { workspace = true }
 task = { workspace = true, features = ["test_harness"] }

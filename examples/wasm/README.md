@@ -177,3 +177,13 @@ The disk-name and collision rules can also be tested with
 
 See [Synth](../../executables/synth/README.md) for controls, silent mode,
 existing-disk behavior and the audio smoke-test procedure.
+
+## Digits NN demo
+
+The default `digits` feature registers Applications' MNIST model using the shared
+portable CPU backend. Build the Digits guest and local bundles with the commands
+in `../native/README.md`, then create a seed with `--bundle wasm` and those
+bundles. Serve it as `seed.img` beside the matching browser runtime. Select a new
+disk in the disk manager to use a new seed; existing browser disks retain their
+installed applications. The guest uses Xila's VFS NN API inside the browser host,
+without WebGPU or a separate JavaScript inference engine.

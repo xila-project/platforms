@@ -132,3 +132,36 @@ The native System activity app reports uptime, registered tasks and allocator
 usage with asynchronous refresh, explicit unavailable metrics, and a bounded
 start/stop demo workload. See [its metric sources and smoke test](../../executables/activity/README.md).
 It is compiled into the native runtime; it has no guest Wasm binary.
+
+## Local Digits demo
+
+The `digits` default feature registers the small CPU MNIST model at
+`/devices/nn/digits`. `--no-default-features` omits it. The model and the guest
+belong to Applications; this runtime selects the portable NN backend.
+During development, use matching Applications/Platforms branches (the runtime
+requires Applications' new `xila-digits` crate). From the multi-repository
+workspace, create a local Cargo patch configuration:
+
+```sh
+python3 repositories/platforms/tools/dev/local_overrides.py \
+  --core repositories/core --platforms repositories/platforms \
+  --applications repositories/applications --output /tmp/xila-local.toml
+cd repositories/applications
+cargo build --config /tmp/xila-local.toml --target wasm32-wasip1 \
+  --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather \
+  -p xila-pixel-painter -p xila-text-editor -p xila-synth -p xila-digits
+cd ../platforms
+tools/bundle_applications.sh ../applications \
+  ../applications/target/wasm32-wasip1/release-wasm target/digits-bundles
+cargo run --config /tmp/xila-local.toml -p xila-fs-image -- \
+  target/digits-seed.img 16777216 --bundle native --bundles-dir target/digits-bundles
+cargo run --config /tmp/xila-local.toml -p xila-native-example --bin native_example -- \
+  --gui --no-network --disk-path target/digits-drive.img --seed-image target/digits-seed.img
+```
+
+The seed and bundle commands create new paths; choose another path on a second
+run. Open **Digits** in the launcher, draw a digit, then release to recognize.
+Use an absent demo disk path to import the new seed without changing an existing
+installation. The same local bundles work with `--bundle wasm` for the browser
+seed; copy that seed beside the browser runtime as described in its README.
+Local patches rewrite Cargo.lock; do not commit those source substitutions.

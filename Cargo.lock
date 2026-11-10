@@ -5206,7 +5206,7 @@ dependencies = [
 [[package]]
 name = "xila-activity"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#d9c9b37a15989da94157a76f2d9854ee6e154852"
+source = "git+https://github.com/xila-project/applications?branch=main#37b80b0427154659cdc5cd2d410c94df4f99c3ca"
 dependencies = [
  "embassy-futures",
  "embedded-i18n",
@@ -5250,7 +5250,7 @@ dependencies = [
 [[package]]
 name = "xila-command-line-shell"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#d9c9b37a15989da94157a76f2d9854ee6e154852"
+source = "git+https://github.com/xila-project/applications?branch=main#37b80b0427154659cdc5cd2d410c94df4f99c3ca"
 dependencies = [
  "embedded-i18n",
  "getargs",
@@ -5261,7 +5261,7 @@ dependencies = [
 [[package]]
 name = "xila-debug-application"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#d9c9b37a15989da94157a76f2d9854ee6e154852"
+source = "git+https://github.com/xila-project/applications?branch=main#37b80b0427154659cdc5cd2d410c94df4f99c3ca"
 dependencies = [
  "serde_json",
  "xila",
@@ -5283,6 +5283,18 @@ version = "0.1.0"
 source = "git+https://github.com/xila-project/core?branch=main#281f90060257303844d84b9339a0e5632a7f04bb"
 dependencies = [
  "xila-file-system",
+]
+
+[[package]]
+name = "xila-digits"
+version = "0.1.0"
+source = "git+https://github.com/xila-project/applications?branch=main#37b80b0427154659cdc5cd2d410c94df4f99c3ca"
+dependencies = [
+ "embedded-i18n",
+ "xila-device",
+ "xila-file-system",
+ "xila-pixel-painter",
+ "xila-wasm",
 ]
 
 [[package]]
@@ -5380,6 +5392,7 @@ dependencies = [
  "sha2 0.11.1",
  "xila-abi-definitions",
  "xila-device",
+ "xila-digits",
  "xila-drivers-neural-network",
  "xila-drivers-std",
  "xila-file-system",
@@ -5473,7 +5486,7 @@ dependencies = [
 [[package]]
 name = "xila-file-manager"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#d9c9b37a15989da94157a76f2d9854ee6e154852"
+source = "git+https://github.com/xila-project/applications?branch=main#37b80b0427154659cdc5cd2d410c94df4f99c3ca"
 dependencies = [
  "embedded-i18n",
  "xila",
@@ -5540,7 +5553,7 @@ dependencies = [
 [[package]]
 name = "xila-graphical-shell"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#d9c9b37a15989da94157a76f2d9854ee6e154852"
+source = "git+https://github.com/xila-project/applications?branch=main#37b80b0427154659cdc5cd2d410c94df4f99c3ca"
 dependencies = [
  "embedded-i18n",
  "getargs",
@@ -5632,6 +5645,7 @@ dependencies = [
  "xila-audio",
  "xila-command-line-shell",
  "xila-debug-application",
+ "xila-digits",
  "xila-drivers-core",
  "xila-drivers-headless",
  "xila-drivers-native",
@@ -5681,7 +5695,7 @@ dependencies = [
 [[package]]
 name = "xila-package-application"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#d9c9b37a15989da94157a76f2d9854ee6e154852"
+source = "git+https://github.com/xila-project/applications?branch=main#37b80b0427154659cdc5cd2d410c94df4f99c3ca"
 dependencies = [
  "getargs",
  "getargs-derive",
@@ -5753,6 +5767,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "xila-pixel-painter"
+version = "0.1.0"
+source = "git+https://github.com/xila-project/applications?branch=main#37b80b0427154659cdc5cd2d410c94df4f99c3ca"
+dependencies = [
+ "embedded-i18n",
+ "xila-wasm",
+]
+
+[[package]]
 name = "xila-prepare-applications"
 version = "0.1.0"
 dependencies = [
@@ -5769,7 +5792,7 @@ dependencies = [
 [[package]]
 name = "xila-settings"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#d9c9b37a15989da94157a76f2d9854ee6e154852"
+source = "git+https://github.com/xila-project/applications?branch=main#37b80b0427154659cdc5cd2d410c94df4f99c3ca"
 dependencies = [
  "const_format",
  "embassy-futures",
@@ -5826,7 +5849,7 @@ dependencies = [
 [[package]]
 name = "xila-terminal"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#d9c9b37a15989da94157a76f2d9854ee6e154852"
+source = "git+https://github.com/xila-project/applications?branch=main#37b80b0427154659cdc5cd2d410c94df4f99c3ca"
 dependencies = [
  "embedded-i18n",
  "xila",
@@ -5897,7 +5920,7 @@ dependencies = [
 [[package]]
 name = "xila-wasm"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#d9c9b37a15989da94157a76f2d9854ee6e154852"
+source = "git+https://github.com/xila-project/applications?branch=main#37b80b0427154659cdc5cd2d410c94df4f99c3ca"
 dependencies = [
  "embassy-time",
  "getargs",
@@ -5922,6 +5945,7 @@ dependencies = [
  "web-sys",
  "xila",
  "xila-command-line-shell",
+ "xila-digits",
  "xila-drivers-core",
  "xila-drivers-shared",
  "xila-drivers-wasm",

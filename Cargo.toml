@@ -65,6 +65,9 @@ drivers_std = { package = "xila-drivers-std", path = "drivers/std" }
 drivers_wasm = { package = "xila-drivers-wasm", path = "drivers/wasm" }
 
 # - Executables
+digits = { package = "xila-digits", git = "https://github.com/xila-project/applications", branch = "main", default-features = false, features = [
+  "model",
+] }
 file_manager = { package = "xila-file-manager", git = "https://github.com/xila-project/applications", branch = "main" }
 command_line_shell = { package = "xila-command-line-shell", git = "https://github.com/xila-project/applications", branch = "main" }
 graphical_shell = { package = "xila-graphical-shell", git = "https://github.com/xila-project/applications", branch = "main" }

@@ -22,6 +22,7 @@ package = { workspace = true }
 drivers_core = { workspace = true }
 drivers_std = { workspace = true }
 drivers_shared = { workspace = true }
+digits = { workspace = true, optional = true }
 drivers_native = { workspace = true }
 drivers_headless = { workspace = true }
 audio = { workspace = true, optional = true }
@@ -29,7 +30,8 @@ getargs = { version = "0.5" }
 getargs-derive = { workspace = true }
 
 [features]
-default = []
+digits = ["dep:digits", "drivers_shared/neural-network"]
+default = ["digits"]
 audio = ["dep:audio", "drivers_native/audio"]
 # Compatibility flag: bundled applications now always come from the seed.
 prebuilt-applications = []

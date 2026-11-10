@@ -42,7 +42,13 @@ mkdir "$output"
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 
-sort -u "$platforms/tools/fs_image/profiles/native.txt" "$platforms/tools/fs_image/profiles/browser.txt" |
+{
+  cat "$platforms/tools/fs_image/profiles/native.txt" "$platforms/tools/fs_image/profiles/browser.txt"
+  # Include the demo when built locally, before its first signed release.
+  if [[ -f "$wasm_dir/digits.wasm" ]]; then
+    echo digits
+  fi
+} | sort -u |
   while read -r app; do
     [[ -n "$app" ]] || continue
     source_directory="$stage/$app"
