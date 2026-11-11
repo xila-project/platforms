@@ -354,6 +354,10 @@ async fn main(task_manager: &'static xila::task::Manager) {
                 &"/applications/executables/terminal",
                 terminal::TerminalExecutable
             ),
+            (
+                &"/applications/executables/activity",
+                activity::ActivityExecutable
+            ),
         ]
     )
     .await
