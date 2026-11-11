@@ -30,7 +30,8 @@ getargs = { version = "0.5" }
 getargs-derive = { workspace = true }
 
 [features]
-digits = ["dep:digits", "drivers_shared/neural-network"]
+neural-network = ["drivers_shared/neural-network"]
+digits = ["dep:digits", "neural-network"]
 # Host audio and the portable NN demo are available in the default runtime.
 default = ["audio", "digits"]
 audio = ["dep:audio", "drivers_native/audio"]

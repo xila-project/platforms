@@ -1,13 +1,17 @@
 //! Nanoglia model ownership and accelerator selection for platform assemblies.
-use drivers_neural_network::{MAX_TENSOR_RANK, NeuralNetworkDevice};
+use drivers_neural_network::{LoaderDevice, MAX_TENSOR_RANK, NeuralNetworkDevice};
 use file_system::{Error, Result};
 use nanoglia::{Encoding, Graph, GraphExecutionContext, GraphHandle, OwnedGraph};
-use neural_network::{Backend, QuantizationEntry, TensorInfo};
+use neural_network::{
+    Backend, Loader, ModelBuffer as CoreModelBuffer, ModelEncoding, QuantizationEntry, TensorInfo,
+};
 use synchronization::Arc;
 
 pub use nanoglia::{Global, Target};
-/// Aligned caller-owned storage; a VFS file can be read directly into its mutable slice.
-pub type ModelBuffer = nanoglia::core::Block<Global>;
+/// Aligned caller-owned Nanoglia storage; a VFS file can be read directly into its mutable slice.
+pub type NanogliaModelBuffer = nanoglia::core::Block<Global>;
+/// Compatibility alias for [`NanogliaModelBuffer`].
+pub type ModelBuffer = NanogliaModelBuffer;
 const _: () = assert!(nanoglia::core::MAX_RANK <= MAX_TENSOR_RANK);
 
 /// Shared model owner, using Xila's fallback Arc on targets without pointer atomics.
@@ -126,6 +130,69 @@ pub async fn mount_owned_model(
     target: Target,
 ) -> virtual_file_system::Result<()> {
     vfs.mount_character_device(task, path, from_owned_model(model, target)?)
+        .await
+}
+
+/// Runtime model loader producing Nanoglia backends.
+#[derive(Clone, Copy, Debug)]
+pub struct NanogliaLoader {
+    pub target: Target,
+    pub maximum_model_size: usize,
+}
+
+impl NanogliaLoader {
+    /// Create a new loader for the given execution target and maximum accepted model size.
+    pub const fn new(target: Target, maximum_model_size: usize) -> Self {
+        Self {
+            target,
+            maximum_model_size,
+        }
+    }
+}
+
+impl Loader for NanogliaLoader {
+    type Backend = NanogliaBackend<OwnedGraph<Global>>;
+
+    /// Parse, verify, and instantiate an inference backend from an owned aligned model buffer.
+    ///
+    /// # Memory usage
+    /// Nanoglia's [`nanoglia::core::Block`] only offers allocation of a new zeroed block (`new_zeroed`)
+    /// and mutable slice access. Consequently, `load` must allocate a new block and copy the bytes
+    /// from the incoming [`CoreModelBuffer`] before dropping it, causing a transient ~2x peak memory
+    /// consumption during model loading.
+    fn load(&self, encoding: ModelEncoding, model: CoreModelBuffer) -> Result<Self::Backend> {
+        if encoding != ModelEncoding::TensorFlowLite {
+            return Err(Error::UnsupportedOperation);
+        }
+        let mut block = NanogliaModelBuffer::new_zeroed(model.len(), Global).map_err(map_error)?;
+        block.as_mut_slice().copy_from_slice(&model);
+        drop(model);
+        let graph = OwnedGraph::load_in(block, Encoding::TensorFlowLite, self.target, Global)
+            .map_err(map_error)?;
+        Ok(NanogliaBackend {
+            graph: Arc::new(graph),
+        })
+    }
+
+    fn maximum_model_size(&self) -> usize {
+        self.maximum_model_size
+    }
+}
+
+/// Construct a VFS device providing dynamic model loading.
+pub fn from_loader(target: Target, maximum_model_size: usize) -> LoaderDevice<NanogliaLoader> {
+    LoaderDevice::new(NanogliaLoader::new(target, maximum_model_size))
+}
+
+/// Register a dynamic model loader NN node from a platform's runtime assembly.
+pub async fn mount_loader(
+    vfs: &virtual_file_system::VirtualFileSystem,
+    task: task::TaskIdentifier,
+    path: impl AsRef<file_system::Path>,
+    target: Target,
+    maximum_model_size: usize,
+) -> virtual_file_system::Result<()> {
+    vfs.mount_character_device(task, path, from_loader(target, maximum_model_size))
         .await
 }
 
