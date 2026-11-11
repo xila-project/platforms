@@ -28,6 +28,7 @@ graphical_shell = { workspace = true }
 wasm = { workspace = true, features = ["host", "graphics"] }
 terminal = { workspace = true }
 settings = { workspace = true }
+activity = { workspace = true }
 console_error_panic_hook = "0.1"
 drivers_wasm = { workspace = true, features = ["audio"] }
 drivers_core = { workspace = true }

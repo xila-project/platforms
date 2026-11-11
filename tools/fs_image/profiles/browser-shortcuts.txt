@@ -2,3 +2,4 @@ file_manager
 terminal
 settings
 debug
+activity
