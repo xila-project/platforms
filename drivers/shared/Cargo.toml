@@ -50,7 +50,7 @@ network = [
   "dep:synchronization",
   "dep:log",
 ]
-neural-network = [
+neural-network-core = [
   "dep:neural_network",
   "dep:drivers_neural_network",
   "dep:nanoglia",
@@ -58,6 +58,8 @@ neural-network = [
   "dep:task",
   "dep:synchronization",
 ]
+neural-network-all-ops = ["nanoglia/all-ops"]
+neural-network = ["neural-network-core", "neural-network-all-ops"]
 neural-network-cmsis-nn = ["neural-network", "nanoglia/cmsis-nn"]
 neural-network-esp-nn = ["neural-network", "nanoglia/esp-nn"]
 
