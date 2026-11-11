@@ -6,6 +6,10 @@ mod storage;
 
 static TASK_MANAGER: xila::task::Manager = xila::task::Manager::new();
 
+/// Maximum model size accepted by the dynamic CPU neural network loader (4 MiB).
+#[cfg(feature = "neural-network")]
+const CPU_NN_LOADER_MAXIMUM_MODEL_SIZE: usize = 4 * 1024 * 1024;
+
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 #[xila::task::run(
     task_path = xila::task,
@@ -191,7 +195,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
         .await
         .expect("Failed to clear temporary storage at boot");
 
-    #[cfg(feature = "digits")]
+    #[cfg(feature = "neural-network")]
     {
         virtual_file_system::ignore_already_exists_error(
             virtual_file_system
@@ -207,6 +211,16 @@ async fn main(task_manager: &'static xila::task::Manager) {
         )
         .await
         .expect("Failed to clean stale NN device nodes");
+        drivers_shared::devices::neural_network::mount_loader(
+            virtual_file_system,
+            task,
+            "/devices/nn/cpu",
+            drivers_shared::devices::neural_network::Target::Cpu,
+            CPU_NN_LOADER_MAXIMUM_MODEL_SIZE,
+        )
+        .await
+        .expect("Failed to mount CPU neural network loader");
+        #[cfg(feature = "digits")]
         drivers_shared::devices::neural_network::mount_rom(
             virtual_file_system,
             task,

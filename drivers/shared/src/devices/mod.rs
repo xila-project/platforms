@@ -31,5 +31,5 @@ pub use terminal::*;
 #[cfg(feature = "network")]
 mod http_exchange;
 
-#[cfg(feature = "neural-network")]
+#[cfg(feature = "neural-network-core")]
 pub mod neural_network;

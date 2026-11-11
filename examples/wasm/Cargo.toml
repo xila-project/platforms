@@ -49,4 +49,5 @@ path = "src/main.rs"
 
 [features]
 default = ["digits"]
-digits = ["dep:digits", "drivers_shared/neural-network"]
+neural-network = ["drivers_shared/neural-network"]
+digits = ["dep:digits", "neural-network"]
