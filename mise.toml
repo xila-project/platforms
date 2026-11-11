@@ -9,6 +9,22 @@ shellcheck_version = "0.11.0"
 description = "Build the native runtime"
 run = "cargo build --locked -p xila-native-example"
 
+[tasks."build:nano-33-ble"]
+description = "Build the Arduino Nano 33 BLE firmware"
+run = "cargo build --locked -p xila-nano-33-ble-example --target thumbv7em-none-eabihf --profile release-embedded"
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "llvm-tools",
+], targets = [
+  "thumbv7em-none-eabihf",
+] }
+
+[tasks."flash:nano-33-ble"]
+description = "Build the Arduino Nano 33 BLE firmware and flash it through the Arduino bootloader"
+depends = ["build:nano-33-ble"]
+# Arduino's fork of bossac: the mainline one does not know the nRF52840.
+tools."http:bossac" = { version = "1.9.1-arduino2", bin_path = "bin", platforms = { linux-x64 = { url = "https://downloads.arduino.cc/tools/bossac-1.9.1-arduino2-linux64.tar.gz" }, linux-arm64 = { url = "https://downloads.arduino.cc/tools/bossac-1.9.1-arduino2-linuxaarch64.tar.gz" }, macos-x64 = { url = "https://downloads.arduino.cc/tools/bossac-1.9.1-arduino2-osx.tar.gz" }, macos-arm64 = { url = "https://downloads.arduino.cc/tools/bossac-1.9.1-arduino2-osx.tar.gz" } } }
+run = "examples/nano_33_ble/flash.sh target/thumbv7em-none-eabihf/release-embedded/nano_33_ble_example"
+
 [tasks."check:browser"]
 description = "Check the browser runtime"
 run = "cargo check --locked -p xila-wasm-example --target wasm32-unknown-unknown"
@@ -60,11 +76,11 @@ cargo check --locked -p xila-firmware-native --no-default-features --lib --targe
 
 [tasks."test:drivers"]
 description = "Test native and common platform drivers"
-run = "cargo test --locked -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless --features xila-drivers-native/audio,xila-drivers-shared/neural-network-cmsis-nn"
+run = "cargo test --locked -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-drivers-nordic --features xila-drivers-native/audio,xila-drivers-shared/neural-network-cmsis-nn"
 
 [tasks."clippy:drivers"]
 description = "Lint native and common platform drivers"
-run = "cargo clippy --locked -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless --all-targets --features xila-drivers-native/audio,xila-drivers-shared/neural-network-cmsis-nn -- -D warnings"
+run = "cargo clippy --locked -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-drivers-nordic --all-targets --features xila-drivers-native/audio,xila-drivers-shared/neural-network-cmsis-nn -- -D warnings"
 
 [tasks."clippy:browser"]
 description = "Lint browser drivers"

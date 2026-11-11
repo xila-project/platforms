@@ -172,18 +172,18 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         ci = read('.github/workflows/ci.yml')
         for task in ('clippy:drivers', 'test:drivers', 'test:seed', 'firmware:test',
                      'ci:profiling', 'ci:profiling-runtime-tests', 'ci:profiling-native-tests',
-                     'clippy:browser', 'check:browser'):
+                     'clippy:browser', 'check:browser', 'build:nano-33-ble'):
             self.assertIn(f'mise run {task}', ci)
         browser_tests = tomllib.loads(read('mise.ci.toml'))['tasks']['ci:browser-node-tests']['run']
         self.assertIn('drivers/wasm/tests/seed.test.mjs', browser_tests)
         self.assertIn('examples/wasm/tests/disk_manager.test.mjs', browser_tests)
-        self.assertIn('needs: [quality, native, browser]', ci)
+        self.assertIn('needs: [quality, native, nano-33-ble, browser]', ci)
 
     def test_quality_reuses_shared_job_without_weakening_gate(self):
         ci = read('.github/workflows/ci.yml')
         self.assertIn('  quality:', ci)
         self.assertIn('xila-project/workspace/.github/workflows/quality.yml@', ci)
-        self.assertIn('needs: [quality, native, browser]', ci)
+        self.assertIn('needs: [quality, native, nano-33-ble, browser]', ci)
         self.assertIn('ci:quality-extra', read('mise.ci.toml'))
         for line in ci.splitlines():
             self.assertNotRegex(line, r'^      - (uses|run|env):')

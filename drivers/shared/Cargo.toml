@@ -13,31 +13,50 @@ nanoglia = { workspace = true, optional = true, features = [
   "int16",
 ] }
 virtual_file_system = { workspace = true, optional = true }
-xila_http = { workspace = true }
+xila_http = { workspace = true, optional = true }
 file_system = { workspace = true }
-log = { workspace = true }
+log = { workspace = true, optional = true }
 shared = { workspace = true }
 device = { workspace = true }
-network = { workspace = true }
-task = { workspace = true }
-synchronization = { workspace = true }
-embassy-futures = { workspace = true }
-embedded-io-async = { workspace = true }
-embedded-tls = { workspace = true }
-embedded-io = { workspace = true }
-rand_core = { version = "0.10", default-features = false }
+critical-section = { workspace = true }
+network = { workspace = true, optional = true }
+task = { workspace = true, optional = true }
+synchronization = { workspace = true, optional = true }
+embassy-futures = { workspace = true, optional = true }
+embedded-io-async = { workspace = true, optional = true }
+embedded-tls = { workspace = true, optional = true }
+embedded-io = { workspace = true, optional = true }
+rand_core = { version = "0.10", default-features = false, optional = true }
 # embedded-tls 0.19 still requires the rand_core 0.6 traits.
-rand_core_06 = { package = "rand_core", version = "0.6", default-features = false }
+rand_core_06 = { package = "rand_core", version = "0.6", default-features = false, optional = true }
 
-getrandom = { version = "0.4.2" }
 sha2 = { version = "0.11" }
 
+[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows", target_arch = "wasm32"))'.dependencies]
+getrandom = { version = "0.4.2" }
+
 [features]
+default = ["network"]
+network = [
+  "dep:network",
+  "dep:xila_http",
+  "dep:embedded-tls",
+  "dep:embedded-io",
+  "dep:embedded-io-async",
+  "dep:rand_core",
+  "dep:rand_core_06",
+  "dep:embassy-futures",
+  "dep:task",
+  "dep:synchronization",
+  "dep:log",
+]
 neural-network = [
   "dep:neural_network",
   "dep:drivers_neural_network",
   "dep:nanoglia",
   "dep:virtual_file_system",
+  "dep:task",
+  "dep:synchronization",
 ]
 neural-network-cmsis-nn = ["neural-network", "nanoglia/cmsis-nn"]
 neural-network-esp-nn = ["neural-network", "nanoglia/esp-nn"]
@@ -63,3 +82,7 @@ embassy-time = { workspace = true, features = ["generic-queue-8"] }
 
 [lib]
 name = "drivers_shared"
+
+[[test]]
+name = "https"
+required-features = ["network"]

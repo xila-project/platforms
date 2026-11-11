@@ -1,3 +1,4 @@
+#![cfg(feature = "network")]
 //! Full HTTPS device test using a local Python/OpenSSL TLS server. The relay
 //! connects Xila's isolated smoltcp loopback to the host's loopback socket;
 //! TLS records pass through unchanged, including the real handshake.

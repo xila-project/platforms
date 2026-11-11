@@ -1,0 +1,41 @@
+[package]
+name = "xila-nano-33-ble-example"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+# Bring-up aid, for a board with no debug probe: the start waits for a host
+# terminal on the USB port, so that nothing is logged or crashes unseen, and
+# the board reboots into the Arduino bootloader when none opened the port
+# within a minute, so that a firmware whose console does not work stays
+# reachable without the reset button.
+bring-up = []
+
+[target.'cfg(all(target_arch = "arm", target_os = "none"))'.dependencies]
+# Not the workspace entries: this board has no network, and a workspace member
+# cannot turn off default features the workspace entry leaves on.
+# `abi_definitions`: LittleFS allocates through Xila's C memory ABI.
+xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false, features = [
+  "abi_definitions",
+] }
+command_line_shell = { package = "xila-command-line-shell", git = "https://github.com/xila-project/applications", branch = "main", default-features = false }
+drivers_core = { workspace = true }
+drivers_nordic = { workspace = true }
+# Not the workspace entry either: only the hash device, without the network
+# clients.
+drivers_shared = { package = "xila-drivers-shared", path = "../../drivers/shared", default-features = false }
+cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
+cortex-m-rt = { version = "0.7" }
+# `reset-pin-as-gpio`: without it `embassy_nrf::init` programs `UICR.PSELRESET`
+# when it finds it erased, and resets. With it, `init` never writes the UICR.
+embassy-nrf = { version = "0.11", default-features = false, features = [
+  "nrf52840",
+  "rt",
+  "unstable-pac",
+  "reset-pin-as-gpio",
+] }
+
+[[bin]]
+name = "nano_33_ble_example"
+path = "src/main.rs"

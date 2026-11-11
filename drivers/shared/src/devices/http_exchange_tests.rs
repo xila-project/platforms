@@ -147,6 +147,7 @@ mod memory {
     use std::{
         alloc::{GlobalAlloc, Layout, System},
         cell::Cell,
+        thread_local,
     };
     thread_local! { static COUNTERS: Cell<Option<(usize, usize)>> = const { Cell::new(None) }; }
     struct Allocator;
