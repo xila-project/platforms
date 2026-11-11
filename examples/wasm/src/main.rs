@@ -218,16 +218,6 @@ async fn main(task_manager: &'static xila::task::Manager) {
         )
         .await
         .expect("Failed to mount CPU neural network loader");
-        #[cfg(feature = "digits")]
-        drivers_shared::devices::neural_network::mount_rom(
-            virtual_file_system,
-            task,
-            digits::DEVICE_PATH,
-            &digits::MODEL.0,
-            drivers_shared::devices::neural_network::Target::Cpu,
-        )
-        .await
-        .expect("Failed to mount Digits model");
     }
 
     let audio_button = web_sys::window()
