@@ -2,6 +2,9 @@
 
 Enable `xila-drivers-shared/neural-network` for the portable Rust kernels. Add
 `neural-network-cmsis-nn` or `neural-network-esp-nn` for those accelerated backends.
+The `neural-network` feature includes all operators by default (`neural-network-all-ops`);
+firmware targeting microcontrollers can use `neural-network-core` and select specific
+`nanoglia/op-*` operator features to minimize flash footprint.
 Runtime assemblies select a `Target` and register a model at their chosen VFS path:
 
 ```rust,ignore
