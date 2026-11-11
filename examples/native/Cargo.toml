@@ -22,7 +22,6 @@ package = { workspace = true }
 drivers_core = { workspace = true }
 drivers_std = { workspace = true }
 drivers_shared = { workspace = true }
-digits = { workspace = true, optional = true }
 drivers_native = { workspace = true }
 drivers_headless = { workspace = true }
 audio = { workspace = true, optional = true }
@@ -31,9 +30,8 @@ getargs-derive = { workspace = true }
 
 [features]
 neural-network = ["drivers_shared/neural-network"]
-digits = ["dep:digits", "neural-network"]
 # Host audio and the portable NN demo are available in the default runtime.
-default = ["audio", "digits"]
+default = ["audio", "neural-network"]
 audio = ["dep:audio", "drivers_native/audio"]
 # Compatibility flag: bundled applications now always come from the seed.
 prebuilt-applications = []

@@ -1,10 +1,10 @@
 #![cfg(feature = "neural-network")]
-//! The actual shipped model, through the portable platform backend and VFS ABI.
+//! The model Digits ships, loaded at runtime through the platform loader node.
 extern crate abi_definitions;
 extern crate critical_section;
 testing::instantiate_global_allocator!();
 
-use drivers_neural_network::{COMPUTE, GET_INPUT_INFO, GET_OUTPUT_INFO};
+use drivers_neural_network::{COMPUTE, GET_INPUT_INFO, GET_OUTPUT_INFO, LOAD, LoadRequest};
 use file_system::{AccessFlags, Flags, MemoryDevice, Position};
 use virtual_file_system::File;
 
@@ -18,16 +18,23 @@ async fn mnist_digits_run_through_the_portable_vfs_backend() {
     little_fs::FileSystem::format(disk, 256).unwrap();
     let fs = little_fs::FileSystem::new(disk, 256).unwrap();
     let vfs = virtual_file_system::initialize(tasks, users, time, fs).unwrap();
-    drivers_shared::devices::neural_network::mount_rom(
+    drivers_shared::devices::neural_network::mount_loader(
         &vfs,
         task,
-        "/digits",
-        &digits::MODEL.0,
+        "/cpu",
         drivers_shared::devices::neural_network::Target::Cpu,
+        1024 * 1024,
     )
     .await
     .unwrap();
-    let mut file = File::open(&vfs, task, "/digits", Flags::from(AccessFlags::READ_WRITE))
+    let mut file = File::open(&vfs, task, "/cpu", Flags::from(AccessFlags::READ_WRITE))
+        .await
+        .unwrap();
+    assert_eq!(
+        file.write(digits::MODEL_BYTES).await.unwrap(),
+        digits::MODEL_BYTES.len()
+    );
+    file.control(LOAD, &LoadRequest::tensorflow_lite())
         .await
         .unwrap();
     let input = file.control(GET_INPUT_INFO, &0).await.unwrap();
@@ -58,5 +65,5 @@ async fn mnist_digits_run_through_the_portable_vfs_backend() {
         );
     }
     drop(file);
-    vfs.unmount("/digits", false).await.unwrap();
+    vfs.unmount("/cpu", false).await.unwrap();
 }
