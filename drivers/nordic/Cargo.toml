@@ -1,0 +1,48 @@
+[package]
+name = "xila-drivers-nordic"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["nrf52840", "usb-console"]
+nrf52840 = ["embassy-nrf/nrf52840"]
+usb-console = ["dep:embassy-usb"]
+
+[target.'cfg(all(target_arch = "arm", target_os = "none"))'.dependencies]
+device = { workspace = true }
+file_system = { workspace = true }
+memory = { workspace = true }
+time = { workspace = true }
+task = { workspace = true }
+synchronization = { workspace = true }
+shared = { workspace = true }
+log = { workspace = true }
+
+critical-section = { workspace = true }
+linked_list_allocator = { workspace = true }
+cortex-m = { version = "0.7" }
+
+embedded-storage = { version = "0.3", default-features = false }
+
+embassy-executor = { workspace = true, default-features = false, features = [
+  "platform-cortex-m",
+  "executor-thread",
+] }
+embassy-time = { workspace = true }
+embassy-sync = { workspace = true }
+embassy-futures = { workspace = true }
+embassy-nrf = { version = "0.11", default-features = false, features = [
+  "time-driver-rtc1",
+] }
+embassy-usb = { version = "0.6.0", default-features = false, features = [
+  "max-handler-count-1",
+  "max-interface-count-2",
+], optional = true }
+
+[dev-dependencies]
+device = { workspace = true }
+file_system = { workspace = true }
+log = { workspace = true }
+
+[lib]
+name = "drivers_nordic"

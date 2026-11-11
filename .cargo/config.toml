@@ -17,6 +17,8 @@ rustflags = [
 ] # Extending time_t for ESP IDF 5: https://github.com/esp-rs/rust/issues/110
 
 [env]
+# Bare-metal ARM has no C library: build LittleFS with clang's own headers.
+CC_thumbv7em_none_eabihf = "clang"
 DEP_LV_CONFIG_PATH = { value = "config/lvgl", relative = true }
 EMBEDDED_I18N_LOCALE = "en"
 XILA_LV_FONT_CONV_DIR = { value = "node_modules/lv_font_conv", relative = true }

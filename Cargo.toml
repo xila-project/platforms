@@ -4,6 +4,15 @@ opt-level = 's'
 strip = true
 lto = true
 
+# Bare-metal firmware: size first, symbols kept in the ELF only.
+[profile.release-embedded]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+debug = true
+
 [profile.profiling]
 inherits = "release"
 debug = "full"
@@ -78,6 +87,7 @@ drivers_core = { package = "xila-drivers-core", git = "https://github.com/xila-p
 drivers_espressif = { package = "xila-drivers-espressif", path = "drivers/espressif" }
 drivers_native = { package = "xila-drivers-native", path = "drivers/native" }
 drivers_headless = { package = "xila-drivers-headless", path = "drivers/headless" }
+drivers_nordic = { package = "xila-drivers-nordic", path = "drivers/nordic" }
 drivers_shared = { package = "xila-drivers-shared", path = "drivers/shared" }
 drivers_std = { package = "xila-drivers-std", path = "drivers/std" }
 drivers_wasm = { package = "xila-drivers-wasm", path = "drivers/wasm" }
@@ -136,10 +146,12 @@ members = [
   "drivers/espressif",
   "drivers/native",
   "drivers/headless",
+  "drivers/nordic",
   "drivers/shared",
   "drivers/std",
   "drivers/wasm",
   "examples/native",
+  "examples/nano_33_ble",
   "examples/wasm",
   "tools/fs_image",
   "tools/firmware_sim",
