@@ -10,7 +10,7 @@ xila = { workspace = true, features = [
   "bootsplash",
 ] }
 abi_definitions = { workspace = true }
-c_demo = { package = "xila-c-demo", git = "https://github.com/xila-project/applications", branch = "main" }
+c_demo = { workspace = true }
 file_manager = { workspace = true }
 command_line_shell = { workspace = true }
 graphical_shell = { workspace = true }
