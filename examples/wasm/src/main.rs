@@ -16,9 +16,6 @@ export function xilaDiskManagerReady(name) {
 export function xilaDiskManagerError(message) {
     window.xilaDiskManagerError?.(message);
 }
-export function reloadXilaForDiskSwitch() {
-    window.location.reload();
-}
 "#)]
 #[cfg(target_arch = "wasm32")]
 extern "C" {
@@ -30,11 +27,10 @@ extern "C" {
 
     #[wasm_bindgen::prelude::wasm_bindgen(js_name = xilaDiskManagerError)]
     fn disk_manager_error(message: &str);
-
-    #[wasm_bindgen::prelude::wasm_bindgen(js_name = reloadXilaForDiskSwitch)]
-    fn reload_xila_for_disk_switch();
 }
 
+#[cfg(target_arch = "wasm32")]
+mod power;
 #[cfg(target_arch = "wasm32")]
 mod storage;
 
@@ -69,8 +65,8 @@ async fn main(task_manager: &'static xila::task::Manager) {
     use web_sys::{HtmlElement, MouseEvent};
     use xila::bootsplash::Bootsplash;
     use xila::executable::{self, Standard, mount_executables};
+    use xila::file_system::Path;
     use xila::file_system::mbr::Mbr;
-    use xila::file_system::{MountOperations, Path};
     use xila::log;
     use xila::task;
     use xila::time::{self, Duration};
@@ -391,6 +387,37 @@ async fn main(task_manager: &'static xila::task::Manager) {
         .await
         .expect("Failed to initialize users and groups");
 
+    // System power device, the lifecycle supervisor's final step. Root and
+    // the administrator group may use it, and therefore request a shutdown.
+    let _ = virtual_file_system
+        .remove(task, xila::lifecycle::POWER_DEVICE_PATH)
+        .await;
+    drivers_peripherals::mount_peripheral(
+        virtual_file_system,
+        task,
+        xila::lifecycle::POWER_DEVICE_PATH,
+        drivers_peripherals::power::PowerHandle::new(drivers_wasm::devices::BrowserPower),
+    )
+    .await
+    .expect("Failed to mount the power device");
+    virtual_file_system
+        .set_ownership(
+            task,
+            xila::lifecycle::POWER_DEVICE_PATH,
+            None,
+            Some(users::GroupIdentifier::new(1000)),
+        )
+        .await
+        .expect("Failed to delegate the power device");
+    virtual_file_system
+        .set_permissions(
+            task,
+            xila::lifecycle::POWER_DEVICE_PATH,
+            xila::file_system::Permissions::from_octal(0o660).unwrap(),
+        )
+        .await
+        .expect("Failed to restrict the power device");
+
     drive
         .sync()
         .await
@@ -415,8 +442,9 @@ async fn main(task_manager: &'static xila::task::Manager) {
         .await
         .unwrap();
 
+    // A disk switch is an explicit restart of this instance: the lifecycle
+    // stops the guests, commits the disk, releases its lock and reloads.
     let switch_requested: &'static AtomicBool = Box::leak(Box::new(AtomicBool::new(false)));
-    let runtime_running: &'static AtomicBool = Box::leak(Box::new(AtomicBool::new(true)));
     let disk_name_for_switch = selected_disk.clone();
     let switch_callback: Closure<dyn FnMut()> = Closure::wrap(Box::new(move || {
         switch_requested.store(true, Ordering::Release);
@@ -430,43 +458,23 @@ async fn main(task_manager: &'static xila::task::Manager) {
         .unwrap();
     switch_callback.forget();
 
-    let (lifecycle, _) = task_manager
+    task_manager
         .spawn(task, "Disk manager", None, move |_| async move {
-            loop {
+            while xila::lifecycle::SYSTEM.is_running() {
                 if switch_requested.swap(false, Ordering::AcqRel) {
-                    // Quiesce the block device before the first commit. If it
-                    // fails, leave autosave running and let the user retry.
-                    drive.stop_writes();
+                    // Save once before committing to the restart: if this
+                    // fails, nothing was stopped and the user can retry.
                     if let Err(error) = drive.sync().await {
-                        drive.resume_writes();
                         let message =
                             alloc::format!("Could not save {disk_name_for_switch}: {error}");
                         disk_manager_error(&message);
                         continue;
                     }
-
-                    autosave_running.store(false, Ordering::Release);
-                    autosave.join().await;
-                    drive
-                        .sync()
-                        .await
-                        .expect("Failed to commit disk before switching");
-                    drive
-                        .unmount()
-                        .expect("Failed to release disk before switching");
-                    reload_xila_for_disk_switch();
-                    return;
-                }
-
-                if !runtime_running.load(Ordering::Acquire) {
+                    let _ = xila::lifecycle::SYSTEM.request(xila::lifecycle::Action::Restart, 0);
                     break;
                 }
-
                 task::Manager::sleep(Duration::from_millis(100)).await;
             }
-
-            autosave_running.store(false, Ordering::Release);
-            autosave.join().await;
         })
         .await
         .unwrap();
@@ -497,8 +505,10 @@ async fn main(task_manager: &'static xila::task::Manager) {
         vec![]
     };
 
-    // - - Execute the shell
-    let _ = executable::execute(
+    // - - Execute the shell. Everything already running is a runtime
+    // service; the shell and what it launches are stopped by the lifecycle.
+    let services = task_manager.get_children(task).await.unwrap();
+    let shell = executable::execute(
         executable_context,
         "/applications/executables/graphical_shell",
         arguments,
@@ -506,18 +516,36 @@ async fn main(task_manager: &'static xila::task::Manager) {
         None,
     )
     .await
-    .unwrap()
-    .join()
-    .await;
+    .unwrap();
+    let mut join = core::pin::pin!(shell.join());
+    loop {
+        use core::{
+            future::{Future, poll_fn},
+            task::Poll,
+        };
+        if poll_fn(|context| Poll::Ready(join.as_mut().poll(context)))
+            .await
+            .is_ready()
+            || !xila::lifecycle::SYSTEM.is_running()
+        {
+            break;
+        }
+        task::Manager::sleep(Duration::from_millis(100)).await;
+    }
 
-    runtime_running.store(false, Ordering::Release);
-    lifecycle.join().await;
-    virtual_file_system.uninitialize().await;
-    drive
-        .sync()
-        .await
-        .expect("Failed to save OPFS disk at shutdown");
-    drive.unmount().expect("Failed to release OPFS disk");
+    // Leaving the shell halts this instance; the page stays open.
+    let _ = xila::lifecycle::SYSTEM.request(xila::lifecycle::Action::PowerOff, 0);
+    let supervisor = xila::lifecycle::Supervisor {
+        virtual_file_system,
+        time_manager,
+        task,
+        services: &services,
+        budget: Duration::from_secs(5),
+    };
+    let mut drivers = power::BrowserDrivers::new(drive, autosave_running, autosave);
+    if let Err(error) = supervisor.run(&xila::lifecycle::SYSTEM, &mut drivers).await {
+        disk_manager_error(&alloc::format!("Xila could not shut down: {error}"));
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
