@@ -246,3 +246,19 @@ Use an absent demo disk path to import the new seed without changing an existing
 installation. The same local bundles work with `--bundle wasm` for the browser
 seed; copy that seed beside the browser runtime as described in its README.
 Local patches rewrite Cargo.lock; do not commit those source substitutions.
+
+## Built-in native C sample
+
+The host runtime links `xila-c-demo` from Applications and mounts
+`/applications/executables/c_demo`. Log in to the terminal (a fresh image uses
+`administrator` with an empty password), then run:
+
+```text
+/applications/executables/c_demo hello world
+```
+
+It prints its arguments, native ABI version and clocks, then writes and reads
+`c-demo.txt` in the current user's home through the native C ABI. The Rust bridge
+grants standard streams and the user's home; C borrows those startup objects.
+This is compiled into the firmware and is not a dynamically loaded package.
+Only desktop native targets include it; browser and hardware examples do not.

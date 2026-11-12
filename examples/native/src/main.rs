@@ -452,6 +452,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
                 &"/applications/executables/package",
                 package::PackageExecutable
             ),
+            (&"/applications/executables/c_demo", c_demo::CDemoExecutable),
             #[cfg(unix)]
             (
                 &"/applications/executables/debug",
