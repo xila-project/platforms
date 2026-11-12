@@ -84,6 +84,9 @@ device = { package = "xila-device", git = "https://github.com/xila-project/core"
 
 # - Drivers
 drivers_core = { package = "xila-drivers-core", git = "https://github.com/xila-project/core", branch = "main" }
+drivers_peripherals = { package = "xila-drivers-peripherals", git = "https://github.com/xila-project/core", branch = "main", features = [
+  "power",
+] }
 drivers_espressif = { package = "xila-drivers-espressif", path = "drivers/espressif" }
 drivers_native = { package = "xila-drivers-native", path = "drivers/native" }
 drivers_headless = { package = "xila-drivers-headless", path = "drivers/headless" }
