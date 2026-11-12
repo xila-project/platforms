@@ -2,6 +2,8 @@
 mod cli;
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+mod power;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod storage;
 
 static TASK_MANAGER: xila::task::Manager = xila::task::Manager::new();
@@ -41,6 +43,8 @@ async fn main(task_manager: &'static xila::task::Manager) {
     use xila::virtual_file_system;
     use xila::virtual_file_system::File;
     use xila::virtual_file_system::mount_static;
+
+    power::install_signal_handlers();
 
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let config = match cli::parse(arguments.iter().map(String::as_str)) {
@@ -274,6 +278,26 @@ async fn main(task_manager: &'static xila::task::Manager) {
         }
     };
 
+    // System power device: the lifecycle supervisor's final step. Device
+    // nodes persist on disk while their runtime handles do not.
+    let _ = virtual_file_system.remove(task, "/devices/power").await;
+    drivers_peripherals::mount_peripheral(
+        virtual_file_system,
+        task,
+        xila::lifecycle::POWER_DEVICE_PATH,
+        drivers_peripherals::power::PowerHandle::new(drivers_std::power::ProcessPower),
+    )
+    .await
+    .expect("Failed to mount the power device");
+    virtual_file_system
+        .set_permissions(
+            task,
+            xila::lifecycle::POWER_DEVICE_PATH,
+            xila::file_system::Permissions::from_octal(0o600).unwrap(),
+        )
+        .await
+        .expect("Failed to restrict the power device");
+
     log::information!("Default hierarchy created.");
 
     if let Some(graphics) = graphics_manager {
@@ -474,6 +498,26 @@ async fn main(task_manager: &'static xila::task::Manager) {
         .await
         .expect("Failed to initialize saved accounts");
 
+    // Root and the provisioned administrator group may use the power device,
+    // and therefore request a shutdown through the lifecycle subsystem.
+    virtual_file_system
+        .set_ownership(
+            task,
+            xila::lifecycle::POWER_DEVICE_PATH,
+            None,
+            Some(users::GroupIdentifier::new(1000)),
+        )
+        .await
+        .expect("Failed to delegate the power device");
+    virtual_file_system
+        .set_permissions(
+            task,
+            xila::lifecycle::POWER_DEVICE_PATH,
+            xila::file_system::Permissions::from_octal(0o660).unwrap(),
+        )
+        .await
+        .expect("Failed to restrict the power device");
+
     // - - Set the environment variables
     task_manager
         .set_environment_variable(task, "Paths", "/")
@@ -534,20 +578,33 @@ async fn main(task_manager: &'static xila::task::Manager) {
         cli::InterfaceMode::Graphical => "/applications/executables/graphical_shell",
         cli::InterfaceMode::Terminal => "/applications/executables/command_line_shell",
     };
-    let shell = executable::execute(executable_context, shell_path, vec![], standard, None)
-        .await
-        .unwrap();
+    // Everything already running is a runtime service; the shell and what it
+    // launches are stopped by the lifecycle pipeline.
+    let services = task_manager.get_children(task).await.unwrap();
+    let shell =
+        match executable::execute(executable_context, shell_path, vec![], standard, None).await {
+            Ok(shell) => shell,
+            Err(_) if !xila::lifecycle::SYSTEM.is_running() => {
+                power::finish(virtual_file_system, time_manager, task, &services, 0).await;
+                return;
+            }
+            Err(error) => panic!("Failed to start shell: {error:?}"),
+        };
     let mut join = core::pin::pin!(shell.join());
-    loop {
+    // Returning from this task does not stop the native executor: leaving the
+    // shell (or a lifecycle request) always ends in `power::finish`.
+    let status = loop {
         use core::{
             future::{Future, poll_fn},
             task::Poll,
         };
-        if poll_fn(|context| Poll::Ready(join.as_mut().poll(context)))
-            .await
-            .is_ready()
+        if let Poll::Ready(status) =
+            poll_fn(|context| Poll::Ready(join.as_mut().poll(context))).await
         {
-            break;
+            break power::shell_status(status);
+        }
+        if !xila::lifecycle::SYSTEM.is_running() {
+            break 0;
         }
         #[cfg(feature = "audio")]
         if let Some(runner) = &audio_runner
@@ -557,9 +614,9 @@ async fn main(task_manager: &'static xila::task::Manager) {
             audio_runner = None;
         }
         task::Manager::sleep(Duration::from_millis(100)).await;
-    }
+    };
 
-    virtual_file_system.uninitialize().await;
+    power::finish(virtual_file_system, time_manager, task, &services, status).await;
     #[cfg(feature = "audio")]
     drop(audio_runner);
 }
