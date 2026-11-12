@@ -76,6 +76,13 @@ A write holds a single `0` or `1` (ASCII or raw byte), optionally surrounded by 
 Pins can also be dynamically configured via VFS control commands (kind `b'g'`: `CONFIGURE` `0x00`, `RELEASE` `0x01`, `GET_CAPABILITIES` `0x02`).
 Power-enable lines (P0.22 sensor rail, P1.00 I2C pullup, P0.17 PDM power, P1.09 power LED) and internal sensor buses remain reserved.
 
+## Restart
+
+`reboot` (administrator or root) stops the shell, commits and unmounts the
+LittleFS partition, then resets the board through the power device
+`/devices/power`. The board cannot power itself off or sleep yet: `poweroff`
+reports that the action is unsupported.
+
 ## Limits
 
 - The date starts from the build date at every power-up: the board has no clock
