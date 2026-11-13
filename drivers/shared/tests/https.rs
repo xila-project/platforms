@@ -143,11 +143,27 @@ async fn https_device_with_real_tls_server() {
         context.time_manager,
         &ENTROPY,
     )));
-    let (device, controller) = network::create_loopback_device();
     let spawner = drivers_std::executor::new_thread_executor(tasks).await;
     let task = tasks.get_current_task_identifier().await;
-    manager
-        .mount_interface(task, "tls-loopback", device, controller, Some(spawner))
+    // Spawning is executor-local: mount from a task sent to the network
+    // thread, so the interface runner is spawned there.
+    let manager: &'static network::Manager = manager;
+    tasks
+        .spawn_send(
+            task,
+            "Mount TLS loopback",
+            Some(spawner),
+            move |_| async move {
+                let (device, controller) = network::create_loopback_device();
+                manager
+                    .mount_interface(task, "tls-loopback", device, controller, None)
+                    .await
+            },
+        )
+        .await
+        .unwrap()
+        .0
+        .join()
         .await
         .unwrap();
     let mut interface = virtual_file_system::File::open(
