@@ -69,11 +69,33 @@ type Completion = synchronization::signal::Signal<
 
 #[embassy_executor::task]
 async fn check_saved_accounts(completion: &'static Completion) {
-    completion.signal(saved_accounts_fixture().await);
+    // Run the fixture as a task of its own manager: a raw Embassy task is
+    // unknown to the manager and has no task identity.
+    let task_manager: &'static xila::task::Manager =
+        Box::leak(Box::new(xila::task::Manager::new()));
+    // SAFETY: called from an Embassy task polled by the executor it returns.
+    let local = unsafe { embassy_executor::Spawner::for_current_executor() }.await;
+    let result = match task_manager.register_spawner(local) {
+        Ok(spawner) => match task_manager
+            .spawn_on(
+                local,
+                xila::task::Manager::ROOT_TASK_IDENTIFIER,
+                "Saved accounts fixture",
+                Some(spawner),
+                move |_| saved_accounts_fixture(task_manager),
+            )
+            .await
+        {
+            Ok((join, _)) => join.join().await,
+            Err(error) => Err(format!("{error:?}")),
+        },
+        Err(error) => Err(format!("{error:?}")),
+    };
+    completion.signal(result);
 }
 
-async fn saved_accounts_fixture() -> Result<(), String> {
-    use xila::{authentication, task, time, users, virtual_file_system};
+async fn saved_accounts_fixture(task_manager: &'static xila::task::Manager) -> Result<(), String> {
+    use xila::{authentication, time, users, virtual_file_system};
     let name = name();
     let drive = Box::leak(Box::new(
         DriveDevice::new(Path::from_str(&name), 4 * 1024 * 1024)
@@ -90,8 +112,10 @@ async fn saved_accounts_fixture() -> Result<(), String> {
         little_fs::FileSystem::new_format(Box::leak(Box::new(partition)), 256)
             .map_err(|e| e.to_string())?,
     );
-    let task_manager = Box::leak(Box::new(task::Manager::new()));
-    let task = task_manager.get_current_task_identifier().await;
+    let task = task_manager
+        .try_get_current_task_identifier()
+        .await
+        .map_err(|e| format!("{e:?}"))?;
     let users_manager = Box::leak(Box::new(users::Manager::new()));
     let time_manager = Box::leak(Box::new(
         time::Manager::new(&drivers_wasm::devices::TimeDevice).map_err(|e| e.to_string())?,

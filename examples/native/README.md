@@ -262,3 +262,24 @@ It prints its arguments, native ABI version and clocks, then writes and reads
 grants standard streams and the user's home; C borrows those startup objects.
 This is compiled into the firmware and is not a dynamically loaded package.
 Only desktop native targets include it; browser and hardware examples do not.
+
+## Shutdown
+
+Leaving the shell (`exit`, end of input), the `poweroff` command and SIGINT or
+SIGTERM all run Core's lifecycle pipeline and end this Xila process; the host
+is never powered off or rebooted. `poweroff` and `reboot` call the lifecycle
+API, which accepts a request only from users allowed to use the power device
+`/devices/power` (root and the provisioned administrator group 1000, mode
+0660). Its native implementation exits the process; `reboot` reports that
+restart is unsupported.
+
+The pipeline signals the shell and every application task it launched, waits
+up to 5 seconds for them to finish, refuses to continue while files are still
+open, freezes writes, unmounts LittleFS (syncing the disk image), then powers
+off through `/devices/power` with the shell's status, 0 after `poweroff`, or
+128 + signal after SIGINT/SIGTERM. Signal handlers only update atomics. If
+shutdown fails (an application ignores the stop request, or the disk cannot be
+synced), the process stays alive with every resource retained and reports the
+error; another SIGINT/SIGTERM then forces the exit, losing only data LittleFS
+had not committed. Runtime services (graphics, network, Debug) are not joined
+and end with the process.

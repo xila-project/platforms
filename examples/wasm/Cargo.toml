@@ -32,6 +32,7 @@ activity = { workspace = true }
 console_error_panic_hook = "0.1"
 drivers_wasm = { workspace = true, features = ["audio"] }
 drivers_core = { workspace = true }
+drivers_peripherals = { workspace = true }
 drivers_shared = { workspace = true }
 
 

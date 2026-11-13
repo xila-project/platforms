@@ -117,7 +117,7 @@ impl DirectBaseOperations for FileDriveDevice {
             self.0
                 .try_get()
                 .map_err(|_| Error::RessourceBusy)?
-                .flush()
+                .sync_all()
                 .map_err(map_error)
         })
     }

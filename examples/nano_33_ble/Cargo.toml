@@ -21,6 +21,8 @@ xila = { git = "https://github.com/xila-project/core", branch = "main", default-
 ] }
 command_line_shell = { package = "xila-command-line-shell", git = "https://github.com/xila-project/applications", branch = "main", default-features = false }
 drivers_core = { workspace = true }
+drivers_peripherals = { workspace = true }
+peripherals = { workspace = true, features = ["power"] }
 drivers_nordic = { workspace = true }
 # Not the workspace entry either: only the hash device, without the network
 # clients.

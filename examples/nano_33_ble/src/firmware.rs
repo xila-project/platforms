@@ -211,6 +211,18 @@ async fn run(task_manager: &'static task::Manager) {
     )
     .await
     .expect("Failed to mount the devices");
+    // A previous start left the node on flash; its handle is gone.
+    let _ = virtual_file_system
+        .remove(task, xila::lifecycle::POWER_DEVICE_PATH)
+        .await;
+    drivers_peripherals::mount_peripheral(
+        virtual_file_system,
+        task,
+        xila::lifecycle::POWER_DEVICE_PATH,
+        drivers_peripherals::power::PowerHandle::new(board::BoardPower),
+    )
+    .await
+    .expect("Failed to mount the power device");
     crate::pins::mount_gpio_pins(virtual_file_system, task)
         .await
         .expect("Failed to mount GPIO pins");
@@ -270,6 +282,26 @@ async fn run(task_manager: &'static task::Manager) {
         .await
         .expect("Failed to set the environment");
 
+    // Root and the administrator group may use the power device, and
+    // therefore request a restart through the lifecycle subsystem.
+    virtual_file_system
+        .set_ownership(
+            task,
+            xila::lifecycle::POWER_DEVICE_PATH,
+            None,
+            Some(users::GroupIdentifier::new(1000)),
+        )
+        .await
+        .expect("Failed to delegate the power device");
+    virtual_file_system
+        .set_permissions(
+            task,
+            xila::lifecycle::POWER_DEVICE_PATH,
+            xila::file_system::Permissions::from_octal(0o660).unwrap(),
+        )
+        .await
+        .expect("Failed to restrict the power device");
+
     log::information!(
         "File system ready (formatted: {formatted}); heap: {} bytes used, {} free",
         __DRIVERS_NORDIC_MEMORY_ALLOCATOR.get_used(),
@@ -279,8 +311,9 @@ async fn run(task_manager: &'static task::Manager) {
     // A start that got this far is not a crash loop.
     board::mark_stable();
 
-    // - The shell, again whenever a session ends.
-    loop {
+    // - The shell, again whenever a session ends, until a lifecycle request.
+    let services = task_manager.get_children(task).await.unwrap_or_default();
+    while xila::lifecycle::SYSTEM.is_running() {
         let standard = Standard::open(
             &"/devices/standard_io/input",
             &"/devices/standard_io/output",
@@ -296,5 +329,17 @@ async fn run(task_manager: &'static task::Manager) {
             .expect("Failed to start the shell");
         let status = shell.join().await;
         log::information!("The shell ended with status {status}");
+    }
+
+    // A privileged `reboot` ended the session: stop, commit, then reset.
+    let supervisor = xila::lifecycle::Supervisor {
+        virtual_file_system,
+        time_manager,
+        task,
+        services: &services,
+        budget: Duration::from_secs(5),
+    };
+    if let Err(error) = supervisor.run(&xila::lifecycle::SYSTEM, &mut ()).await {
+        log::error!("Shutdown failed: {error}; resources are retained");
     }
 }

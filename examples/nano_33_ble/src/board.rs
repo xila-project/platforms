@@ -244,3 +244,18 @@ unsafe extern "C" fn TIMER1() {
         reset(Reset::Bootloader)
     }
 }
+
+/// System power device: an application reset, run by the lifecycle after it
+/// committed storage. The board cannot cut its own power or sleep yet.
+pub struct BoardPower;
+
+impl peripherals::power::PowerController for BoardPower {
+    fn capabilities(&self) -> u8 {
+        // `device::power::Capabilities::RESTART`.
+        2
+    }
+
+    fn restart(&mut self, _status: u8) -> Result<(), peripherals::power::Error> {
+        reset(Reset::Application)
+    }
+}
