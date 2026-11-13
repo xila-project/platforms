@@ -1,7 +1,7 @@
-//! WASM Memory Manager using Linked List Allocator
+//! WASM Memory Manager using TLSF
 //!
-//! This module provides a memory manager for WASM targets that uses the `linked_list_allocator`
-//! crate to manage heap memory. The implementation uses an `Inner` struct to encapsulate the heap
+//! This module provides a memory manager for WASM targets that uses the `memory::RegionHeap`
+//! backend to manage heap memory. The implementation uses an `Inner` struct to encapsulate the heap
 //! and its state, ensuring thread safety through `CriticalSectionMutex`.
 //! The heap is initialized immediately in the constructor, ensuring it's ready for use.
 //!
@@ -39,7 +39,7 @@
 //! ```
 use core::{cell::RefCell, ptr::NonNull};
 
-use linked_list_allocator::Heap;
+type Heap = memory::RegionHeap<{ usize::BITS as usize }>;
 use memory::{Layout, ManagerTrait, utilities::round_to_page_size};
 use memory_exported::CapabilityFlags;
 use synchronization::blocking_mutex::CriticalSectionMutex;
@@ -57,7 +57,7 @@ const fn get_heap_start() -> *mut u8 {
 const PAGE_SIZE: usize = 65536;
 
 struct Inner {
-    /// The linked list allocator heap
+    /// The TLSF heap
     heap: Heap,
     /// Flag indicating if the heap has been initialized
     is_initialized: bool,
@@ -77,26 +77,26 @@ impl Inner {
         Some(new_size)
     }
 
-    unsafe fn allocate_first_fit(&mut self, layout: Layout) -> Option<NonNull<u8>> {
+    unsafe fn allocate(&mut self, layout: Layout) -> Option<NonNull<u8>> {
         if !self.is_initialized {
             unsafe {
-                let new_size = self.expand(layout.size())?;
+                let new_size = self.expand(Heap::growth_size(layout)?)?;
                 self.heap.init(get_heap_start(), new_size);
             }
             self.is_initialized = true;
         }
 
-        if let Ok(pointer) = self.heap.allocate_first_fit(layout) {
+        if let Some(pointer) = self.heap.allocate(layout) {
             return Some(pointer);
         }
 
         // If allocation fails, try to expand the heap
         unsafe {
-            let new_size = self.expand(layout.size())?;
+            let new_size = self.expand(Heap::growth_size(layout)?)?;
             self.heap.extend(new_size);
         }
 
-        self.heap.allocate_first_fit(layout).ok()
+        self.heap.allocate(layout)
     }
 }
 
@@ -137,12 +137,29 @@ impl ManagerTrait for MemoryManager {
         }
 
         self.0
-            .lock(|inner| unsafe { inner.borrow_mut().allocate_first_fit(layout) })
+            .lock(|inner| unsafe { inner.borrow_mut().allocate(layout) })
     }
 
     unsafe fn deallocate(&self, pointer: core::ptr::NonNull<u8>, layout: memory::Layout) {
         self.0
             .lock(|inner| unsafe { inner.borrow_mut().heap.deallocate(pointer, layout) });
+    }
+
+    unsafe fn reallocate(
+        &self,
+        pointer: NonNull<u8>,
+        old: Layout,
+        new: Layout,
+    ) -> Option<NonNull<u8>> {
+        self.0.lock(|inner| unsafe {
+            let mut inner = inner.borrow_mut();
+            if let Some(result) = inner.heap.reallocate(pointer, old, new) {
+                return Some(result);
+            }
+            let additional = inner.expand(Heap::growth_size(new)?)?;
+            inner.heap.extend(additional);
+            inner.heap.reallocate(pointer, old, new)
+        })
     }
 
     fn get_used(&self) -> usize {

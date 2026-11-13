@@ -1,11 +1,11 @@
 use core::{cell::RefCell, mem::MaybeUninit, ptr::NonNull};
-use linked_list_allocator::Heap;
+use memory::RegionHeap as Heap;
 use memory::{CapabilityFlags, Layout, ManagerTrait};
 use synchronization::blocking_mutex::CriticalSectionMutex;
 
-/// Fixed-region memory manager for Cortex-M bare-metal using `linked_list_allocator`.
+/// Fixed-region memory manager for Cortex-M bare-metal using `memory::RegionHeap`.
 pub struct MemoryManager {
-    heap: CriticalSectionMutex<RefCell<Heap>>,
+    heap: CriticalSectionMutex<RefCell<Heap<16>>>,
 }
 
 unsafe impl Send for MemoryManager {}
@@ -55,14 +55,23 @@ impl ManagerTrait for MemoryManager {
             return None;
         }
 
-        self.heap
-            .lock(|heap| heap.borrow_mut().allocate_first_fit(layout).ok())
+        self.heap.lock(|heap| heap.borrow_mut().allocate(layout))
     }
 
     unsafe fn deallocate(&self, pointer: NonNull<u8>, layout: Layout) {
         self.heap.lock(|heap| {
             unsafe { heap.borrow_mut().deallocate(pointer, layout) };
         });
+    }
+
+    unsafe fn reallocate(
+        &self,
+        pointer: NonNull<u8>,
+        old: Layout,
+        new: Layout,
+    ) -> Option<NonNull<u8>> {
+        self.heap
+            .lock(|heap| unsafe { heap.borrow_mut().reallocate(pointer, old, new) })
     }
 
     fn get_used(&self) -> usize {

@@ -9,7 +9,7 @@ use libc::{
     _SC_PAGE_SIZE, MAP_ANONYMOUS, MAP_FAILED, MAP_PRIVATE, PROT_EXEC, PROT_READ, PROT_WRITE, mmap,
     mremap, munmap, sysconf,
 };
-use linked_list_allocator::Heap;
+type Heap = memory::RegionHeap<{ usize::BITS as usize }>;
 use memory::{CapabilityFlags, Layout, ManagerTrait};
 use synchronization::blocking_mutex::{CriticalSectionMutex, Mutex};
 
@@ -83,7 +83,7 @@ impl ManagerTrait for MemoryManager {
 
                 // Try to allocate from the first capable region
                 for region in capable_regions {
-                    let result = region.heap.allocate_first_fit(layout).ok();
+                    let result = region.heap.allocate(layout);
                     if result.is_some() {
                         return result;
                     }
@@ -96,9 +96,9 @@ impl ManagerTrait for MemoryManager {
                 // If no region could satisfy the request, try to expand existing regions
                 for region in capable_regions {
                     // Try to expand the region to fit the requested layout
-                    if expand(region, layout.size()) {
+                    if expand(region, Heap::growth_size(layout)?) {
                         // Try to allocate again after expanding
-                        let result = region.heap.allocate_first_fit(layout).ok();
+                        let result = region.heap.allocate(layout);
                         if result.is_some() {
                             return result;
                         }
@@ -139,6 +139,42 @@ impl ManagerTrait for MemoryManager {
                 }
             });
         }
+    }
+
+    unsafe fn reallocate(
+        &self,
+        pointer: NonNull<u8>,
+        old: Layout,
+        new: Layout,
+    ) -> Option<NonNull<u8>> {
+        let capabilities = self.regions.lock(|regions| {
+            regions
+                .borrow()
+                .iter()
+                .find(|region| unsafe { is_slice_within_region(region, pointer, old) })
+                .map(|region| region.capabilities)
+        })?;
+        // Instrumented builds retain allocation/free events for moving reallocations.
+        #[cfg(not(any(feature = "heaptrack", feature = "profiling")))]
+        if let Some(result) = self.regions.lock(|regions| {
+            let mut regions = regions.borrow_mut();
+            let region = regions
+                .iter_mut()
+                .find(|region| unsafe { is_slice_within_region(region, pointer, old) })?;
+            unsafe { region.heap.reallocate(pointer, old, new) }
+        }) {
+            return Some(result);
+        }
+        let result = unsafe { self.allocate(capabilities, new) }?;
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                pointer.as_ptr(),
+                result.as_ptr(),
+                old.size().min(new.size()),
+            );
+            self.deallocate(pointer, old);
+        }
+        Some(result)
     }
 
     fn get_used(&self) -> usize {
@@ -342,8 +378,11 @@ mod tests {
             // Check used and free memory
             let used = manager.get_used();
             let free = manager.get_free();
-            assert_eq!(used, layout.size());
-            assert_eq!(free, INITIAL_HEAP_SIZE - layout.size());
+            assert!(used >= layout.size());
+            assert_eq!(
+                free + used,
+                INITIAL_HEAP_SIZE - 4 * core::mem::size_of::<usize>()
+            );
 
             // Deallocate the memory
             if let Some(pointer) = allocation {
@@ -508,6 +547,30 @@ mod tests {
         assert_eq!(round_page_size(page_size, page_size), page_size);
         assert_eq!(round_page_size(page_size + 1, page_size), page_size * 2);
         assert_eq!(round_page_size(page_size * 2, page_size), page_size * 2);
+    }
+
+    #[test]
+    fn capabilities_and_reallocation_stay_in_region() {
+        let manager = MemoryManager::new();
+        let layout = Layout::from_size_align(128, 64).unwrap();
+        let p = unsafe { manager.allocate(CapabilityFlags::Executable, layout) }.unwrap();
+        assert!(unsafe { manager.allocate(CapabilityFlags::DirectMemoryAccess, layout) }.is_none());
+        unsafe { p.as_ptr().write_bytes(0x5a, 128) };
+        let larger = Layout::from_size_align(4096, 64).unwrap();
+        let q = unsafe { manager.reallocate(p, layout, larger) }.unwrap();
+        assert_eq!(unsafe { *q.as_ptr() }, 0x5a);
+        manager.regions.lock(|regions| {
+            let regions = regions.borrow();
+            assert!(unsafe { is_slice_within_region(&regions[1], q, larger) });
+            assert_eq!(regions[0].heap.used(), 0);
+            assert!(regions[1].heap.used() >= larger.size());
+        });
+        assert_eq!(
+            manager.get_used() + manager.get_free(),
+            manager.get_total_size()
+        );
+        unsafe { manager.deallocate(q, larger) };
+        assert_eq!(manager.get_used(), 0);
     }
 
     memory::implement_memory_manager_tests!(MemoryManager::new());

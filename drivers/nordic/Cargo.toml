@@ -19,7 +19,6 @@ shared = { workspace = true }
 log = { workspace = true }
 
 critical-section = { workspace = true }
-linked_list_allocator = { workspace = true }
 cortex-m = { version = "0.7" }
 
 embedded-storage = { version = "0.3", default-features = false }
