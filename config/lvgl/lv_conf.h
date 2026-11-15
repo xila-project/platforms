@@ -740,7 +740,7 @@
 #define LV_USE_OBJ_NAME 0
 
 /** Widget id (lv_obj_set_id) */
-#define LV_USE_OBJ_ID 0
+#define LV_USE_OBJ_ID 1
 
 #if LV_USE_OBJ_ID
 /** Automatic ID assignment on widget creation */
@@ -753,7 +753,7 @@
  *  - lv_obj_free_id:         Does nothing, as there is no memory allocation for the ID.
  *  When disabled these functions needs to be implemented by the user.
  */
-#define LV_USE_OBJ_ID_BUILTIN 1
+#define LV_USE_OBJ_ID_BUILTIN 0
 
 #endif /*LV_USE_OBJ_ID*/
 
