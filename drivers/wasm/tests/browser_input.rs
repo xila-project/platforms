@@ -1,6 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use abi_definitions as _;
+use core::task::{Context, Poll, Waker};
 use drivers_wasm::devices::graphics::{CanvasScreenDevice, KeyboardDevice};
 use file_system::{ControlCommand, DirectBaseOperations};
 use graphics::{Area, ColorARGB8888, InputData, Key, Point, SET_DRAWING_AREA, State, WAS_RESIZED};
@@ -265,13 +266,16 @@ async fn dirty_rectangle_with_unaligned_width_preserves_canvas_color_order() {
         Point::new(0, 0),
         Point::new(WIDTH as i16 - 1, HEIGHT as i16 - 1),
     );
-    device
-        .control(
+    let mut cx = Context::from_waker(Waker::noop());
+    assert_eq!(
+        device.control(
+            &mut cx,
             SET_DRAWING_AREA::IDENTIFIER,
             AnyByLayout::from_mutable(&mut area),
             AnyByLayout::NONE,
-        )
-        .unwrap();
+        ),
+        Poll::Ready(Ok(())),
+    );
 
     let colors: Vec<_> = (0..WIDTH * HEIGHT)
         .map(|index| {
@@ -289,7 +293,10 @@ async fn dirty_rectangle_with_unaligned_width_preserves_canvas_color_order() {
             colors.len() * core::mem::size_of::<ColorARGB8888>(),
         )
     };
-    assert_eq!(device.write(source, 0).unwrap(), colors.len());
+    assert_eq!(
+        device.write(&mut cx, source, 0),
+        Poll::Ready(Ok(colors.len())),
+    );
 
     let context: web_sys::CanvasRenderingContext2d = canvas
         .get_context("2d")
