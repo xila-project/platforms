@@ -26,8 +26,8 @@ tools."http:bossac" = { version = "1.9.1-arduino2", bin_path = "bin", platforms 
 run = "examples/nano_33_ble/flash.sh target/thumbv7em-none-eabihf/release-embedded/nano_33_ble_example"
 
 [tasks."check:browser"]
-description = "Check the browser runtime"
-run = "cargo check --locked -p xila-wasm-example --target wasm32-unknown-unknown"
+description = "Check the browser runtime and driver tests"
+run = "cargo check --locked -p xila-wasm-example -p xila-drivers-wasm --target wasm32-unknown-unknown --tests"
 
 [tasks."test:seed"]
 description = "Test filesystem images and package verification"

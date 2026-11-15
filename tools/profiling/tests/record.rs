@@ -7,7 +7,7 @@ use std::{
     process::{Command, Output},
     sync::atomic::{AtomicUsize, Ordering},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use xila_profiling::Summary;
 
@@ -154,6 +154,30 @@ fn failure_is_not_a_successful_measurement() {
     assert!(summary.medians.is_none());
 }
 
+// Process-group signals are asynchronous. The recorder reaps its direct child,
+// but descendants can still be terminating before their new parent reaps them.
+fn assert_process_stopped(pid: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match fs::read_to_string(format!("/proc/{pid}/stat")) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(error) => panic!("cannot inspect descendant {pid}: {error}"),
+            Ok(stat) => {
+                // The parenthesized process name may itself contain spaces.
+                let state = stat.rsplit_once(") ").unwrap().1.split_whitespace().next();
+                if state == Some("Z") {
+                    return;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "descendant {pid} did not stop within five seconds: {stat}",
+                );
+            }
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
 #[test]
 fn duration_stops_background_children() {
     let scratch = Scratch::new();
@@ -165,8 +189,7 @@ fn duration_stops_background_children() {
         .lines()
         .find_map(|line| line.strip_prefix("child-pid="))
         .unwrap();
-    let stat = fs::read_to_string(format!("/proc/{pid}/stat"));
-    assert!(stat.is_err() || stat.unwrap().split_whitespace().nth(2) == Some("Z"));
+    assert_process_stopped(pid);
 }
 
 #[test]
@@ -346,6 +369,5 @@ fn interrupting_recorder_cleans_up_workload_and_descendants() {
     .unwrap();
     assert_eq!(summary.error.as_deref(), Some("interrupted"));
     assert!(summary.medians.is_none());
-    let stat = fs::read_to_string(format!("/proc/{pid}/stat"));
-    assert!(stat.is_err() || stat.unwrap().split_whitespace().nth(2) == Some("Z"));
+    assert_process_stopped(&pid);
 }
