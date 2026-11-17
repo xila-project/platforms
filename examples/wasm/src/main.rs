@@ -174,6 +174,14 @@ async fn main(task_manager: &'static xila::task::Manager) {
     });
 
     // - - Mount the devices
+    virtual_file_system
+        .mount_file_system(
+            xila::memory_file_system::FileSystem::new(),
+            Path::DEVICES,
+            task,
+        )
+        .await
+        .expect("Failed to mount the in-memory device file system");
 
     // - - Create the default system hierarchy
     virtual_file_system::create_default_hierarchy(virtual_file_system, task)
@@ -184,11 +192,6 @@ async fn main(task_manager: &'static xila::task::Manager) {
         .expect("Failed to clear temporary storage at boot");
     graphics::appearance::restore_appearance(graphics_manager, virtual_file_system, task).await;
 
-    // - - Mount the devices
-    virtual_file_system::clean_devices(virtual_file_system, task)
-        .await
-        .unwrap();
-
     #[cfg(feature = "neural-network")]
     {
         virtual_file_system::ignore_already_exists_error(
@@ -197,14 +200,6 @@ async fn main(task_manager: &'static xila::task::Manager) {
                 .await,
         )
         .expect("Failed to create NN device directory");
-        // Device nodes persist on disk while their runtime handles do not.
-        virtual_file_system::clean_devices_in_directory(
-            virtual_file_system,
-            task,
-            xila::file_system::Path::from_str("/devices/nn"),
-        )
-        .await
-        .expect("Failed to clean stale NN device nodes");
         drivers_shared::devices::neural_network::mount_loader(
             virtual_file_system,
             task,
@@ -389,9 +384,6 @@ async fn main(task_manager: &'static xila::task::Manager) {
 
     // System power device, the lifecycle supervisor's final step. Root and
     // the administrator group may use it, and therefore request a shutdown.
-    let _ = virtual_file_system
-        .remove(task, xila::lifecycle::POWER_DEVICE_PATH)
-        .await;
     drivers_peripherals::mount_peripheral(
         virtual_file_system,
         task,

@@ -25,7 +25,10 @@ pub fn build(output: &Path, size: u64, root: Option<&Path>) -> Result<(), Box<dy
                 XILA_DISK_SIGNATURE,
                 PartitionKind::Xila,
             )?;
-            let fs = little_fs::FileSystem::new_format(Box::leak(Box::new(partition)), 256)?;
+            let fs = little_fs::FileSystem::new_format(
+                Box::leak(Box::new(partition)),
+                little_fs::Options::new(256),
+            )?;
             super::populate::populate(&fs, source.as_ref())?;
             drop(fs);
             drive.flush_sync()?;
@@ -43,7 +46,10 @@ pub fn build(output: &Path, size: u64, root: Option<&Path>) -> Result<(), Box<dy
                 .find(|p| p.is_valid() && p.kind == PartitionKind::Xila)
                 .ok_or("missing Xila partition")?;
             let partition = create_partition_device(drive, entry)?;
-            let fs = little_fs::FileSystem::new(Box::leak(Box::new(partition)), 256)?;
+            let fs = little_fs::FileSystem::new(
+                Box::leak(Box::new(partition)),
+                little_fs::Options::new(256),
+            )?;
             super::populate::verify(&fs, source.as_ref())?;
             drop(fs);
             drive.flush_sync()?;

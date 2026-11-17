@@ -100,8 +100,14 @@ async fn filesystem(
         &drivers_std::devices::TimeDevice,
     ))?));
     let disk = MemoryDevice::<512>::new_static(512 * 128);
-    checked(little_fs::FileSystem::format(disk, 256))?;
-    let fs = checked(little_fs::FileSystem::new(disk, 256))?;
+    checked(little_fs::FileSystem::format(
+        disk,
+        little_fs::Options::new(256),
+    ))?;
+    let fs = checked(little_fs::FileSystem::new(
+        disk,
+        little_fs::Options::new(256),
+    ))?;
     let vfs = Box::leak(Box::new(VirtualFileSystem::new(manager, users, time, fs)));
     checked(vfs.create_directory(task, &"/devices").await)?;
     checked(vfs.create_directory(task, &"/devices/system").await)?;

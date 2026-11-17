@@ -13,11 +13,11 @@ use drivers_nordic::{
 use xila::{
     authentication,
     executable::{self, Standard, mount_executables},
-    file_system::{AccessFlags, CreateFlags, Flags},
+    file_system::{AccessFlags, CreateFlags, Flags, Path},
     little_fs, log,
     memory::ManagerTrait,
-    task, time, users,
-    virtual_file_system::{self, File, mount_static},
+    memory_file_system, task, time, users,
+    virtual_file_system::{self, AccessTimePolicy, File, MountOptions, mount_static},
 };
 
 use crate::board;
@@ -141,26 +141,38 @@ async fn run(task_manager: &'static task::Manager) {
         InternalFlashDevice::new(peripherals.NVMC, storage_start, storage_size)
             .expect("Invalid storage region"),
     ));
-    let (file_system, formatted) = match little_fs::FileSystem::new(drive, CACHE_SIZE) {
-        Ok(file_system) => (file_system, false),
-        Err(error) => {
-            log::warning!("No file system in the internal flash ({error:?}): formatting it");
-            (
-                little_fs::FileSystem::new_format(drive, CACHE_SIZE)
-                    .expect("Failed to format the internal flash"),
-                true,
-            )
-        }
-    };
+    let little_file_system_options = little_fs::Options::new(CACHE_SIZE).set_block_cycles(500);
+    let (file_system, formatted) =
+        match little_fs::FileSystem::new(drive, little_file_system_options) {
+            Ok(file_system) => (file_system, false),
+            Err(error) => {
+                log::warning!("No file system in the internal flash ({error:?}): formatting it");
+                (
+                    little_fs::FileSystem::new_format(drive, little_file_system_options)
+                        .expect("Failed to format the internal flash"),
+                    true,
+                )
+            }
+        };
 
     let virtual_file_system: &'static virtual_file_system::VirtualFileSystem = Box::leak(Box::new(
-        virtual_file_system::initialize(task_manager, users_manager, time_manager, file_system)
-            .expect("Failed to initialize the virtual file system"),
+        virtual_file_system::initialize_with_options(
+            task_manager,
+            users_manager,
+            time_manager,
+            file_system,
+            MountOptions::new().with_access_time_policy(AccessTimePolicy::Never),
+        )
+        .expect("Failed to initialize the virtual file system"),
     ));
     xila::abi_definitions::initialize(xila::abi_definitions::RuntimeContext {
         virtual_file_system,
         time_manager,
     });
+    virtual_file_system
+        .mount_file_system(memory_file_system::FileSystem::new(), Path::DEVICES, task)
+        .await
+        .expect("Failed to mount the in-memory device file system");
     virtual_file_system::create_default_hierarchy(virtual_file_system, task)
         .await
         .expect("Failed to create the default hierarchy");
@@ -211,10 +223,6 @@ async fn run(task_manager: &'static task::Manager) {
     )
     .await
     .expect("Failed to mount the devices");
-    // A previous start left the node on flash; its handle is gone.
-    let _ = virtual_file_system
-        .remove(task, xila::lifecycle::POWER_DEVICE_PATH)
-        .await;
     drivers_peripherals::mount_peripheral(
         virtual_file_system,
         task,

@@ -239,7 +239,6 @@ pub async fn mount_gpio_pins(
                 .map_err(virtual_file_system::Error::FileSystem)?;
         }
 
-        let _ = virtual_file_system.remove(task, entry.path).await;
         virtual_file_system
             .mount_character_device(task, entry.path, device)
             .await?;

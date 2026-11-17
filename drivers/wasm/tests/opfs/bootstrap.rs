@@ -109,8 +109,11 @@ async fn saved_accounts_fixture(task_manager: &'static xila::task::Manager) -> R
     )
     .map_err(|e| e.to_string())?;
     drop(
-        little_fs::FileSystem::new_format(Box::leak(Box::new(partition)), 256)
-            .map_err(|e| e.to_string())?,
+        little_fs::FileSystem::new_format(
+            Box::leak(Box::new(partition)),
+            little_fs::Options::new(256),
+        )
+        .map_err(|e| e.to_string())?,
     );
     let task = task_manager
         .try_get_current_task_identifier()
@@ -204,7 +207,11 @@ async fn new_placeholder_imports_a_seed_and_reopens_without_a_download() {
         PartitionKind::Xila,
     )
     .unwrap();
-    let fs = little_fs::FileSystem::new_format(Box::leak(Box::new(partition)), 256).unwrap();
+    let fs = little_fs::FileSystem::new_format(
+        Box::leak(Box::new(partition)),
+        little_fs::Options::new(256),
+    )
+    .unwrap();
     fs.create_file(Path::from_str("/seed-proof")).unwrap();
     let mut context = Context::new_empty();
     fs.lookup_file(
