@@ -1,5 +1,5 @@
 [vars]
-rust_version = "1.99.0"
+rust_version = "1.100.0"
 node_version = "24.22.0"
 taplo_version = "0.10.0"
 actionlint_version = "1.7.7"
