@@ -32,8 +32,11 @@ impl Fixture {
             PartitionKind::Xila,
         )
         .unwrap();
-        let fs =
-            xila::little_fs::FileSystem::new_format(Box::leak(Box::new(partition)), 256).unwrap();
+        let fs = xila::little_fs::FileSystem::new_format(
+            Box::leak(Box::new(partition)),
+            xila::little_fs::Options::new(256),
+        )
+        .unwrap();
         drop(fs);
         drive.flush_sync().unwrap();
         Self(path)
@@ -148,7 +151,8 @@ fn imports_once_and_preserves_existing_disk_without_seed() {
     let drive = Box::leak(Box::new(
         drivers_std::drive_file::FileDriveDevice::open_existing(&disk).unwrap(),
     ));
-    let filesystem = xila::little_fs::mount_disk(drive, 256).unwrap();
+    let filesystem =
+        xila::little_fs::mount_disk(drive, xila::little_fs::Options::new(256)).unwrap();
     filesystem
         .create_file(xila::file_system::Path::from_str("/user-kept-file"))
         .unwrap();
@@ -159,7 +163,8 @@ fn imports_once_and_preserves_existing_disk_without_seed() {
     assert!(!storage::prepare_disk(&disk, &seed, SIZE).unwrap());
     assert_eq!(fs::read(&disk).unwrap(), before);
     assert!(!storage::prepare_disk(&disk, &disk, SIZE).unwrap());
-    let filesystem = xila::little_fs::mount_disk(drive, 256).unwrap();
+    let filesystem =
+        xila::little_fs::mount_disk(drive, xila::little_fs::Options::new(256)).unwrap();
     let mut attributes =
         xila::file_system::Attributes::new().set_mask(xila::file_system::AttributeFlags::all());
     filesystem
@@ -216,6 +221,6 @@ fn matching_size_corrupt_disk_is_preserved_on_mount_failure() {
     let drive = Box::leak(Box::new(
         drivers_std::drive_file::FileDriveDevice::open_existing(&disk).unwrap(),
     ));
-    assert!(xila::little_fs::mount_disk(drive, 256).is_err());
+    assert!(xila::little_fs::mount_disk(drive, xila::little_fs::Options::new(256)).is_err());
     assert_eq!(fs::read(&disk).unwrap(), bytes);
 }

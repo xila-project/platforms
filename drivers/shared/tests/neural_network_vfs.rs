@@ -20,8 +20,8 @@ async fn owned_model_runs_through_mounted_vfs_device() {
     let time = Box::leak(Box::new(time::Manager::new(&testing::TimeDevice).unwrap()));
     let task = tasks.get_current_task_identifier().await;
     let disk = MemoryDevice::<512>::new_static(512 * 1024);
-    little_fs::FileSystem::format(disk, 256).unwrap();
-    let fs = little_fs::FileSystem::new(disk, 256).unwrap();
+    little_fs::FileSystem::format(disk, little_fs::Options::new(256)).unwrap();
+    let fs = little_fs::FileSystem::new(disk, little_fs::Options::new(256)).unwrap();
     let vfs = virtual_file_system::initialize(tasks, users, time, fs).unwrap();
     let bytes = include_bytes!("fixtures/classifier.tflite");
     let mut model = nanoglia::core::Block::new_zeroed(bytes.len(), nanoglia::Global).unwrap();
@@ -63,8 +63,8 @@ async fn loader_device_loads_model_in_chunks_and_runs_inference() {
     let time = Box::leak(Box::new(time::Manager::new(&testing::TimeDevice).unwrap()));
     let task = tasks.get_current_task_identifier().await;
     let disk = MemoryDevice::<512>::new_static(512 * 1024);
-    little_fs::FileSystem::format(disk, 256).unwrap();
-    let fs = little_fs::FileSystem::new(disk, 256).unwrap();
+    little_fs::FileSystem::format(disk, little_fs::Options::new(256)).unwrap();
+    let fs = little_fs::FileSystem::new(disk, little_fs::Options::new(256)).unwrap();
     let vfs = virtual_file_system::initialize(tasks, users, time, fs).unwrap();
 
     let fixture = include_bytes!("fixtures/classifier.tflite");

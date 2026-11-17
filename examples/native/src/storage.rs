@@ -72,12 +72,14 @@ pub fn prepare_disk(disk: &Path, seed: &Path, size: u64) -> io::Result<bool> {
         }
         output.sync_all()?;
         let drive = Box::leak(Box::new(FileDriveDevice::open_existing(&temporary)?));
-        let fs = xila::little_fs::mount_disk(drive, 256).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("invalid seed filesystem: {e:?}"),
-            )
-        })?;
+        let fs = xila::little_fs::mount_disk(drive, xila::little_fs::Options::new(256)).map_err(
+            |e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("invalid seed filesystem: {e:?}"),
+                )
+            },
+        )?;
         drop(fs);
         // A hard link publishes complete bytes atomically and refuses replacement,
         // including if another process created the destination during validation.

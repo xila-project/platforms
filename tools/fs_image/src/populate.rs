@@ -194,7 +194,7 @@ mod tests {
         std::os::unix::fs::symlink("/etc/passwd", root.join("entry")).unwrap();
         let filesystem = little_fs::FileSystem::new_format(
             file_system::MemoryDevice::<512>::new_static(512 * 1024),
-            256,
+            little_fs::Options::new(256),
         )
         .unwrap();
         let result = populate(&filesystem, Some(&source));
@@ -225,7 +225,7 @@ mod mutation_tests {
         std::os::unix::fs::symlink("/etc", root.join("child")).unwrap();
         let filesystem = little_fs::FileSystem::new_format(
             file_system::MemoryDevice::<512>::new_static(512 * 1024),
-            256,
+            little_fs::Options::new(256),
         )
         .unwrap();
         assert!(populate(&filesystem, Some(&source)).is_err());
@@ -243,7 +243,7 @@ mod mutation_tests {
         std::os::unix::fs::symlink("/etc", &root).unwrap();
         let filesystem = little_fs::FileSystem::new_format(
             file_system::MemoryDevice::<512>::new_static(512 * 1024),
-            256,
+            little_fs::Options::new(256),
         )
         .unwrap();
         populate(&filesystem, Some(&source)).unwrap();

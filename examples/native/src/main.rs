@@ -174,7 +174,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
         ))
         .expect("Failed to open disk"),
     ));
-    let file_system = little_fs::mount_disk(drive, 256)
+    let file_system = little_fs::mount_disk(drive, little_fs::Options::new(256))
         .expect("Failed to mount existing disk; it was not reformatted");
 
     // Initialize the virtual file system
@@ -190,6 +190,14 @@ async fn main(task_manager: &'static xila::task::Manager) {
     log::information!("Virtual file system initialized.");
 
     // - - Mount the devices
+    virtual_file_system
+        .mount_file_system(
+            xila::memory_file_system::FileSystem::new(),
+            xila::file_system::Path::DEVICES,
+            task,
+        )
+        .await
+        .expect("Failed to mount the in-memory device file system");
 
     // - - Create the default system hierarchy
     virtual_file_system::create_default_hierarchy(virtual_file_system, task)
@@ -207,14 +215,6 @@ async fn main(task_manager: &'static xila::task::Manager) {
                 .await,
         )
         .expect("Failed to create NN device directory");
-        // Device nodes persist on disk while their runtime handles do not.
-        virtual_file_system::clean_devices_in_directory(
-            virtual_file_system,
-            task,
-            xila::file_system::Path::from_str("/devices/nn"),
-        )
-        .await
-        .expect("Failed to clean stale NN device nodes");
         drivers_shared::devices::neural_network::mount_loader(
             virtual_file_system,
             task,
@@ -234,13 +234,6 @@ async fn main(task_manager: &'static xila::task::Manager) {
                 .await,
         )
         .expect("Failed to create debug device directory");
-        virtual_file_system::clean_devices_in_directory(
-            virtual_file_system,
-            task,
-            xila::file_system::Path::from_str("/devices/graphics/debug"),
-        )
-        .await
-        .expect("Failed to clean stale debug device nodes");
         virtual_file_system
             .mount_character_device(
                 task,
@@ -278,9 +271,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
         }
     };
 
-    // System power device: the lifecycle supervisor's final step. Device
-    // nodes persist on disk while their runtime handles do not.
-    let _ = virtual_file_system.remove(task, "/devices/power").await;
+    // System power device: the lifecycle supervisor's final step.
     drivers_peripherals::mount_peripheral(
         virtual_file_system,
         task,

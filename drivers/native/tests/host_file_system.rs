@@ -32,10 +32,10 @@ async fn initialize_with_time(
 
     let device = MemoryDevice::<512>::new_static(1024 * 512);
 
-    let cache_size = 256;
+    let options = little_fs::Options::new(256);
 
-    little_fs::FileSystem::format(device, cache_size).unwrap();
-    let file_system = little_fs::FileSystem::new(device, cache_size).unwrap();
+    little_fs::FileSystem::format(device, options).unwrap();
+    let file_system = little_fs::FileSystem::new(device, options).unwrap();
 
     let virtual_file_system = Box::leak(Box::new(
         virtual_file_system::initialize(task_instance, users_manager, time_manager, file_system)

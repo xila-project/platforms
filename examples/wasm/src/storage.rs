@@ -3,7 +3,7 @@ use xila::{authentication, file_system, little_fs};
 
 /// Seeded and existing disks are already formatted. Errors never authorize erasure.
 pub fn mount(drive: &'static DriveDevice) -> file_system::Result<little_fs::FileSystem> {
-    little_fs::mount_disk(drive, 256)
+    little_fs::mount_disk(drive, little_fs::Options::new(256))
 }
 
 pub async fn initialize_users(

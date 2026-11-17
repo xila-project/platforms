@@ -15,8 +15,8 @@ async fn mnist_digits_run_through_the_portable_vfs_backend() {
     let time = Box::leak(Box::new(time::Manager::new(&testing::TimeDevice).unwrap()));
     let task = tasks.get_current_task_identifier().await;
     let disk = MemoryDevice::<512>::new_static(512 * 1024);
-    little_fs::FileSystem::format(disk, 256).unwrap();
-    let fs = little_fs::FileSystem::new(disk, 256).unwrap();
+    little_fs::FileSystem::format(disk, little_fs::Options::new(256)).unwrap();
+    let fs = little_fs::FileSystem::new(disk, little_fs::Options::new(256)).unwrap();
     let vfs = virtual_file_system::initialize(tasks, users, time, fs).unwrap();
     drivers_shared::devices::neural_network::mount_loader(
         &vfs,

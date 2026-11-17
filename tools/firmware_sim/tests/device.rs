@@ -16,8 +16,8 @@ async fn fixture() -> (task::TaskIdentifier, &'static VirtualFileSystem) {
         time::Manager::new(&drivers_std::devices::TimeDevice).unwrap(),
     ));
     let disk = MemoryDevice::<512>::new_static(512 * 128);
-    little_fs::FileSystem::format(disk, 256).unwrap();
-    let fs = little_fs::FileSystem::new(disk, 256).unwrap();
+    little_fs::FileSystem::format(disk, little_fs::Options::new(256)).unwrap();
+    let fs = little_fs::FileSystem::new(disk, little_fs::Options::new(256)).unwrap();
     let vfs = Box::leak(Box::new(VirtualFileSystem::new(manager, users, time, fs)));
     let task = manager.get_current_task_identifier().await;
     vfs.create_directory(task, &"/devices").await.unwrap();
