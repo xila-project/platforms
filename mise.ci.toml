@@ -218,7 +218,12 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", compone
 ], targets = [
   "wasm32-wasip1",
 ] }
-run = "rustc --version"
+# Later workflow steps call cargo directly: pin them to the same toolchain
+# instead of the runner's default one.
+run = [
+  "rustc --version",
+  'if [ -n "${GITHUB_ENV:-}" ]; then echo "RUSTUP_TOOLCHAIN={{ vars.rust_version }}" >> "$GITHUB_ENV"; fi',
+]
 
 [tasks."ci:integration-build-applications"]
 description = "Build Applications guests with the selected integration checkouts"
