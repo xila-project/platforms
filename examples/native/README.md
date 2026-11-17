@@ -212,9 +212,12 @@ It is compiled into the native runtime; it has no guest Wasm binary.
 
 ## Digits demo
 
-The `digits` default feature registers the small CPU MNIST model at
-`/devices/nn/digits`. `--no-default-features` omits it. The model and the guest
-belong to Applications; this runtime selects the portable NN backend.
+The `neural-network` default feature mounts a runtime CPU model loader at
+`/devices/nn/cpu` (no model is embedded in the firmware);
+`--no-default-features` omits it along with host audio. Applications write a
+TFLite model to that node and send the `LOAD` control command; the Digits model
+and guest belong to Applications, while this runtime selects the portable NN
+backend.
 Both reference image profiles include the signed `xila.digits` release. Build
 `mise run image:native` or `mise run image:browser`, then use a new disk to import
 the updated seed and open **Digits** from the launcher. Existing disks keep their
