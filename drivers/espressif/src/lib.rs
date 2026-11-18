@@ -42,10 +42,12 @@ const _: () = assert!(
 compile_error!(
     "the `gpio` feature needs Xila Core on a chip with atomic compare-and-swap; ESP32-C2, \
      ESP32-C3 and ESP32-S2 lack it (https://github.com/xila-project/core/issues/649). \
-     Disable default features on these chips."
+     Disable default features and enable `i2c`, `spi` or `uart` instead."
 );
 
 pub mod chips;
 
 #[cfg(all(feature = "gpio", target_has_atomic = "ptr"))]
 pub mod shared;
+
+pub mod peripherals;

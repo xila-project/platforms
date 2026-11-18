@@ -6293,6 +6293,7 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "embedded-hal 1.0.0",
+ "embedded-io 0.7.1",
  "esp-hal",
  "xila-drivers-peripherals",
  "xila-peripherals",
@@ -6837,6 +6838,9 @@ version = "0.1.0"
 source = "git+https://github.com/xila-project/core?branch=main#70e13ac9b0aacd506eb604b41ab5b884643786ba"
 dependencies = [
  "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "embedded-io 0.7.1",
+ "embedded-io-async 0.7.0",
 ]
 
 [[package]]

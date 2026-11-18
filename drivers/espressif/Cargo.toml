@@ -8,6 +8,7 @@ edition = "2024"
 [target.'cfg(any(target_arch = "xtensa", target_arch = "riscv32"))'.dependencies]
 critical-section = { workspace = true }
 embedded-hal = { workspace = true, optional = true }
+embedded-io = { workspace = true, optional = true }
 esp-hal = { version = "=1.2.2", default-features = false, features = [
   "unstable",
 ], optional = true }
@@ -22,9 +23,9 @@ task = { workspace = true, optional = true }
 virtual_file_system = { workspace = true, optional = true }
 
 [features]
-default = ["gpio"]
+default = ["gpio", "i2c", "spi", "uart"]
 
-# GPIO lines as VFS devices.
+# Peripheral adapters.
 gpio = [
   "dep:drivers_peripherals",
   "dep:embedded-hal",
@@ -34,6 +35,9 @@ gpio = [
   "drivers_peripherals/gpio",
   "peripherals/gpio",
 ]
+i2c = ["dep:embedded-hal", "dep:peripherals", "peripherals/i2c"]
+spi = ["dep:embedded-hal", "dep:peripherals", "peripherals/spi"]
+uart = ["dep:embedded-io", "dep:peripherals", "peripherals/uart"]
 
 # Supported Espressif chips (esp-hal 1.2.2). Enable exactly one; without one
 # the crate is empty.
