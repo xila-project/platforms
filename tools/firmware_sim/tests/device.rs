@@ -1,11 +1,11 @@
 mod support;
 use file_system::{AccessFlags, MemoryDevice, Permissions};
 use firmware_update::device::*;
-use firmware_update::nor::MemoryNor;
-use firmware_update::simulator::{FLASH_SIZE, Simulator};
 use support::*;
 use users::{GroupIdentifier, UserIdentifier};
 use virtual_file_system::{Error, File, ItemStatic, VirtualFileSystem};
+use xila_firmware_native::nor::MemoryNor;
+use xila_firmware_native::simulator::{FLASH_SIZE, Simulator};
 extern crate abi_definitions;
 drivers_std::memory::instantiate_global_allocator!();
 
@@ -16,8 +16,8 @@ async fn fixture() -> (task::TaskIdentifier, &'static VirtualFileSystem) {
         time::Manager::new(&drivers_std::devices::TimeDevice).unwrap(),
     ));
     let disk = MemoryDevice::<512>::new_static(512 * 128);
-    little_fs::FileSystem::format(disk, 256).unwrap();
-    let fs = little_fs::FileSystem::new(disk, 256).unwrap();
+    little_fs::FileSystem::format(disk, little_fs::Options::new(256)).unwrap();
+    let fs = little_fs::FileSystem::new(disk, little_fs::Options::new(256)).unwrap();
     let vfs = Box::leak(Box::new(VirtualFileSystem::new(manager, users, time, fs)));
     let task = manager.get_current_task_identifier().await;
     vfs.create_directory(task, &"/devices").await.unwrap();

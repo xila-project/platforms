@@ -10,6 +10,7 @@ pub mod io;
 pub mod loader;
 pub mod log;
 pub mod memory;
+pub mod power;
 #[cfg(all(feature = "profiling", target_os = "linux"))]
 pub mod profiling;
 pub mod tuntap;

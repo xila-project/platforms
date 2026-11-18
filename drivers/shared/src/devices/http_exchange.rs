@@ -12,7 +12,10 @@ use synchronization::{
 };
 use xila_http::{BodyDecoder, parse_response_head};
 
-pub(super) const RESPONSE_BUFFER_SIZE: usize = 2048;
+/// Must hold a whole response head. GitHub release downloads answer with a
+/// ~5.5 KB redirect head (a ~4 KB Content-Security-Policy line alone), which
+/// package installation has to follow.
+pub(super) const RESPONSE_BUFFER_SIZE: usize = 8192;
 const MAX_HEADERS: usize = 32;
 pub(super) const IO_TIMEOUT_SECONDS: u64 = 15;
 type Buffer = Box<[u8; RESPONSE_BUFFER_SIZE]>;

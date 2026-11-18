@@ -219,7 +219,7 @@ impl<T: DirectCharacterDevice + 'static> BaseOperations for HttpsClientDevice<T>
             let exchange = client.exchange.clone();
             let manager = self.network_manager;
             let random = self.random_device;
-            if task::block_on(self.task_manager.spawn(
+            if task::block_on(self.task_manager.spawn_send(
                 task::Manager::ROOT_TASK_IDENTIFIER,
                 "HTTP request worker",
                 None,

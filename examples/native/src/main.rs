@@ -2,9 +2,15 @@
 mod cli;
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+mod power;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod storage;
 
 static TASK_MANAGER: xila::task::Manager = xila::task::Manager::new();
+
+/// Maximum model size accepted by the dynamic CPU neural network loader (4 MiB).
+#[cfg(feature = "neural-network")]
+const CPU_NN_LOADER_MAXIMUM_MODEL_SIZE: usize = 4 * 1024 * 1024;
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 #[xila::task::run(
@@ -37,6 +43,8 @@ async fn main(task_manager: &'static xila::task::Manager) {
     use xila::virtual_file_system;
     use xila::virtual_file_system::File;
     use xila::virtual_file_system::mount_static;
+
+    power::install_signal_handlers();
 
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let config = match cli::parse(arguments.iter().map(String::as_str)) {
@@ -166,7 +174,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
         ))
         .expect("Failed to open disk"),
     ));
-    let file_system = little_fs::mount_disk(drive, 256)
+    let file_system = little_fs::mount_disk(drive, little_fs::Options::new(256))
         .expect("Failed to mount existing disk; it was not reformatted");
 
     // Initialize the virtual file system
@@ -182,6 +190,14 @@ async fn main(task_manager: &'static xila::task::Manager) {
     log::information!("Virtual file system initialized.");
 
     // - - Mount the devices
+    virtual_file_system
+        .mount_file_system(
+            xila::memory_file_system::FileSystem::new(),
+            xila::file_system::Path::DEVICES,
+            task,
+        )
+        .await
+        .expect("Failed to mount the in-memory device file system");
 
     // - - Create the default system hierarchy
     virtual_file_system::create_default_hierarchy(virtual_file_system, task)
@@ -191,12 +207,33 @@ async fn main(task_manager: &'static xila::task::Manager) {
         .await
         .expect("Failed to clear temporary storage at boot");
 
+    #[cfg(feature = "neural-network")]
+    {
+        virtual_file_system::ignore_already_exists_error(
+            virtual_file_system
+                .create_directory(task, &"/devices/nn")
+                .await,
+        )
+        .expect("Failed to create NN device directory");
+        drivers_shared::devices::neural_network::mount_loader(
+            virtual_file_system,
+            task,
+            "/devices/nn/cpu",
+            drivers_shared::devices::neural_network::Target::Cpu,
+            CPU_NN_LOADER_MAXIMUM_MODEL_SIZE,
+        )
+        .await
+        .expect("Failed to mount CPU neural network loader");
+    }
+
     #[cfg(unix)]
     if graphics_manager.is_some() {
-        virtual_file_system
-            .create_directory(task, &"/devices/graphics/debug")
-            .await
-            .expect("Failed to create debug device directory");
+        virtual_file_system::ignore_already_exists_error(
+            virtual_file_system
+                .create_directory(task, &"/devices/graphics/debug")
+                .await,
+        )
+        .expect("Failed to create debug device directory");
         virtual_file_system
             .mount_character_device(
                 task,
@@ -210,8 +247,8 @@ async fn main(task_manager: &'static xila::task::Manager) {
     #[cfg(feature = "audio")]
     let mut audio_runner = {
         // Keep the mixer pinned for the lifetime of every mounted VFS stream.
-        let audio_system: &'static audio::AudioSystem =
-            Box::leak(Box::new(audio::AudioSystem::new().unwrap()));
+        let audio_system: &'static drivers_native::audio::System =
+            Box::leak(Box::new(drivers_native::audio::System::new().unwrap()));
         // SAFETY: the leaked service can never move or be freed.
         let audio_system = unsafe { core::pin::Pin::new_unchecked(audio_system) };
         match drivers_native::audio::new(audio_system, 1) {
@@ -233,6 +270,24 @@ async fn main(task_manager: &'static xila::task::Manager) {
             }
         }
     };
+
+    // System power device: the lifecycle supervisor's final step.
+    drivers_peripherals::mount_peripheral(
+        virtual_file_system,
+        task,
+        xila::lifecycle::POWER_DEVICE_PATH,
+        drivers_peripherals::power::PowerHandle::new(drivers_std::power::ProcessPower),
+    )
+    .await
+    .expect("Failed to mount the power device");
+    virtual_file_system
+        .set_permissions(
+            task,
+            xila::lifecycle::POWER_DEVICE_PATH,
+            xila::file_system::Permissions::from_octal(0o600).unwrap(),
+        )
+        .await
+        .expect("Failed to restrict the power device");
 
     log::information!("Default hierarchy created.");
 
@@ -412,6 +467,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
                 &"/applications/executables/package",
                 package::PackageExecutable
             ),
+            (&"/applications/executables/c_demo", c_demo::CDemoExecutable),
             #[cfg(unix)]
             (
                 &"/applications/executables/debug",
@@ -432,6 +488,26 @@ async fn main(task_manager: &'static xila::task::Manager) {
     authentication::initialize_seeded(&authentication_context)
         .await
         .expect("Failed to initialize saved accounts");
+
+    // Root and the provisioned administrator group may use the power device,
+    // and therefore request a shutdown through the lifecycle subsystem.
+    virtual_file_system
+        .set_ownership(
+            task,
+            xila::lifecycle::POWER_DEVICE_PATH,
+            None,
+            Some(users::GroupIdentifier::new(1000)),
+        )
+        .await
+        .expect("Failed to delegate the power device");
+    virtual_file_system
+        .set_permissions(
+            task,
+            xila::lifecycle::POWER_DEVICE_PATH,
+            xila::file_system::Permissions::from_octal(0o660).unwrap(),
+        )
+        .await
+        .expect("Failed to restrict the power device");
 
     // - - Set the environment variables
     task_manager
@@ -493,20 +569,33 @@ async fn main(task_manager: &'static xila::task::Manager) {
         cli::InterfaceMode::Graphical => "/applications/executables/graphical_shell",
         cli::InterfaceMode::Terminal => "/applications/executables/command_line_shell",
     };
-    let shell = executable::execute(executable_context, shell_path, vec![], standard, None)
-        .await
-        .unwrap();
+    // Everything already running is a runtime service; the shell and what it
+    // launches are stopped by the lifecycle pipeline.
+    let services = task_manager.get_children(task).await.unwrap();
+    let shell =
+        match executable::execute(executable_context, shell_path, vec![], standard, None).await {
+            Ok(shell) => shell,
+            Err(_) if !xila::lifecycle::SYSTEM.is_running() => {
+                power::finish(virtual_file_system, time_manager, task, &services, 0).await;
+                return;
+            }
+            Err(error) => panic!("Failed to start shell: {error:?}"),
+        };
     let mut join = core::pin::pin!(shell.join());
-    loop {
+    // Returning from this task does not stop the native executor: leaving the
+    // shell (or a lifecycle request) always ends in `power::finish`.
+    let status = loop {
         use core::{
             future::{Future, poll_fn},
             task::Poll,
         };
-        if poll_fn(|context| Poll::Ready(join.as_mut().poll(context)))
-            .await
-            .is_ready()
+        if let Poll::Ready(status) =
+            poll_fn(|context| Poll::Ready(join.as_mut().poll(context))).await
         {
-            break;
+            break power::shell_status(status);
+        }
+        if !xila::lifecycle::SYSTEM.is_running() {
+            break 0;
         }
         #[cfg(feature = "audio")]
         if let Some(runner) = &audio_runner
@@ -516,9 +605,9 @@ async fn main(task_manager: &'static xila::task::Manager) {
             audio_runner = None;
         }
         task::Manager::sleep(Duration::from_millis(100)).await;
-    }
+    };
 
-    virtual_file_system.uninitialize().await;
+    power::finish(virtual_file_system, time_manager, task, &services, status).await;
     #[cfg(feature = "audio")]
     drop(audio_runner);
 }

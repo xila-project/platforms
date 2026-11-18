@@ -177,3 +177,16 @@ The disk-name and collision rules can also be tested with
 
 See [Synth](../../executables/synth/README.md) for controls, silent mode,
 existing-disk behavior and the audio smoke-test procedure.
+
+## Digits NN demo
+
+The default `neural-network` feature mounts a runtime CPU model loader at
+`/devices/nn/cpu` using the shared portable CPU backend (no model is embedded in
+the firmware; `--no-default-features` omits it); applications write a TFLite
+model to that node and send the `LOAD` control command. `mise run image:browser`
+includes the pinned, signed Digits release in the reference image. For a local
+guest build, follow the commands in `../native/README.md` and create a seed with `--bundle wasm` and
+those bundles. Serve it as `seed.img` beside the matching browser runtime. Select a new
+disk in the disk manager to use a new seed; existing browser disks retain their
+installed applications. The guest uses Xila's VFS NN API inside the browser host,
+without WebGPU or a separate JavaScript inference engine.

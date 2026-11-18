@@ -5,7 +5,10 @@ rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = 
 "mr-boxington" = "1.26.0"
 
 [task_templates."dev:browser".tools]
-rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets = [
+# Guest graphics binding generation invokes rustfmt during the browser build.
+rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "rustfmt",
+], targets = [
   "wasm32-unknown-unknown",
 ], mr_boxington = true }
 "mr-boxington" = "1.26.0"
@@ -62,6 +65,7 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", compone
 extends = "dev:browser"
 tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
   "clippy",
+  "rustfmt",
 ], targets = [
   "wasm32-unknown-unknown",
 ], mr_boxington = true }

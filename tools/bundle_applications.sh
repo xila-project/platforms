@@ -19,15 +19,18 @@ platforms="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 builder="${XILA_PACKAGE:-}"
 if [[ -z "$builder" ]]; then
-  # Same package_manager revision as the verification crates Platforms pins.
-  revision="$(sed -n 's/^xila-package-reader = .*rev = "\([0-9a-f]\{40\}\)".*/\1/p' "$platforms/tools/artifacts/Cargo.toml")"
+  # Same package_manager commit as the one Platforms locks in Cargo.lock.
+  revision="$(python3 "$platforms/tools/ci/locked_revision.py" package_manager)"
+  revision="${revision#revision=}"
   if [[ ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then
     echo "cannot determine the pinned package_manager revision" >&2
     exit 1
   fi
   root="$platforms/target/tools/xila-package-$revision"
   if [[ ! -x "$root/bin/xila-package" ]]; then
-    cargo install --locked --quiet --root "$root" \
+    # Own target directory: a shared CARGO_TARGET_DIR/build.target-dir can hold
+    # stale artifacts from other package_manager revisions.
+    CARGO_TARGET_DIR="$root/target" cargo install --locked --quiet --root "$root" \
       --git https://github.com/xila-project/package_manager --rev "$revision" xila-package-builder
   fi
   builder="$root/bin/xila-package"

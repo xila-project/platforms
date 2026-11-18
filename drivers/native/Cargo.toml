@@ -15,6 +15,7 @@ name = "audio"
 required-features = ["audio"]
 
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
+drivers_core = { workspace = true, features = ["wifi_mock"] }
 file_system = { workspace = true }
 network = { workspace = true }
 embassy-futures = { workspace = true }
@@ -31,7 +32,6 @@ shared = { workspace = true }
 critical-section = { workspace = true, features = ["std"] }
 pixels = "0.17.1"
 winit = { version = "0.30", features = ["rwh_05"] }
-rand = "0.10.0"
 libc = { version = "0.2" }
 png = "0.18.1"
 serde_json = "1.0"
@@ -49,6 +49,8 @@ embassy-executor = { workspace = true, default-features = false, features = [
 arboard = { version = "3.6", features = ["wayland-data-control"] }
 
 [dev-dependencies]
+little_fs = { workspace = true }
+time = { workspace = true }
 task = { workspace = true, features = ["test_harness"] }
 testing = { workspace = true }
 abi_definitions = { workspace = true }

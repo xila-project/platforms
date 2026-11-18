@@ -2,53 +2,57 @@ name: Cross-repository integration
 on:
   pull_request:
   workflow_dispatch:
-    inputs:
-      core_ref:
-        description: Explicit Core commit SHA
-        required: true
-        type: string
-      applications_ref:
-        description: Explicit Applications commit SHA
-        required: true
-        type: string
 permissions:
   contents: read
+concurrency:
+  group: cross-repository-integration-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   integration:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       XILA_FONT_CATALOG_ROOTS: ${{ github.workspace }}/applications
+      # Cargo runs rustc inside git dependency checkouts. Their own mise.toml
+      # (lvgl_rust pins `rust = "stable"`) is auto-trusted under MISE_YES, so
+      # the rustc shim would reinstall a toolchain in the middle of the build.
+      MISE_IGNORED_CONFIG_PATHS: ~/.cargo
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: "Setup | Checkout core"
+      - name: "Setup | Checkout platforms"
         uses: actions/checkout@v7
         with:
           path: platforms
           persist-credentials: false
+      - name: "Setup | Activate mise"
+        uses: jdx/mise-action@v5.2.2
+      - name: "Setup | Resolve locked Xila revisions"
+        id: locked
+        run: mise run ci:locked-revisions
+        working-directory: platforms
+        env:
+          MISE_ENV: ci
       - name: "Setup | Checkout core"
         uses: actions/checkout@v7
         with:
           repository: xila-project/core
-          ref: ${{ inputs.core_ref || 'e897a898b2a681c576997abdc0958e0f4e0f368c' }}
+          ref: ${{ steps.locked.outputs.core }}
           path: core
           persist-credentials: false
       - name: "Setup | Checkout applications"
         uses: actions/checkout@v7
         with:
           repository: xila-project/applications
-          ref: ${{ inputs.applications_ref || '1df34f33f5084ba0bdb2eb326c13ab26f8412319' }}
+          ref: ${{ steps.locked.outputs.applications }}
           path: applications
           persist-credentials: false
       - name: "Setup | Checkout package_manager"
         uses: actions/checkout@v7
         with:
           repository: xila-project/package_manager
-          ref: 277d017c2da182b7d72081e4ca1dd555425c35bf
+          ref: ${{ steps.locked.outputs.package_manager }}
           path: package-manager
           persist-credentials: false
-      - name: "Setup | Activate mise"
-        uses: jdx/mise-action@v5.2.2
       - name: "Setup | Native and WASI Rust toolchain"
         run: mise run ci:integration-toolchain
         working-directory: platforms

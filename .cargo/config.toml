@@ -16,8 +16,14 @@ rustflags = [
   "espidf_time64",
 ] # Extending time_t for ESP IDF 5: https://github.com/esp-rs/rust/issues/110
 
+[target.thumbv7em-none-eabihf]
+# The default SHA-512 is fully unrolled (about 26 KB); the compact variant is a
+# loop, which fits the Nano 33 BLE's 448 KB of program flash.
+rustflags = ["--cfg", 'sha2_backend_soft="compact"']
+
 [env]
+# Bare-metal ARM has no C library: build LittleFS with clang's own headers.
+CC_thumbv7em_none_eabihf = "clang"
 DEP_LV_CONFIG_PATH = { value = "config/lvgl", relative = true }
 EMBEDDED_I18N_LOCALE = "en"
-EMBEDDED_I18N_FALLBACK = "en"
 XILA_LV_FONT_CONV_DIR = { value = "node_modules/lv_font_conv", relative = true }

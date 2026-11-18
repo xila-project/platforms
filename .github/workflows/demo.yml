@@ -18,6 +18,9 @@ on:
         type: string
 permissions:
   contents: read
+concurrency:
+  group: browser-demonstrations-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   build:
     if: >-
@@ -39,17 +42,21 @@ jobs:
           repository: xila-project/platforms
           ref: ${{ inputs.platform_ref || github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
-      - uses: actions/checkout@v7
-        with:
-          repository: xila-project/applications
-          ref: 1df34f33f5084ba0bdb2eb326c13ab26f8412319
-          path: .application-src
-          persist-credentials: false
       - uses: xila-project/workspace/.github/actions/setup-rust@d4ff44239bcfa0bc662e37f38d00f3d23f8f04db
         with:
           cache-mode: objects
           cache-generation: v1-platforms-pages-all-locales
           save-on-workflow-dispatch: ${{ github.ref == 'refs/heads/main' }}
+      - name: "Setup | Resolve locked Xila revisions"
+        id: locked
+        run: mise run ci:locked-revisions
+      - name: "Setup | Checkout locked Applications revision"
+        uses: actions/checkout@v7
+        with:
+          repository: xila-project/applications
+          ref: ${{ steps.locked.outputs.applications }}
+          path: .application-src
+          persist-credentials: false
       - run: mise run ci:deps-npm
       - run: mise run ci:packages-host
       - name: Build localized demonstrations and verify filesystem images
@@ -81,6 +88,7 @@ jobs:
        (inputs.platform_ref == '' || inputs.platform_ref == github.sha))
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
