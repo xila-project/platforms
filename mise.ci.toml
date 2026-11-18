@@ -94,7 +94,23 @@ run = "trunk build --release --public-url ./"
 
 [tasks."ci:font-japanese"]
 description = "Install the verified Japanese font from the matching Core checkout"
-run = "bash .ci-core-fonts/tools/localization/fetch-japanese-font.sh"
+run = '''
+set -eu
+core_rev="$(python3 tools/ci/locked_revision.py core)"
+core_rev="${core_rev#revision=}"
+if [ ! -e .ci-core-fonts/.git ]; then
+  git init .ci-core-fonts
+  git -C .ci-core-fonts remote add origin https://github.com/xila-project/core.git
+fi
+if [ "$(git -C .ci-core-fonts rev-parse HEAD 2>/dev/null || true)" != "$core_rev" ]; then
+  git -C .ci-core-fonts checkout --detach "$core_rev" 2>/dev/null || {
+    git -C .ci-core-fonts fetch --depth 1 origin "$core_rev"
+    git -C .ci-core-fonts checkout --detach FETCH_HEAD
+  }
+fi
+test "$(git -C .ci-core-fonts rev-parse HEAD)" = "$core_rev"
+bash .ci-core-fonts/tools/localization/fetch-japanese-font.sh
+'''
 
 [tasks."pages:build"]
 tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
@@ -105,8 +121,24 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", compone
 ] }
 run = '''
 set -eu
+locales="${XILA_DEMO_LOCALES:-en fr es de pt-BR it pl ja zh-CN}"
+case " $locales " in
+  *" ja "*)
+    if [ -z "${XILA_JAPANESE_FONT_PATH:-}" ]; then
+      default_jp_font="$PWD/.ci-core-fonts/subsystems/graphics/fonts/SourceHanSansJP-Regular.otf"
+      if [ ! -s "$default_jp_font" ]; then
+        mise run ci:font-japanese
+      fi
+      export XILA_JAPANESE_FONT_PATH="$default_jp_font"
+    fi
+    if [ ! -s "$XILA_JAPANESE_FONT_PATH" ]; then
+      echo "error: missing Japanese font at '$XILA_JAPANESE_FONT_PATH' for 'ja' build; run 'mise -E ci run ci:font-japanese' or check XILA_JAPANESE_FONT_PATH" >&2
+      exit 1
+    fi
+    ;;
+esac
 mkdir -p pages/demonstrations/wasm target/reference-filesystem-images
-for locale in ${XILA_DEMO_LOCALES:-en fr es de pt-BR it pl ja zh-CN}; do
+for locale in $locales; do
   export EMBEDDED_I18N_LOCALE="$locale"
   export CARGO_TARGET_DIR="${CARGO_TARGET_ROOT:-$PWD/target/pages}/$locale"
   mise run ci:build-applications
@@ -129,6 +161,10 @@ for locale in ${XILA_DEMO_LOCALES:-en fr es de pt-BR it pl ja zh-CN}; do
   mise run pages:demo
   mkdir -p "pages/demonstrations/wasm/$locale"
   cp -r examples/wasm/dist/. "pages/demonstrations/wasm/$locale/"
+  if [ -d examples/wasm/licenses ]; then
+    mkdir -p "pages/demonstrations/wasm/$locale/licenses"
+    cp -r examples/wasm/licenses/. "pages/demonstrations/wasm/$locale/licenses/"
+  fi
 done
 '''
 

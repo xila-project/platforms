@@ -7,6 +7,7 @@ import tempfile
 import textwrap
 import tomllib
 import unittest
+import yaml
 
 from locked_revision import locked_revision
 
@@ -96,30 +97,121 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         self.assertIn('cmp "$CARGO_TARGET_DIR/seed/wasm/seed.img"', script)
         self.assertIn('cmp "$CARGO_TARGET_DIR/seed/wasm/native.img"', script)
         self.assertIn('mise run pages:demo', script)
-        self.assertIn('fetch-japanese-font.sh', tasks['ci:font-japanese']['run'])
-        demo = read('.github/workflows/demo.yml')
-        self.assertIn('en fr es de pt-BR it pl ja zh-CN', demo)
-        self.assertIn('platform-demonstrations', demo)
-        self.assertIn('reference-filesystem-images', demo)
-        self.assertIn('XILA_FONT_CATALOG_ROOTS', demo)
-        self.assertIn('XILA_JAPANESE_FONT_PATH', demo)
-        self.assertIn('mise run ci:font-japanese', demo)
-        self.assertIn('actions/upload-pages-artifact', demo)
-        self.assertIn('actions/deploy-pages', demo)
-        self.assertIn("github.event_name == 'workflow_run'", demo)
-        self.assertIn("github.event.workflow_run.conclusion == 'success'", demo)
-        self.assertIn("github.event.workflow_run.event == 'push'", demo)
-        self.assertIn("github.event.workflow_run.head_branch == 'main'", demo)
-        self.assertIn('github.event.workflow_run.head_sha', demo)
-        self.assertIn("github.ref == 'refs/heads/main'", demo)
-        self.assertIn('pages: write', demo)
-        deploy = demo.split('  deploy:', 1)[1]
-        self.assertNotIn("github.event_name == 'pull_request'", deploy)
-        self.assertIn("inputs.platform_ref == '' || inputs.platform_ref == github.sha", deploy)
-        self.assertIn('name: github-pages', deploy)
+
+        demo = yaml.safe_load(read('.github/workflows/demo.yml'))
+        build = demo['jobs']['build']
+        locales_match = re.fullmatch(
+            r"\$\{\{\s*github\.event_name == 'pull_request' && '([^']+)' \|\| '([^']+)'\s*\}\}",
+            build['env']['XILA_DEMO_LOCALES'],
+        )
+        self.assertIsNotNone(locales_match, build['env']['XILA_DEMO_LOCALES'])
+        self.assertEqual(locales_match.group(1), 'en')
+        self.assertEqual(
+            locales_match.group(2).split(),
+            ['en', 'fr', 'es', 'de', 'pt-BR', 'it', 'pl', 'ja', 'zh-CN'],
+        )
+
+        steps = build['steps']
+        locked_idx, locked_step = next(
+            (idx, step)
+            for idx, step in enumerate(steps)
+            if step.get('run') == 'mise run ci:locked-revisions'
+        )
+        self.assertEqual(locked_step.get('id'), 'locked')
+
+        apps_checkout = next(
+            step for step in steps
+            if step.get('with', {}).get('repository') == 'xila-project/applications'
+        )
+        self.assertEqual(
+            build['env']['XILA_FONT_CATALOG_ROOTS'],
+            f"${{{{ github.workspace }}}}/{apps_checkout['with']['path']}",
+        )
+
+        core_idx, core_checkout = next(
+            (idx, step)
+            for idx, step in enumerate(steps)
+            if step.get('with', {}).get('repository') == 'xila-project/core'
+        )
+        jp_font_idx, jp_font_step = next(
+            (idx, step)
+            for idx, step in enumerate(steps)
+            if step.get('run') == 'mise run ci:font-japanese'
+        )
+        pages_idx, pages_step = next(
+            (idx, step)
+            for idx, step in enumerate(steps)
+            if step.get('run') == 'mise run pages:build'
+        )
+        self.assertLess(locked_idx, core_idx)
+        self.assertLess(core_idx, jp_font_idx)
+        self.assertLess(jp_font_idx, pages_idx)
+
+        self.assertEqual(core_checkout.get('if'), "github.event_name != 'pull_request'")
+        self.assertEqual(jp_font_step.get('if'), "github.event_name != 'pull_request'")
+        self.assertEqual(core_checkout['with'].get('ref'), '${{ steps.locked.outputs.core }}')
+        self.assertIs(core_checkout['with'].get('persist-credentials'), False)
+
+        core_path = core_checkout['with']['path']
+        expected_jp_rel = f"{core_path}/subsystems/graphics/fonts/SourceHanSansJP-Regular.otf"
+        self.assertIn(f"{core_path}/tools/localization/fetch-japanese-font.sh", tasks['ci:font-japanese']['run'])
+        self.assertIn('tools/ci/locked_revision.py core', tasks['ci:font-japanese']['run'])
+        self.assertEqual(
+            pages_step['env']['XILA_JAPANESE_FONT_PATH'],
+            f"${{{{ github.workspace }}}}/{expected_jp_rel}",
+        )
+        self.assertIn(expected_jp_rel, script)
+
+        pages_upload = next(
+            step for step in steps
+            if step.get('uses', '').startswith('actions/upload-pages-artifact@')
+        )
+        self.assertEqual(pages_upload['with']['path'], 'pages/')
+        artifacts = {
+            step['with']['name']: step['with']['path']
+            for step in steps
+            if step.get('uses', '').startswith('actions/upload-artifact@')
+        }
+        self.assertEqual(artifacts['platform-demonstrations'], 'pages/demonstrations/')
+        self.assertEqual(artifacts['reference-filesystem-images'], 'target/reference-filesystem-images/')
+
+        deploy = demo['jobs']['deploy']
+        self.assertEqual(deploy['needs'], 'build')
+        self.assertEqual(deploy['permissions']['pages'], 'write')
+        self.assertEqual(deploy['environment']['name'], 'github-pages')
+        deploy_if = deploy['if']
+        self.assertNotIn("github.event_name == 'pull_request'", deploy_if)
+        for token in (
+            "github.event_name == 'workflow_run'",
+            "github.event.workflow_run.conclusion == 'success'",
+            "github.event.workflow_run.event == 'push'",
+            "github.event.workflow_run.head_branch == 'main'",
+            "github.ref == 'refs/heads/main'",
+            "inputs.platform_ref == '' || inputs.platform_ref == github.sha",
+        ):
+            self.assertIn(token, deploy_if)
+        self.assertIn('github.event.workflow_run.head_sha', build['steps'][0]['with']['ref'])
+
         landing = read('examples/wasm/pages-index.html')
         self.assertIn('url=demonstrations/wasm/en/', landing)
         self.assertIn('href="demonstrations/wasm/en/"', landing)
+
+        index_html = read('examples/wasm/index.html')
+        self.assertIn('href="licenses/"', index_html)
+        self.assertIn('href="licenses/THIRD_PARTY_NOTICES.txt"', index_html)
+        notices = read('examples/wasm/licenses/THIRD_PARTY_NOTICES.txt')
+        for token in (
+            'Montserrat',
+            'Source Han Sans',
+            'Copyright 2014-2025 Adobe',
+            'Font Awesome',
+            'Fonticons, Inc.',
+            'unscii-16-full',
+            'GNU Unifont',
+            'SIL OPEN FONT LICENSE',
+            'GNU GENERAL PUBLIC LICENSE',
+        ):
+            self.assertIn(token, notices)
 
     def test_demo_images_follow_each_locale_target(self):
         script = tomllib.loads(read('mise.ci.toml'))['tasks']['pages:build']['run']
@@ -127,6 +219,8 @@ class PlatformWorkflowPolicy(unittest.TestCase):
             root = Path(directory)
             bin_dir = root / 'bin'
             bin_dir.mkdir()
+            (root / 'examples/wasm/licenses').mkdir(parents=True)
+            (root / 'examples/wasm/licenses/THIRD_PARTY_NOTICES.txt').write_text('notices')
             cargo = bin_dir / 'cargo'
             cargo.write_text(textwrap.dedent("""\
                 #!/usr/bin/env python3
@@ -146,6 +240,11 @@ class PlatformWorkflowPolicy(unittest.TestCase):
                 #!/bin/sh
                 set -eu
                 case "$2" in
+                  ci:font-japanese)
+                    mkdir -p .ci-core-fonts/subsystems/graphics/fonts
+                    printf 'jp-font' > .ci-core-fonts/subsystems/graphics/fonts/SourceHanSansJP-Regular.otf
+                    printf 'fetched\n' >> jp_fetch.log
+                    ;;
                   ci:build-applications)
                     mkdir -p "$CARGO_TARGET_DIR/wasm32-wasip1/release-wasm"
                     printf '%s' "$EMBEDDED_I18N_LOCALE" > "$CARGO_TARGET_DIR/wasm32-wasip1/release-wasm/calculator.wasm"
@@ -157,6 +256,9 @@ class PlatformWorkflowPolicy(unittest.TestCase):
                     ;;
                   pages:demo)
                     test "$(cat target/seed/wasm/seed.img)" = "$EMBEDDED_I18N_LOCALE:wasm"
+                    if [ "$EMBEDDED_I18N_LOCALE" = ja ]; then
+                      test -s "$XILA_JAPANESE_FONT_PATH"
+                    fi
                     mkdir -p examples/wasm/dist
                     cp target/seed/wasm/seed.img examples/wasm/dist/seed.img
                     ;;
@@ -164,13 +266,38 @@ class PlatformWorkflowPolicy(unittest.TestCase):
                 esac
                 """))
             mise.chmod(0o755)
-            env = os.environ | {'PATH': f"{bin_dir}:{os.environ['PATH']}", 'CARGO_TARGET_ROOT': str(root / 'locale targets')}
+            base_env = {k: v for k, v in os.environ.items() if k != 'XILA_JAPANESE_FONT_PATH'}
+            env = base_env | {'PATH': f"{bin_dir}:{os.environ['PATH']}", 'CARGO_TARGET_ROOT': str(root / 'locale targets')}
             result = subprocess.run(['sh', '-c', script], cwd=root, env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual((root / 'jp_fetch.log').read_text().splitlines(), ['fetched'])
             for locale in ('en', 'fr', 'es', 'de', 'pt-BR', 'it', 'pl', 'ja', 'zh-CN'):
                 for bundle in ('wasm', 'native'):
                     self.assertEqual((root / 'target/reference-filesystem-images' / locale / f'{bundle}.img').read_text(), f'{locale}:{bundle}')
                 self.assertEqual((root / 'pages/demonstrations/wasm' / locale / 'seed.img').read_text(), f'{locale}:wasm')
+                self.assertEqual((root / 'pages/demonstrations/wasm' / locale / 'licenses/THIRD_PARTY_NOTICES.txt').read_text(), 'notices')
+
+            # PR builds (en only) must not invoke ci:font-japanese, and bad explicit paths must fail early.
+            (root / 'jp_fetch.log').unlink()
+            pr_result = subprocess.run(
+                ['sh', '-c', script],
+                cwd=root,
+                env=env | {'XILA_DEMO_LOCALES': 'en', 'CARGO_TARGET_ROOT': str(root / 'pr targets')},
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(pr_result.returncode, 0, pr_result.stdout + pr_result.stderr)
+            self.assertFalse((root / 'jp_fetch.log').exists())
+
+            bad_result = subprocess.run(
+                ['sh', '-c', script],
+                cwd=root,
+                env=env | {'XILA_DEMO_LOCALES': 'ja', 'XILA_JAPANESE_FONT_PATH': str(root / 'missing.otf')},
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(bad_result.returncode, 0)
+            self.assertIn('ci:font-japanese', bad_result.stderr)
 
     def test_driver_and_seed_checks_are_required(self):
         ci = read('.github/workflows/ci.yml')
