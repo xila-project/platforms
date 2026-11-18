@@ -115,23 +115,26 @@ claim of full WASI/graphics compatibility or support across all browsers.
 
 ## Disk modes
 
-**Memory (default).** Each tab starts from the current `seed.img` and keeps
-changes in its own memory. Reloading or closing the tab discards all changes.
-Memory boots without opening a storage file or acquiring a Web Lock. The
-Help panel lists saved disks when opened.
+**Memory (default).** Leave **Keep my files between visits** off in the
+Help panel. Each tab starts from the current `seed.img` and keeps changes
+in its own memory. Reloading or closing the tab discards all changes.
+Memory uses no storage file or Web Lock, and the saved-disk controls are hidden.
 
-**Saved disks.** Open the Help panel to select, create, or remove a saved
-disk. The example stores each 16 MiB disk in the origin-private file system.
-New images are named `xila_YYYY-MM-DD.img`, with a numeric suffix for repeated
-creations on the same date. The panel still lists `xila_drive.img` and other
-disks created by earlier versions. After this update, earlier selections
-start in Memory. New selections are remembered when browser preferences are
-available.
+**Saved disks.** Turn on **Keep my files between visits** to restart with a
+saved disk. Xila reopens the last saved disk it used successfully if that
+disk still exists, or creates a fresh one from the current seed. The Help
+panel then lets you select, create, or remove a saved disk. The example
+stores each 16 MiB disk in the origin-private file system. New images are
+named `xila_YYYY-MM-DD.img`, with a numeric suffix for repeated creations on
+the same date. The panel lists `xila_drive.img` and other disks from earlier
+versions. The switch starts off for visitors who previously used the browser
+example before it offered this setting. Xila remembers explicit choices when
+browser preferences are available.
 
-Switching disks restarts Xila and saves pending changes on the current disk
-if it is persistent. A Web Lock allows only one tab to open a given saved
-disk at a time. Removing an inactive saved disk requires confirmation and
-permanently deletes its contents.
+Changing the switch or choosing another disk restarts Xila. Leaving a
+running saved disk saves pending changes first. A Web Lock allows only one
+tab to open a given saved disk at a time. Removing an inactive saved disk
+requires confirmation and permanently deletes its contents.
 
 Xila remembers the seed fingerprint of each newly saved disk. The panel
 marks a disk whose fingerprint differs from the current seed as **older
@@ -140,8 +143,9 @@ unknown**. You can open either if it is still compatible with the runtime.
 If a disk fails to mount, the Help panel displays the error and offers
 **Rebuild from the current version** when the seed is available. Rebuilding
 requires confirmation and replaces the disk's files and settings once the
-current seed mounts and saves successfully. You can also choose Memory or
-create a new saved disk while retaining the older disk.
+current seed mounts and saves successfully. You can turn off **Keep my files
+between visits** to restart in Memory, or create another saved disk while
+retaining the older disk.
 
 Synchronous OPFS handles are available only in workers, while this example's
 UI and filesystem run on the browser main thread. The drive therefore keeps a

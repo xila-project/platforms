@@ -4,6 +4,7 @@ export const MEMORY_DISK = 'memory';
 
 // The previous key selected a saved disk by default. Start with a fresh choice.
 const SELECTED_DISK_KEY = 'xila.diskSelection';
+const LAST_SAVED_DISK_KEY = 'xila.lastSavedDisk';
 const restartKey = () => `xila.diskRestart.${globalThis.location?.pathname ?? ''}`;
 const seedVersionKey = (name) => `xila.seedVersion.${name}`;
 
@@ -26,6 +27,22 @@ export function writeDiskSelection(name) {
     return true;
   } catch {
     return false;
+  }
+}
+
+export function readLastSavedDisk() {
+  try {
+    return localStorage.getItem(LAST_SAVED_DISK_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function rememberSavedDisk(name) {
+  try {
+    localStorage.setItem(LAST_SAVED_DISK_KEY, name);
+  } catch {
+    // The disk is still usable when the browser cannot remember it.
   }
 }
 

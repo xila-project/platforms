@@ -74,3 +74,29 @@ test('a tab consumes its own confirmed rebuild once even if another tab selects 
     delete globalThis.sessionStorage;
   }
 });
+
+test('turning saved files back on reopens the last saved disk that started', async () => {
+  const { readLastSavedDisk, rememberSavedDisk } = await import('../disk_preferences.mjs');
+  const storage = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+  };
+  try {
+    assert.equal(readLastSavedDisk(), null);
+    rememberSavedDisk('xila_2026-10-16.img');
+    assert.equal(readLastSavedDisk(), 'xila_2026-10-16.img');
+  } finally {
+    delete globalThis.localStorage;
+  }
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    get() { throw new Error('Storage disabled'); },
+  });
+  try {
+    assert.equal(readLastSavedDisk(), null);
+    assert.doesNotThrow(() => rememberSavedDisk('xila_drive.img'));
+  } finally {
+    delete globalThis.localStorage;
+  }
+});

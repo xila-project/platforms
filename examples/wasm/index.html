@@ -17,27 +17,30 @@
   <body>
     <div id="sidebar">
       <h2>Xila Help</h2>
-      <p>
-        Memory is the default. Reloading discards its files and settings.
-        Choose or create a saved disk to keep changes in this browser.
-      </p>
-      <label for="disk-list">Available disks</label>
-      <select
-        id="disk-list"
-        size="5"
-        aria-label="Available Xila disks"
-      >
-        <option value="memory" selected>Memory (resets on reload)</option>
-      </select>
-      <div class="disk-actions">
-        <button id="disk-select" type="button" disabled>
-          Use selected disk
-        </button>
-        <button id="disk-create" type="button" disabled>New disk</button>
-        <button id="disk-remove" type="button" disabled>Remove</button>
-        <button id="disk-rebuild" type="button" hidden disabled>
-          Rebuild from the current version
-        </button>
+      <label class="disk-persistence-setting">
+        <input
+          id="disk-persistence"
+          type="checkbox"
+          role="switch"
+          aria-controls="saved-disk-controls"
+          disabled
+        />
+        Keep my files between visits
+      </label>
+      <p id="memory-disk-notice">Changes are discarded on reload.</p>
+      <div id="saved-disk-controls" hidden>
+        <label for="disk-list">Available disks</label>
+        <select id="disk-list" size="5" aria-label="Available Xila disks"></select>
+        <div class="disk-actions">
+          <button id="disk-select" type="button" disabled>
+            Use selected disk
+          </button>
+          <button id="disk-create" type="button" disabled>New disk</button>
+          <button id="disk-remove" type="button" disabled>Remove</button>
+          <button id="disk-rebuild" type="button" hidden disabled>
+            Rebuild from the current version
+          </button>
+        </div>
       </div>
       <p id="disk-status" role="status" aria-live="polite">
         Starting Xila…
