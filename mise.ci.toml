@@ -94,17 +94,17 @@ run = "trunk build --release --public-url ./"
 
 [tasks."ci:font-japanese"]
 description = "Install the verified Japanese font from the matching Core checkout"
+tools.uv = "{{ vars.uv_version }}"
 run = '''
 set -eu
-core_rev="$(python3 tools/ci/locked_revision.py core)"
+core_rev="$(uv run --no-project python tools/ci/locked_revision.py core)"
 core_rev="${core_rev#revision=}"
 if [ ! -e .ci-core-fonts/.git ]; then
   git init .ci-core-fonts
-  git -C .ci-core-fonts remote add origin https://github.com/xila-project/core.git
 fi
 if [ "$(git -C .ci-core-fonts rev-parse HEAD 2>/dev/null || true)" != "$core_rev" ]; then
   git -C .ci-core-fonts checkout --detach "$core_rev" 2>/dev/null || {
-    git -C .ci-core-fonts fetch --depth 1 origin "$core_rev"
+    git -C .ci-core-fonts fetch --depth 1 https://github.com/xila-project/core.git "$core_rev"
     git -C .ci-core-fonts checkout --detach FETCH_HEAD
   }
 fi
@@ -124,13 +124,12 @@ set -eu
 locales="${XILA_DEMO_LOCALES:-en fr es de pt-BR it pl ja zh-CN}"
 case " $locales " in
   *" ja "*)
-    if [ -z "${XILA_JAPANESE_FONT_PATH:-}" ]; then
-      default_jp_font="$PWD/.ci-core-fonts/subsystems/graphics/fonts/SourceHanSansJP-Regular.otf"
-      if [ ! -s "$default_jp_font" ]; then
-        mise run ci:font-japanese
-      fi
-      export XILA_JAPANESE_FONT_PATH="$default_jp_font"
+    default_jp_font="$PWD/.ci-core-fonts/subsystems/graphics/fonts/SourceHanSansJP-Regular.otf"
+    if ! mise run ci:font-japanese; then
+      echo "error: Japanese font setup failed for 'ja' build; fix the error above and retry 'mise -E ci run ci:font-japanese'" >&2
+      exit 1
     fi
+    export XILA_JAPANESE_FONT_PATH="${XILA_JAPANESE_FONT_PATH:-$default_jp_font}"
     if [ ! -s "$XILA_JAPANESE_FONT_PATH" ]; then
       echo "error: missing Japanese font at '$XILA_JAPANESE_FONT_PATH' for 'ja' build; run 'mise -E ci run ci:font-japanese' or check XILA_JAPANESE_FONT_PATH" >&2
       exit 1
@@ -166,6 +165,7 @@ for locale in $locales; do
     cp -r examples/wasm/licenses/. "pages/demonstrations/wasm/$locale/licenses/"
   fi
 done
+cp examples/wasm/pages-index.html pages/index.html
 '''
 
 [tasks."ci:profiling"]
@@ -235,7 +235,8 @@ run = "node --test drivers/wasm/tests/seed.test.mjs && node --test examples/wasm
 
 [tasks."ci:quality-extra"]
 description = "Validate platform-specific CI workflow and source policies"
-run = "python3 -m unittest discover -s tools/ci -v"
+tools.uv = "{{ vars.uv_version }}"
+run = "uv run --no-project --with pyyaml=={{ vars.pyyaml_version }} python -m unittest discover -s tools/ci -v"
 
 [tasks."ci:deps-npm-applications"]
 description = "Install locked dependencies in the explicitly checked-out Applications repository"
@@ -244,12 +245,18 @@ run = "npm ci --prefix ../applications"
 
 [tasks."ci:locked-revisions"]
 description = "Write the Core, Applications and package_manager commits locked in Cargo.lock to the step output"
+tools.uv = "{{ vars.uv_version }}"
 run = """
 set -eu
 for repository in core applications package_manager; do
-  python3 tools/ci/locked_revision.py "$repository" "$repository" >> "$GITHUB_OUTPUT"
+  uv run --no-project python tools/ci/locked_revision.py "$repository" "$repository" >> "$GITHUB_OUTPUT"
 done
 """
+
+[tasks."ci:diagnose-package-lock"]
+description = "Resolve the Cargo package graph and show any lockfile changes"
+extends = "ci:rust"
+run = "cargo metadata --format-version 1 > /dev/null && git diff -- Cargo.lock"
 
 [tasks."ci:integration-toolchain"]
 description = "Install pinned WASI and native integration Rust targets via mise"

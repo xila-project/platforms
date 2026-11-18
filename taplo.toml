@@ -1,2 +1,9 @@
 include = ["**/*.toml"]
-exclude = ["target/**", ".dev-environment/**", "node_modules/**"]
+exclude = [
+  "target/**",
+  ".dev-environment/**",
+  "node_modules/**",
+  ".ci-core-fonts/**",
+  ".application-src/**",
+  "pages/**",
+]

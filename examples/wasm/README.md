@@ -82,15 +82,15 @@ and browser runtime with the same `EMBEDDED_I18N_LOCALE`:
 
 For full multi-locale Pages builds (`mise -E ci run pages:build`), ensure
 `.application-src` holds the locked `xila-project/applications` checkout (or
-restrict `XILA_DEMO_LOCALES`). When `ja` is included and `XILA_JAPANESE_FONT_PATH`
-is unset, `pages:build` invokes `ci:font-japanese` and sets
-`XILA_JAPANESE_FONT_PATH` automatically.
+restrict `XILA_DEMO_LOCALES`). When `ja` is included, `pages:build` runs
+`ci:font-japanese` to check the Core revision and verify the font. If
+`XILA_JAPANESE_FONT_PATH` is unset, it defaults to the verified font.
 
 ## Visual identity
 
 The browser help panel uses local Montserrat normal and italic variable web fonts, following the shared 400/600/700 text, heading and emphasis hierarchy. Trunk copies `fonts/` alongside the example; font rendering needs no Google Fonts connection. Keep `fonts/OFL.txt` with those files. The font and logo source revision is recorded in `fonts/README.md`.
 
-Trunk also copies `licenses/THIRD_PARTY_NOTICES.txt` (linked from the browser help panel) alongside each demonstration. That file carries the copyright notices and license texts for Montserrat (`OFL-1.1`), Source Han Sans JP and SC (`OFL-1.1`, embedded in `ja` and `zh-CN` builds), Font Awesome Free (`OFL-1.1` for the embedded icon font; `CC BY 4.0` for the help-panel chevron SVGs), and Unscii / `unscii-16-full` (base Unscii Public Domain; `unscii-16-full` incorporates GNU Unifont glyphs under `GPL-2.0-or-later` with the GNU font embedding exception).
+Trunk also copies `licenses/THIRD_PARTY_NOTICES.txt` (linked from the browser help panel) alongside each demonstration. That file carries the copyright notices and license texts for Montserrat (`OFL-1.1`), Source Han Sans JP and SC (`OFL-1.1`, embedded in `ja` and `zh-CN` builds), Font Awesome Free (`OFL-1.1` for the embedded icon font; `CC BY 4.0` for the help-panel chevron SVGs), and base Unscii (Public Domain / CC0) and its public domain source font Fixedsys Excelsior.
 
 The OS canvas still uses the existing localized LVGL Montserrat Regular subsets at 10/14/18/28px, and Unscii for terminal content. Web font files are not compiled into the OS font tables or loaded into MCU flash. Bold wordmarks are outlined SVG assets.
 

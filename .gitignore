@@ -27,3 +27,7 @@ rustc-ice-*.txt
 
 __pycache__/
 *.pyc
+
+/.ci-core-fonts/
+/.application-src/
+/pages/

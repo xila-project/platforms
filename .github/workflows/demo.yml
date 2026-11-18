@@ -69,16 +69,10 @@ jobs:
         run: mise run ci:deps-npm
       - name: "Setup | Native build packages"
         run: mise run ci:packages-host
-      - name: "Setup | Japanese font"
-        if: github.event_name != 'pull_request'
-        run: mise run ci:font-japanese
       - name: "Build | Localized demonstrations and verify filesystem images"
         env:
           CARGO_TARGET_ROOT: ${{ github.workspace }}/target/pages
-          XILA_JAPANESE_FONT_PATH: ${{ github.workspace }}/.ci-core-fonts/subsystems/graphics/fonts/SourceHanSansJP-Regular.otf
         run: mise run pages:build
-      - name: Add Pages landing page
-        run: cp examples/wasm/pages-index.html pages/index.html
       - uses: actions/upload-pages-artifact@v5
         with:
           path: pages/
