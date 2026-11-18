@@ -50,8 +50,8 @@ impl ManagerTrait for MemoryManager {
         capabilities: CapabilityFlags,
         layout: Layout,
     ) -> Option<NonNull<u8>> {
-        // Executable memory allocations cannot be satisfied on this target.
-        if capabilities.contains(CapabilityFlags::Executable) {
+        let supported = CapabilityFlags::DirectMemoryAccess | CapabilityFlags::AlwaysAccessible;
+        if !supported.contains(capabilities) {
             return None;
         }
 
@@ -94,3 +94,20 @@ macro_rules! instantiate_global_allocator {
 }
 
 pub use instantiate_global_allocator;
+
+#[cfg(all(test, not(target_os = "none")))]
+mod tests {
+    use super::*;
+    use std::boxed::Box;
+
+    fn test_manager() -> MemoryManager {
+        let manager = MemoryManager::new();
+        manager.init_from_slice(Box::leak(Box::<[u8]>::new_uninit_slice(128 * 1024)));
+        manager
+    }
+
+    memory::implement_memory_manager_tests!(
+        [#[test]], test_manager(),
+        capabilities = CapabilityFlags::DirectMemoryAccess | CapabilityFlags::AlwaysAccessible
+    );
+}

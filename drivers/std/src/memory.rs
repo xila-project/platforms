@@ -38,12 +38,13 @@ impl MemoryManager {
             regions: Mutex::new(RefCell::new([
                 Region {
                     heap: Heap::empty(),
-                    capabilities: CapabilityFlags::empty(),
+                    capabilities: CapabilityFlags::AlwaysAccessible,
                     slice: &mut [],
                 },
                 Region {
                     heap: Heap::empty(),
-                    capabilities: CapabilityFlags::Executable,
+                    capabilities: CapabilityFlags::Executable
+                        .union(CapabilityFlags::AlwaysAccessible),
                     slice: &mut [],
                 },
             ])),
@@ -367,6 +368,12 @@ mod tests {
                 manager.deallocate(pointer, layout);
             }
 
+            manager.regions.lock(|regions| {
+                let regions = regions.borrow();
+                assert_eq!(regions[0].slice.len(), INITIAL_HEAP_SIZE);
+                assert!(regions[1].slice.is_empty());
+            });
+
             let capabilities = CapabilityFlags::Executable;
             let allocation = manager.allocate(capabilities, layout);
             assert!(allocation.is_some());
@@ -510,5 +517,8 @@ mod tests {
         assert_eq!(round_page_size(page_size * 2, page_size), page_size * 2);
     }
 
-    memory::implement_memory_manager_tests!(MemoryManager::new());
+    memory::implement_memory_manager_tests!(
+        [#[test]], MemoryManager::new(),
+        capabilities = CapabilityFlags::Executable | CapabilityFlags::AlwaysAccessible
+    );
 }
