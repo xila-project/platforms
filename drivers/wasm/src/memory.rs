@@ -129,11 +129,8 @@ impl ManagerTrait for MemoryManager {
         capabilities: CapabilityFlags,
         layout: Layout,
     ) -> Option<NonNull<u8>> {
-        if capabilities.contains(CapabilityFlags::DirectMemoryAccess) {
-            return None; // Direct memory access is not supported in this implementation
-        }
-        if capabilities.contains(CapabilityFlags::Executable) {
-            return None; // Executable memory is not supported in this implementation
+        if !CapabilityFlags::AlwaysAccessible.contains(capabilities) {
+            return None;
         }
 
         self.0
@@ -170,3 +167,30 @@ macro_rules! instantiate_global_allocator {
     };
 }
 pub use instantiate_global_allocator;
+
+#[cfg(test)]
+mod tests {
+    use abi_definitions as _;
+
+    instantiate_global_allocator!();
+
+    use super::*;
+    use alloc::boxed::Box;
+
+    fn test_manager() -> MemoryManager {
+        // The wasm-bindgen harness owns the global heap. Give each test an
+        // independent region large enough to run the suite without growing it.
+        let backing = Box::leak(Box::<[u8]>::new_uninit_slice(2 * 1024 * 1024));
+        let mut heap = Heap::empty();
+        heap.init_from_slice(backing);
+        MemoryManager(CriticalSectionMutex::new(RefCell::new(Inner {
+            heap,
+            is_initialized: true,
+        })))
+    }
+
+    memory_exported::implement_memory_manager_tests!(
+        [#[wasm_bindgen_test::wasm_bindgen_test]], test_manager(),
+        capabilities = CapabilityFlags::AlwaysAccessible
+    );
+}

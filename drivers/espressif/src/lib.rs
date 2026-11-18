@@ -46,8 +46,11 @@ compile_error!(
 );
 
 pub mod chips;
+pub mod memory;
 
 #[cfg(all(feature = "gpio", target_has_atomic = "ptr"))]
 pub mod shared;
 
 pub mod peripherals;
+
+pub extern crate memory as memory_exported;
