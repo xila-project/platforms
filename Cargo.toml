@@ -54,7 +54,6 @@ audio = { package = "xila-audio", git = "https://github.com/xila-project/core", 
 nanoaudio = { git = "https://github.com/AlixANNERAUD/nanoaudio.git", rev = "596076c64827fd8bf9e8319addc2f215e0cde8be", default-features = false }
 nanoaudio-cpal = { git = "https://github.com/AlixANNERAUD/nanoaudio.git", rev = "596076c64827fd8bf9e8319addc2f215e0cde8be", default-features = false }
 nanoaudio-web = { git = "https://github.com/AlixANNERAUD/nanoaudio.git", rev = "596076c64827fd8bf9e8319addc2f215e0cde8be", default-features = false }
-nanoaudio-synth = { git = "https://github.com/AlixANNERAUD/nanoaudio.git", rev = "596076c64827fd8bf9e8319addc2f215e0cde8be", default-features = false }
 abi_declarations = { package = "xila-abi-declarations", git = "https://github.com/xila-project/core", branch = "main" }
 abi_definitions = { package = "xila-abi-definitions", git = "https://github.com/xila-project/core", branch = "main" }
 little_fs = { package = "xila-little-fs", git = "https://github.com/xila-project/core", branch = "main" }
@@ -64,7 +63,6 @@ time = { package = "xila-time", git = "https://github.com/xila-project/core", br
 task = { package = "xila-task", git = "https://github.com/xila-project/core", branch = "main" }
 users = { package = "xila-users", git = "https://github.com/xila-project/core", branch = "main" }
 memory = { package = "xila-memory", git = "https://github.com/xila-project/core", branch = "main" }
-executable = { package = "xila-executable", git = "https://github.com/xila-project/core", branch = "main" }
 file_system = { package = "xila-file-system", git = "https://github.com/xila-project/core", branch = "main" }
 authentication = { package = "xila-authentication", git = "https://github.com/xila-project/core", branch = "main" }
 log = { package = "xila-log", git = "https://github.com/xila-project/core", branch = "main" }
@@ -73,10 +71,6 @@ synchronization = { package = "xila-synchronization", git = "https://github.com/
 network = { package = "xila-network", git = "https://github.com/xila-project/core", branch = "main" }
 debug_protocol = { package = "xila-debug-protocol", git = "https://github.com/xila-project/core", branch = "main" }
 peripherals = { package = "xila-peripherals", git = "https://github.com/xila-project/core", branch = "main" }
-bootsplash = { package = "xila-bootsplash", git = "https://github.com/xila-project/core", branch = "main" }
-embedded-i18n = { version = "=0.2.0", default-features = false, features = [
-  "backend-json",
-] }
 testing = { package = "xila-testing", git = "https://github.com/xila-project/core", branch = "main", features = [
   "environment",
 ] }
@@ -87,7 +81,6 @@ drivers_core = { package = "xila-drivers-core", git = "https://github.com/xila-p
 drivers_peripherals = { package = "xila-drivers-peripherals", git = "https://github.com/xila-project/core", branch = "main", features = [
   "power",
 ] }
-drivers_espressif = { package = "xila-drivers-espressif", path = "drivers/espressif" }
 drivers_native = { package = "xila-drivers-native", path = "drivers/native" }
 drivers_headless = { package = "xila-drivers-headless", path = "drivers/headless" }
 drivers_nordic = { package = "xila-drivers-nordic", path = "drivers/nordic" }
@@ -107,22 +100,9 @@ settings = { package = "xila-settings", git = "https://github.com/xila-project/a
 debug_application = { package = "xila-debug-application", git = "https://github.com/xila-project/applications", branch = "main" }
 activity = { package = "xila-activity", git = "https://github.com/xila-project/applications", branch = "main" }
 package = { package = "xila-package-application", git = "https://github.com/xila-project/applications", branch = "main" }
-pixel_painter = { package = "xila-pixel-painter", git = "https://github.com/xila-project/applications", branch = "main" }
-text_editor = { package = "xila-text-editor", git = "https://github.com/xila-project/applications", branch = "main" }
-calculator = { package = "xila-calculator", git = "https://github.com/xila-project/applications", branch = "main" }
-weather = { package = "xila-weather", git = "https://github.com/xila-project/applications", branch = "main" }
-clock = { package = "xila-clock", git = "https://github.com/xila-project/applications", branch = "main" }
-synth = { package = "xila-synth", git = "https://github.com/xila-project/applications", branch = "main" }
 
 # - External crates
-embedded-hal = { version = "1", default-features = false }
 miniserde = { version = "0.1" }
-bindgen = { version = "0.73" }
-cbindgen = { version = "0.29" }
-syn = { version = "3.0" }
-quote = { version = "1.0" }
-proc-macro2 = { version = "1.0" }
-lvgl_rust_sys = { git = "https://github.com/AlixANNERAUD/lvgl_rust.git", rev = "cc419cb282da75f90e4df182c63c1e78cae1c14e", package = "lvgl-rust-sys", default-features = false }
 embassy-executor = { version = "0.10", default-features = false }
 embassy-futures = { version = "0.1" }
 embassy-sync = { version = "0.8" }
@@ -132,9 +112,6 @@ smoltcp = { version = "0.14" }
 linked_list_allocator = { version = "0.10", default-features = false, features = [
   "const_mut_refs",
 ] }
-smol_str = { version = "0.3" }
-darling = { version = "0.24" }
-regex = { version = "1" }
 embedded-io-async = { version = "0.7", features = ["alloc"] }
 embedded-io = { version = "0.7", features = ["alloc"] }
 embedded-tls = { version = "0.19", default-features = false, features = [
