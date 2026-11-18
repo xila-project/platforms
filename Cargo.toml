@@ -114,6 +114,7 @@ linked_list_allocator = { version = "0.10", default-features = false, features =
 ] }
 embedded-io-async = { version = "0.7", features = ["alloc"] }
 embedded-io = { version = "0.7", features = ["alloc"] }
+embedded-hal = { version = "1.0" }
 embedded-tls = { version = "0.19", default-features = false, features = [
   "alloc",
 ] }

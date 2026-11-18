@@ -1,5 +1,5 @@
-mod pin;
-pub use pin::*;
-
 mod error;
 pub use error::*;
+
+mod gpio;
+pub use gpio::*;
