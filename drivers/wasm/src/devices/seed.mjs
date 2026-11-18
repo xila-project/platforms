@@ -1,7 +1,7 @@
 // Fill the existing disk cache, retaining only the current network chunk.
 // Persistence is the caller's responsibility after mounting and initializing it.
 export async function importSeed(url, data) {
-  const response = await fetch(url);
+  const response = await fetch(url, { cache: "no-cache" });
   if (!response.ok || !response.body) {
     throw new Error(`Cannot fetch reference disk: HTTP ${response.status}`);
   }
@@ -26,4 +26,11 @@ export async function importSeed(url, data) {
     if (!complete) await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
+}
+
+export async function fingerprintSeed(data) {
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }

@@ -195,22 +195,20 @@ async fn run(task_manager: &'static task::Manager) {
         usb_console::StandardInDevice,
         usb_console::StandardOutDevice,
     )));
+    // The serial terminal needs `\r\n` to return to the first column.
+    let output: &'static drivers_shared::devices::TerminalOutputDevice<
+        usb_console::StandardOutDevice,
+    > = Box::leak(Box::new(
+        drivers_shared::devices::TerminalOutputDevice::new(usb_console::StandardOutDevice),
+    ));
     let random: &'static RandomDevice = Box::leak(Box::new(RandomDevice::new(peripherals.RNG)));
     mount_static!(
         virtual_file_system,
         task,
         &[
             (&"/devices/standard_io/input", CharacterDevice, *terminal),
-            (
-                &"/devices/standard_io/output",
-                CharacterDevice,
-                usb_console::StandardOutDevice
-            ),
-            (
-                &"/devices/standard_io/error",
-                CharacterDevice,
-                usb_console::StandardOutDevice
-            ),
+            (&"/devices/standard_io/output", CharacterDevice, *output),
+            (&"/devices/standard_io/error", CharacterDevice, *output),
             (
                 &"/devices/standard_io/null",
                 CharacterDevice,

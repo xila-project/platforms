@@ -67,3 +67,11 @@ test("propagates network failures and cancels an overflowing reader", async () =
     globalThis.fetch = original;
   }
 });
+
+test("fingerprints the exact seed contents", async () => {
+  const { fingerprintSeed } = await import("../src/devices/seed.mjs");
+  assert.equal(
+    await fingerprintSeed(Uint8Array.of(1, 2, 3)),
+    "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+  );
+});

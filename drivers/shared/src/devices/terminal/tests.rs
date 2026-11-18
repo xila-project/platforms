@@ -10,6 +10,7 @@ use shared::AnyByLayout;
 
 use super::device::TerminalInputDevice;
 use super::logic::{EchoBuffer, EchoSink, LineEditor};
+use super::output::TerminalOutputDevice;
 
 // -----------------------------------------------------------------------------
 // Layer 1 Unit Tests: LineEditor
@@ -673,4 +674,103 @@ fn device_control_forwarding() {
     );
     assert_eq!(res, Poll::Ready(Ok(())));
     assert!(is_terminal);
+}
+
+// -----------------------------------------------------------------------------
+// Output translation: `\n` is written as `\r\n`
+// -----------------------------------------------------------------------------
+
+/// Accepts at most `limit` bytes per write, then reports itself full once.
+struct LimitedOutputDevice {
+    output: std::sync::Mutex<Vec<u8>>,
+    limit: usize,
+    full_once: core::sync::atomic::AtomicBool,
+}
+
+impl DirectBaseOperations for LimitedOutputDevice {
+    fn read(
+        &self,
+        _cx: &mut Context<'_>,
+        _buffer: &mut [u8],
+        _absolute_position: Size,
+    ) -> Poll<Result<usize>> {
+        Poll::Ready(Err(Error::UnsupportedOperation))
+    }
+
+    fn write(
+        &self,
+        _cx: &mut Context<'_>,
+        buffer: &[u8],
+        _absolute_position: Size,
+    ) -> Poll<Result<usize>> {
+        if self.full_once.swap(false, Ordering::SeqCst) {
+            return Poll::Pending;
+        }
+        let count = buffer.len().min(self.limit);
+        self.output
+            .lock()
+            .unwrap()
+            .extend_from_slice(&buffer[..count]);
+        if count < buffer.len() {
+            self.full_once.store(true, Ordering::SeqCst);
+        }
+        Poll::Ready(Ok(count))
+    }
+}
+
+impl MountOperations for LimitedOutputDevice {}
+impl DirectCharacterDevice for LimitedOutputDevice {}
+
+fn write_all<D: DirectBaseOperations>(device: &D, mut buffer: &[u8]) {
+    let waker = Waker::noop();
+    let mut cx = Context::from_waker(waker);
+    let mut attempts = 0;
+    while !buffer.is_empty() {
+        attempts += 1;
+        assert!(attempts < 1000, "write made no progress");
+        if let Poll::Ready(result) = device.write(&mut cx, buffer, 0) {
+            buffer = &buffer[result.unwrap()..];
+        }
+    }
+}
+
+#[test]
+fn output_translates_line_feeds() {
+    let terminal = TerminalOutputDevice::new(RecordingOutputDevice::new());
+    write_all(&terminal, b"first\nsecond\n\nthird");
+    assert_eq!(terminal.inner().recorded(), b"first\r\nsecond\r\n\r\nthird");
+}
+
+#[test]
+fn output_without_line_feeds_is_unchanged() {
+    let terminal = TerminalOutputDevice::new(RecordingOutputDevice::new());
+    write_all(&terminal, b"\x1b[0;46m I \x1b[0m | text");
+    assert_eq!(terminal.inner().recorded(), b"\x1b[0;46m I \x1b[0m | text");
+}
+
+#[test]
+fn output_survives_partial_inner_writes() {
+    let terminal = TerminalOutputDevice::new(LimitedOutputDevice {
+        output: std::sync::Mutex::new(Vec::new()),
+        limit: 3,
+        full_once: core::sync::atomic::AtomicBool::new(false),
+    });
+    write_all(&terminal, b"ab\ncdef\n");
+    let recorded = terminal.inner().output.lock().unwrap().clone();
+    // A line feed split after its carriage return is sent again in full.
+    let without_repeated_carriage_returns: Vec<u8> = recorded
+        .windows(2)
+        .filter(|pair| pair != b"\r\r")
+        .map(|pair| pair[0])
+        .chain(recorded.last().copied())
+        .collect();
+    assert_eq!(without_repeated_carriage_returns, b"ab\r\ncdef\r\n");
+}
+
+#[test]
+fn output_is_pending_when_inner_is_pending_before_any_progress() {
+    let terminal = TerminalOutputDevice::new(StalledOutputDevice);
+    let waker = Waker::noop();
+    let mut cx = Context::from_waker(waker);
+    assert_eq!(terminal.write(&mut cx, b"text\n", 0), Poll::Pending);
 }
