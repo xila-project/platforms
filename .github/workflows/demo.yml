@@ -18,6 +18,9 @@ on:
         type: string
 permissions:
   contents: read
+concurrency:
+  group: browser-demonstrations-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   build:
     if: >-
@@ -85,6 +88,7 @@ jobs:
        (inputs.platform_ref == '' || inputs.platform_ref == github.sha))
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
