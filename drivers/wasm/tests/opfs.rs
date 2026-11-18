@@ -413,7 +413,8 @@ async fn littlefs_file_and_mbr_survive_reopening_the_opfs_disk() {
         )
         .unwrap(),
     ));
-    let file_system = little_fs::FileSystem::get_or_format(partition, 256).unwrap();
+    let file_system =
+        little_fs::FileSystem::get_or_format(partition, little_fs::Options::new(256)).unwrap();
     file_system.create_file(Path::new("/saved.txt")).unwrap();
     let mut context = Context::new_empty();
     file_system
@@ -449,7 +450,7 @@ async fn littlefs_file_and_mbr_survive_reopening_the_opfs_disk() {
         .unwrap(),
     ));
     // Mount without formatting: a broken persistence implementation must fail.
-    let file_system = little_fs::FileSystem::new(partition, 256).unwrap();
+    let file_system = little_fs::FileSystem::new(partition, little_fs::Options::new(256)).unwrap();
     let mut context = Context::new_empty();
     file_system
         .lookup_file(

@@ -138,6 +138,7 @@ mod tests {
                 icon: "".into(),
                 show_in_launcher: true,
             }),
+            metadata: None,
         }
     }
 

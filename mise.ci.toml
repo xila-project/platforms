@@ -12,7 +12,10 @@ rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = 
 ] }
 
 [task_templates."ci:browser".tools]
-rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets = [
+# Guest graphics binding generation invokes rustfmt during the browser build.
+rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "rustfmt",
+], targets = [
   "wasm32-unknown-unknown",
 ] }
 
@@ -51,7 +54,7 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", compone
 ], targets = [
   "wasm32-wasip1",
 ] }
-run = "cargo build --locked --manifest-path .application-src/Cargo.toml --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth"
+run = "cargo build --locked --manifest-path .application-src/Cargo.toml --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth -p xila-digits"
 
 [tasks."ci:bundle-applications"]
 description = "Package the built Applications guests as unsigned bundles with their own manifests and shortcuts"
@@ -72,6 +75,12 @@ run = "rustc --edition=2021 --target wasm32-wasip1 -O tests/container/runtime_sm
 
 [tasks."firmware:test"]
 extends = "ci:rust"
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "clippy",
+  "rustfmt",
+], targets = [
+  "wasm32-unknown-unknown",
+] }
 
 [tasks."pages:demo"]
 dir = "examples/wasm"
@@ -133,6 +142,7 @@ extends = "ci:rust"
 extends = "ci:browser"
 tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
   "clippy",
+  "rustfmt",
 ], targets = [
   "wasm32-unknown-unknown",
 ] }
@@ -192,6 +202,15 @@ description = "Install locked dependencies in the explicitly checked-out Applica
 tools.node = "{{ vars.node_version }}"
 run = "npm ci --prefix ../applications"
 
+[tasks."ci:locked-revisions"]
+description = "Write the Core, Applications and package_manager commits locked in Cargo.lock to the step output"
+run = """
+set -eu
+for repository in core applications package_manager; do
+  python3 tools/ci/locked_revision.py "$repository" "$repository" >> "$GITHUB_OUTPUT"
+done
+"""
+
 [tasks."ci:integration-toolchain"]
 description = "Install pinned WASI and native integration Rust targets via mise"
 tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
@@ -199,11 +218,16 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", compone
 ], targets = [
   "wasm32-wasip1",
 ] }
-run = "rustc --version"
+# Later workflow steps call cargo directly: pin them to the same toolchain
+# instead of the runner's default one.
+run = [
+  "rustc --version",
+  'if [ -n "${GITHUB_ENV:-}" ]; then echo "RUSTUP_TOOLCHAIN={{ vars.rust_version }}" >> "$GITHUB_ENV"; fi',
+]
 
 [tasks."ci:integration-build-applications"]
 description = "Build Applications guests with the selected integration checkouts"
 tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets = [
   "wasm32-wasip1",
 ] }
-run = 'cargo build --manifest-path ../applications/Cargo.toml --config "$RUNNER_TEMP/xila-local.toml" --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth'
+run = 'cargo build --manifest-path ../applications/Cargo.toml --config "$RUNNER_TEMP/xila-local.toml" --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth -p xila-digits'

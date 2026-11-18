@@ -740,7 +740,7 @@
 #define LV_USE_OBJ_NAME 0
 
 /** Widget id (lv_obj_set_id) */
-#define LV_USE_OBJ_ID 0
+#define LV_USE_OBJ_ID 1
 
 #if LV_USE_OBJ_ID
 /** Automatic ID assignment on widget creation */
@@ -753,7 +753,7 @@
  *  - lv_obj_free_id:         Does nothing, as there is no memory allocation for the ID.
  *  When disabled these functions needs to be implemented by the user.
  */
-#define LV_USE_OBJ_ID_BUILTIN 1
+#define LV_USE_OBJ_ID_BUILTIN 0
 
 #endif /*LV_USE_OBJ_ID*/
 
@@ -2163,14 +2163,17 @@
 #endif /*LV_SYSMON_USE_CUSTOM_INCLUDE*/
 #endif /*LV_USE_SYSMON*/
 
-/** Instrument LVGL internals with trace hooks to measure runtime performance. */
-#define LV_USE_PROFILER 1
+/** Instrument LVGL internals with trace hooks to measure runtime performance.
+ *  Off: nothing in Xila reads the trace, the built-in profiler allocates a
+ *  16 KB buffer at init and adds hooks to LVGL's hot paths. Enable it locally
+ *  to profile LVGL. */
+#define LV_USE_PROFILER 0
 
 /** Built-in profiler
  *
  *  Enable: LV_USE_PROFILER
  */
-#define LV_USE_PROFILER_BUILTIN 1
+#define LV_USE_PROFILER_BUILTIN 0
 
 #if LV_USE_PROFILER_BUILTIN
 /** Trace buffer size (bytes) */

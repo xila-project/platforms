@@ -1,6 +1,6 @@
 use ed25519_dalek::{Signer, SigningKey};
-use firmware_update::simulator::{MANIFEST_SIZE, TARGET_SIZE};
 use verification::Sha256Verifier;
+use xila_firmware_native::simulator::{MANIFEST_SIZE, TARGET_SIZE};
 pub const TARGET: [u8; TARGET_SIZE] = *b"xila-native-test";
 // Public deterministic test seed; never use for production firmware.
 pub fn key() -> SigningKey {

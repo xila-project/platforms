@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use device::hash::{self, HashAlgorithm, SET_ALGORITHM};
 use file_system::{
     BaseOperations, CharacterDevice, Context, ControlCommand, ControlCommandIdentifier, Error,

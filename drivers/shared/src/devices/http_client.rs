@@ -116,7 +116,7 @@ impl BaseOperations for HttpClientDevice {
             let exchange = client.exchange.clone();
             let manager = self.network_manager;
 
-            if task::block_on(self.task_manager.spawn(
+            if task::block_on(self.task_manager.spawn_send(
                 task::Manager::ROOT_TASK_IDENTIFIER,
                 "HTTP request worker",
                 None,

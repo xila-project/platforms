@@ -28,9 +28,11 @@ graphical_shell = { workspace = true }
 wasm = { workspace = true, features = ["host", "graphics"] }
 terminal = { workspace = true }
 settings = { workspace = true }
+activity = { workspace = true }
 console_error_panic_hook = "0.1"
 drivers_wasm = { workspace = true, features = ["audio"] }
 drivers_core = { workspace = true }
+drivers_peripherals = { workspace = true }
 drivers_shared = { workspace = true }
 
 
@@ -44,3 +46,7 @@ wasm-bindgen-test = "0.3.34"
 [[bin]]
 name = "wasm_example"
 path = "src/main.rs"
+
+[features]
+default = ["neural-network"]
+neural-network = ["drivers_shared/neural-network"]

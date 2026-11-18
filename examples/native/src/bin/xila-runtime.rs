@@ -343,7 +343,7 @@ async fn run_runtime(
         drivers_std::drive_file::FileDriveDevice::open_existing(&config.disk)
             .map_err(|error| format!("cannot open disk: {error}"))?,
     ));
-    let root = little_fs::mount_disk(drive, 256)
+    let root = little_fs::mount_disk(drive, little_fs::Options::new(256))
         .map_err(|error| format!("cannot mount LittleFS disk: {error:?}"))?;
 
     let vfs: &'static virtual_file_system::VirtualFileSystem = Box::leak(Box::new(
@@ -355,6 +355,13 @@ async fn run_runtime(
         time_manager,
     });
     let task = task_manager.get_current_task_identifier().await;
+    vfs.mount_file_system(
+        xila::memory_file_system::FileSystem::new(),
+        xila::file_system::Path::DEVICES,
+        task,
+    )
+    .await
+    .map_err(|error| format!("cannot mount in-memory device file system: {error:?}"))?;
     virtual_file_system::create_default_hierarchy(vfs, task)
         .await
         .map_err(|error| format!("cannot create Xila hierarchy: {error:?}"))?;

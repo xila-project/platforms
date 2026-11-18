@@ -198,3 +198,98 @@ fn wait_reports_invalid_socket_path_as_transport_error() {
     let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(result["error"]["code"], "transport_error");
 }
+
+#[test]
+fn wait_ignores_hidden_text_and_can_match_named_widget_state() {
+    let dir = std::env::temp_dir().join(format!("xila-wait-visible-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let socket = dir.join("socket");
+    let listener = UnixListener::bind(&socket).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let server = thread::spawn(move || {
+        let mut count = 0;
+        for element in [
+            r#"{"text":"Settings","hidden":true}"#,
+            r#"{"text":"Settings","visible":false}"#,
+            r#"{"name":"Settings","semantic_role":"slider","value":42,"visible":true}"#,
+        ] {
+            let Some(mut stream) = accept(&listener) else {
+                break;
+            };
+            count += 1;
+            let mut request = String::new();
+            BufReader::new(stream.try_clone().unwrap())
+                .read_line(&mut request)
+                .unwrap();
+            let _ = writeln!(
+                stream,
+                "{{\"ok\":true,\"result\":{{\"elements\":[{element}],\"truncated\":false}}}}"
+            );
+        }
+        count
+    });
+    let output = Command::new(env!("CARGO_BIN_EXE_xila-debug"))
+        .arg("--endpoint")
+        .arg(&socket)
+        .args(["wait-for", "--text", "Settings", "--timeout-ms", "700"])
+        .output()
+        .unwrap();
+    assert!(
+        !output.status.success(),
+        "hidden text must not count; final widget has no raw text"
+    );
+    // Named widget state must be selectable independently of raw label text.
+    let seen = server.join().unwrap();
+    assert!(seen >= 3, "stopped after only {seen} snapshots");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn stable_named_value_wait_survives_snapshot_index_changes() {
+    let dir = std::env::temp_dir().join(format!("xila-stable-value-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let socket = dir.join("socket");
+    let listener = UnixListener::bind(&socket).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let server = thread::spawn(move || {
+        for (id, value) in [(1, 41), (2, 42), (9, 42)] {
+            let Some(mut stream) = accept(&listener) else {
+                break;
+            };
+            let mut request = String::new();
+            BufReader::new(stream.try_clone().unwrap())
+                .read_line(&mut request)
+                .unwrap();
+            let _ = writeln!(
+                stream,
+                "{}",
+                serde_json::json!({"ok":true,"result":{"elements":[{"id":id,"parent_id":id-1,"name":"Volume","semantic_role":"slider","value":value,"visible":true}],"truncated":false}})
+            );
+        }
+    });
+    let output = Command::new(env!("CARGO_BIN_EXE_xila-debug"))
+        .arg("--endpoint")
+        .arg(&socket)
+        .args([
+            "wait-for",
+            "--role",
+            "slider",
+            "--name",
+            "Volume",
+            "--value",
+            "42",
+            "--stable-ms",
+            "50",
+            "--timeout-ms",
+            "1000",
+        ])
+        .output()
+        .unwrap();
+    server.join().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}

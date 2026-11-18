@@ -83,8 +83,8 @@ mod tests {
 
         let task = task_instance.get_current_task_identifier().await;
 
-        little_fs::FileSystem::format(device, 256).unwrap();
-        let file_system = little_fs::FileSystem::new(device, 256).unwrap();
+        little_fs::FileSystem::format(device, little_fs::Options::new(256)).unwrap();
+        let file_system = little_fs::FileSystem::new(device, little_fs::Options::new(256)).unwrap();
 
         let virtual_file_system = virtual_file_system::initialize(
             task_instance,

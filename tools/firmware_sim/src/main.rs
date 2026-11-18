@@ -1,13 +1,13 @@
 //! Native reference harness. All update/confirmation operations use the real VFS.
 extern crate abi_definitions;
 use file_system::{AccessFlags, MemoryDevice, Permissions};
-use firmware_update::{
-    device::*,
+use firmware_update::device::*;
+use std::{collections::BTreeMap, fmt::Debug, fs::File as HostFile, io::Read, path::Path};
+use virtual_file_system::{File, ItemStatic, VirtualFileSystem};
+use xila_firmware_native::{
     nor::{Fault, FileNor, PAGE},
     simulator::{FLASH_SIZE, IMAGE_CAPACITY, MANIFEST_SIZE, Simulator},
 };
-use std::{collections::BTreeMap, fmt::Debug, fs::File as HostFile, io::Read, path::Path};
-use virtual_file_system::{File, ItemStatic, VirtualFileSystem};
 static MANAGER: task::Manager = task::Manager::new();
 type Result<T> = std::result::Result<T, String>;
 fn checked<T, E: Debug>(r: std::result::Result<T, E>) -> Result<T> {
@@ -100,8 +100,14 @@ async fn filesystem(
         &drivers_std::devices::TimeDevice,
     ))?));
     let disk = MemoryDevice::<512>::new_static(512 * 128);
-    checked(little_fs::FileSystem::format(disk, 256))?;
-    let fs = checked(little_fs::FileSystem::new(disk, 256))?;
+    checked(little_fs::FileSystem::format(
+        disk,
+        little_fs::Options::new(256),
+    ))?;
+    let fs = checked(little_fs::FileSystem::new(
+        disk,
+        little_fs::Options::new(256),
+    ))?;
     let vfs = Box::leak(Box::new(VirtualFileSystem::new(manager, users, time, fs)));
     checked(vfs.create_directory(task, &"/devices").await)?;
     checked(vfs.create_directory(task, &"/devices/system").await)?;
