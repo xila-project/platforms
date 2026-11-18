@@ -534,6 +534,24 @@ impl<const N: usize, const Q: usize> LineEditor<N, Q> {
         }
     }
 
+    /// Feed bytes from `bytes` up to the end of the first line, returning how many were consumed.
+    ///
+    /// In canonical mode, feeding stops right after the byte that ends a line
+    /// (Enter, Ctrl-C) or reports the end of input (Ctrl-D), so the caller can
+    /// keep the remaining bytes and feed them later: attribute changes made in
+    /// between, such as turning echo off before reading a password, then apply
+    /// to the following line. In raw mode, every byte is consumed.
+    pub fn feed_until_line_end<E: EchoSink>(&mut self, bytes: &[u8], echo: &mut E) -> usize {
+        let canonical = self.attributes.is_canonical();
+        for (index, &byte) in bytes.iter().enumerate() {
+            let result = self.feed_byte(byte, echo);
+            if canonical && (result.line_ready || result.eof) {
+                return index + 1;
+            }
+        }
+        bytes.len()
+    }
+
     /// Commit the current line buffer followed by '\n' to the completed queue.
     fn commit_line<E: EchoSink>(&mut self, echo: &mut E) -> ProcessResult {
         let needed = self.line_len + 1; // Content plus newline

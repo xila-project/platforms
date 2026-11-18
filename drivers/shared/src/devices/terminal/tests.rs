@@ -1067,3 +1067,100 @@ fn device_forwards_other_control_commands_to_the_input_device() {
         Poll::Ready(Err(Error::UnsupportedOperation))
     );
 }
+
+// -----------------------------------------------------------------------------
+// Type-ahead: a raw chunk is fed one line at a time
+// -----------------------------------------------------------------------------
+
+fn read_now<D: DirectBaseOperations>(device: &D, buffer: &mut [u8]) -> Poll<Result<usize>> {
+    let mut context = Context::from_waker(Waker::noop());
+    device.read(&mut context, buffer, 0)
+}
+
+#[test]
+fn device_typed_ahead_password_is_not_echoed() {
+    // The user name and the password arrive in one raw chunk, before the
+    // shell turns echo off at the password prompt.
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![b"admin\rhunter2\r"]),
+        RecordingOutputDevice::new(),
+    );
+    let mut buffer = [0u8; 32];
+
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(6)));
+    assert_eq!(&buffer[..6], b"admin\n");
+    assert_eq!(terminal.inner_out().recorded(), b"admin\r\n");
+
+    assert_eq!(
+        set_attributes(&terminal, without_echo()),
+        Poll::Ready(Ok(()))
+    );
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(8)));
+    assert_eq!(&buffer[..8], b"hunter2\n");
+    // Only the line break of the password line is written.
+    assert_eq!(terminal.inner_out().recorded(), b"admin\r\n\r\n");
+}
+
+#[test]
+fn device_typed_ahead_lines_keep_carriage_return_line_feed_pairs() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![b"a\r\nb\r\n"]),
+        RecordingOutputDevice::new(),
+    );
+    let mut buffer = [0u8; 32];
+
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(2)));
+    assert_eq!(&buffer[..2], b"a\n");
+    // The line feed kept for the next read is still paired with its carriage return.
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(2)));
+    assert_eq!(&buffer[..2], b"b\n");
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Pending);
+    assert_eq!(terminal.inner_out().recorded(), b"a\r\nb\r\n");
+}
+
+#[test]
+fn device_typed_ahead_bytes_follow_a_switch_to_raw_mode() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![b"ls\rq\x03"]),
+        RecordingOutputDevice::new(),
+    );
+    let mut buffer = [0u8; 32];
+
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(3)));
+    assert_eq!(&buffer[..3], b"ls\n");
+
+    assert_eq!(
+        set_attributes(&terminal, TerminalAttributes::RAW),
+        Poll::Ready(Ok(()))
+    );
+    // The rest of the chunk is delivered raw: Ctrl-C is not interpreted.
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(2)));
+    assert_eq!(&buffer[..2], b"q\x03");
+}
+
+#[test]
+fn device_typed_ahead_end_of_input_comes_before_the_next_line() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![b"\x04next\r"]),
+        RecordingOutputDevice::new(),
+    );
+    let mut buffer = [0u8; 32];
+
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(0)));
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(5)));
+    assert_eq!(&buffer[..5], b"next\n");
+}
+
+#[test]
+fn editor_feeds_until_the_end_of_the_first_line() {
+    let mut editor = LineEditor::<256>::new();
+    let mut echo = Vec::new();
+
+    assert_eq!(editor.feed_until_line_end(b"ab\rcd\r", &mut echo), 3);
+    assert_eq!(editor.feed_until_line_end(b"x\x03y", &mut echo), 2);
+    assert_eq!(editor.feed_until_line_end(b"\x04z", &mut echo), 1);
+    assert_eq!(editor.feed_until_line_end(b"partial", &mut echo), 7);
+
+    editor.set_attributes(TerminalAttributes::RAW);
+    assert_eq!(editor.feed_until_line_end(b"r\rs\r", &mut echo), 4);
+}

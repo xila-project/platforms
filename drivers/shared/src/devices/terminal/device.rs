@@ -20,6 +20,81 @@ use shared::AnyByLayout;
 
 use super::logic::LineEditor;
 
+/// Capacity of a raw input chunk, and of the raw bytes kept between reads.
+const RAW_CHUNK_CAPACITY: usize = 64;
+
+/// Raw bytes read from the input device but not yet fed to the line editor.
+///
+/// In canonical mode, a chunk is fed only up to the end of its first line;
+/// the rest waits here for the next read, so attribute changes made in between
+/// (such as echo turned off before a password prompt) apply to the following
+/// line. Its capacity is fixed: nothing is allocated.
+#[derive(Debug)]
+struct PendingInput {
+    bytes: [u8; RAW_CHUNK_CAPACITY],
+    start: usize,
+    end: usize,
+}
+
+impl PendingInput {
+    const fn new() -> Self {
+        Self {
+            bytes: [0; RAW_CHUNK_CAPACITY],
+            start: 0,
+            end: 0,
+        }
+    }
+
+    const fn is_empty(&self) -> bool {
+        self.start == self.end
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        &self.bytes[self.start..self.end]
+    }
+
+    /// Drop the first `count` bytes, which were fed to the line editor.
+    fn consume(&mut self, count: usize) {
+        self.start = (self.start + count).min(self.end);
+        if self.is_empty() {
+            self.start = 0;
+            self.end = 0;
+        }
+    }
+
+    /// Append raw bytes after those still pending.
+    ///
+    /// The buffer is empty whenever a single reader pulls new raw bytes; with
+    /// concurrent readers, bytes that do not fit are dropped, like a full
+    /// reader queue does.
+    fn append(&mut self, bytes: &[u8]) {
+        if self.start > 0 {
+            self.bytes.copy_within(self.start..self.end, 0);
+            self.end -= self.start;
+            self.start = 0;
+        }
+        let count = bytes.len().min(RAW_CHUNK_CAPACITY - self.end);
+        self.bytes[self.end..self.end + count].copy_from_slice(&bytes[..count]);
+        self.end += count;
+    }
+}
+
+/// Line editor and raw input still to be fed to it.
+#[derive(Debug)]
+struct TerminalState<const N: usize, const Q: usize> {
+    editor: LineEditor<N, Q>,
+    pending_input: PendingInput,
+}
+
+impl<const N: usize, const Q: usize> TerminalState<N, Q> {
+    const fn new() -> Self {
+        Self {
+            editor: LineEditor::new(),
+            pending_input: PendingInput::new(),
+        }
+    }
+}
+
 /// VFS character device providing cooked terminal input over raw I/O devices.
 ///
 /// `I` is the raw character input device (e.g. `StandardInDevice`).
@@ -29,7 +104,7 @@ use super::logic::LineEditor;
 pub struct TerminalInputDevice<I, O, const N: usize = 256, const Q: usize = 512> {
     inner_in: I,
     inner_out: O,
-    state: Mutex<RefCell<LineEditor<N, Q>>>,
+    state: Mutex<RefCell<TerminalState<N, Q>>>,
 }
 
 impl<I, O, const N: usize, const Q: usize> TerminalInputDevice<I, O, N, Q> {
@@ -38,7 +113,7 @@ impl<I, O, const N: usize, const Q: usize> TerminalInputDevice<I, O, N, Q> {
         Self {
             inner_in,
             inner_out,
-            state: Mutex::new(RefCell::new(LineEditor::new())),
+            state: Mutex::new(RefCell::new(TerminalState::new())),
         }
     }
 
@@ -53,7 +128,7 @@ impl<I, O, const N: usize, const Q: usize> TerminalInputDevice<I, O, N, Q> {
     }
 
     /// Access the editor state within a critical section, returning `Error::RessourceBusy` if contended.
-    fn with_state<R>(&self, f: impl FnOnce(&mut LineEditor<N, Q>) -> Result<R>) -> Result<R> {
+    fn with_state<R>(&self, f: impl FnOnce(&mut TerminalState<N, Q>) -> Result<R>) -> Result<R> {
         critical_section::with(|cs| {
             let mut state = self
                 .state
@@ -62,6 +137,23 @@ impl<I, O, const N: usize, const Q: usize> TerminalInputDevice<I, O, N, Q> {
                 .map_err(|_| Error::RessourceBusy)?;
             f(&mut state)
         })
+    }
+}
+
+impl<I, O: DirectCharacterDevice, const N: usize, const Q: usize> TerminalInputDevice<I, O, N, Q> {
+    /// Feed pending raw bytes to the line editor, up to the end of the next
+    /// line in canonical mode, and write their echo to the output device.
+    fn feed_pending_input(&self, state: &mut TerminalState<N, Q>) {
+        let TerminalState {
+            editor,
+            pending_input,
+        } = state;
+        let mut echo = |echo_bytes: &[u8]| {
+            let mut noop_cx = TaskContext::from_waker(Waker::noop());
+            let _ = self.inner_out.write(&mut noop_cx, echo_bytes, 0);
+        };
+        let consumed = editor.feed_until_line_end(pending_input.as_slice(), &mut echo);
+        pending_input.consume(consumed);
     }
 }
 
@@ -87,13 +179,19 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
 
         loop {
             // 1. Deliver completed lines or EOF if already available in the editor.
+            // 2. Otherwise, feed raw bytes left over from an earlier chunk, up to
+            //    the end of the next line, before pulling new ones.
             let mut data_to_return = None;
+            let mut fed_pending_input = false;
             let lock_res = self.with_state(|state| {
-                if state.has_completed_bytes() {
-                    let n = state.pop_completed(buffer);
+                if state.editor.has_completed_bytes() {
+                    let n = state.editor.pop_completed(buffer);
                     data_to_return = Some(Ok(n));
-                } else if state.take_eof() {
+                } else if state.editor.take_eof() {
                     data_to_return = Some(Ok(0));
+                } else if !state.pending_input.is_empty() {
+                    self.feed_pending_input(state);
+                    fed_pending_input = true;
                 }
                 Ok(())
             });
@@ -106,8 +204,14 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
                 return Poll::Ready(res);
             }
 
-            // 2. No completed data available: pull raw bytes from the inner input device.
-            let mut raw_buf = [0u8; 64];
+            if fed_pending_input {
+                // The next iteration returns a line if one was completed, or
+                // keeps feeding (and eventually pulls new raw bytes) otherwise.
+                continue;
+            }
+
+            // 3. No completed data available: pull raw bytes from the inner input device.
+            let mut raw_buf = [0u8; RAW_CHUNK_CAPACITY];
             match self.inner_in.read(cx, &mut raw_buf, 0) {
                 Poll::Pending => {
                     // Inner device has registered the waker from cx.
@@ -119,8 +223,8 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
                     // End-of-stream from raw input device.
                     let mut final_data = None;
                     let _ = self.with_state(|state| {
-                        if state.has_completed_bytes() {
-                            let n = state.pop_completed(buffer);
+                        if state.editor.has_completed_bytes() {
+                            let n = state.editor.pop_completed(buffer);
                             final_data = Some(Ok(n));
                         } else {
                             final_data = Some(Ok(0));
@@ -130,13 +234,11 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
                     return Poll::Ready(final_data.unwrap_or(Ok(0)));
                 }
                 Poll::Ready(Ok(n)) => {
-                    // Feed raw bytes into line editor and emit echo to inner_out.
+                    // Feed raw bytes into the line editor (up to the end of the
+                    // first line in canonical mode) and emit echo to inner_out.
                     let feed_res = self.with_state(|state| {
-                        let mut echo_fn = |echo_bytes: &[u8]| {
-                            let mut noop_cx = TaskContext::from_waker(Waker::noop());
-                            let _ = self.inner_out.write(&mut noop_cx, echo_bytes, 0);
-                        };
-                        state.feed_slice(&raw_buf[..n], &mut echo_fn);
+                        state.pending_input.append(&raw_buf[..n]);
+                        self.feed_pending_input(state);
                         Ok(())
                     });
 
@@ -176,7 +278,7 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
         match command {
             GET_TERMINAL_ATTRIBUTES::IDENTIFIER => file_system::ready(|| {
                 let attributes = GET_TERMINAL_ATTRIBUTES::cast_output(output)?;
-                *attributes = self.with_state(|state| Ok(state.attributes()))?;
+                *attributes = self.with_state(|state| Ok(state.editor.attributes()))?;
                 Ok(())
             }),
             SET_TERMINAL_ATTRIBUTES::IDENTIFIER => file_system::ready(|| {
@@ -185,7 +287,7 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
                     return Err(Error::InvalidParameter);
                 }
                 self.with_state(|state| {
-                    state.set_attributes(attributes);
+                    state.editor.set_attributes(attributes);
                     Ok(())
                 })
             }),
