@@ -33,11 +33,11 @@ impl<O> TerminalOutputDevice<O> {
 impl<O: DirectCharacterDevice> DirectBaseOperations for TerminalOutputDevice<O> {
     fn read(
         &self,
-        cx: &mut TaskContext<'_>,
+        context: &mut TaskContext<'_>,
         buffer: &mut [u8],
         absolute_position: Size,
     ) -> Poll<Result<usize>> {
-        self.inner.read(cx, buffer, absolute_position)
+        self.inner.read(context, buffer, absolute_position)
     }
 
     /// Write `buffer`, sending each `\n` as `\r\n`.
@@ -48,7 +48,7 @@ impl<O: DirectCharacterDevice> DirectBaseOperations for TerminalOutputDevice<O> 
     /// extra carriage return is harmless.
     fn write(
         &self,
-        cx: &mut TaskContext<'_>,
+        context: &mut TaskContext<'_>,
         buffer: &[u8],
         absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -66,7 +66,7 @@ impl<O: DirectCharacterDevice> DirectBaseOperations for TerminalOutputDevice<O> 
                 (&remaining[..segment_length], false)
             };
 
-            match self.inner.write(cx, segment, absolute_position) {
+            match self.inner.write(context, segment, absolute_position) {
                 Poll::Ready(Ok(written)) => {
                     if translated {
                         if written < segment.len() {
@@ -97,18 +97,18 @@ impl<O: DirectCharacterDevice> DirectBaseOperations for TerminalOutputDevice<O> 
         Poll::Ready(Ok(consumed))
     }
 
-    fn flush(&self, cx: &mut TaskContext<'_>) -> Poll<Result<()>> {
-        self.inner.flush(cx)
+    fn flush(&self, context: &mut TaskContext<'_>) -> Poll<Result<()>> {
+        self.inner.flush(context)
     }
 
     fn control(
         &self,
-        cx: &mut TaskContext<'_>,
+        context: &mut TaskContext<'_>,
         command: ControlCommandIdentifier,
         input: &AnyByLayout,
         output: &mut AnyByLayout,
     ) -> Poll<Result<()>> {
-        self.inner.control(cx, command, input, output)
+        self.inner.control(context, command, input, output)
     }
 
     fn cancel_operation(&self, operation: Operation) {

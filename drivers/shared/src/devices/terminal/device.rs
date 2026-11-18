@@ -155,8 +155,8 @@ impl<I, O: DirectCharacterDevice, const N: usize, const Q: usize> TerminalInputD
             ..
         } = state;
         let mut echo = |echo_bytes: &[u8]| {
-            let mut noop_cx = TaskContext::from_waker(Waker::noop());
-            let _ = self.inner_out.write(&mut noop_cx, echo_bytes, 0);
+            let mut noop_context = TaskContext::from_waker(Waker::noop());
+            let _ = self.inner_out.write(&mut noop_context, echo_bytes, 0);
         };
         let consumed = editor.feed_until_line_end(pending_input.as_slice(), &mut echo);
         pending_input.consume(consumed);
@@ -175,7 +175,7 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
 {
     fn read(
         &self,
-        cx: &mut TaskContext<'_>,
+        context: &mut TaskContext<'_>,
         buffer: &mut [u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -221,17 +221,17 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
 
             // 3. No completed data available: pull raw bytes from the inner input device.
             let mut raw_buf = [0u8; RAW_CHUNK_CAPACITY];
-            match self.inner_in.read(cx, &mut raw_buf, 0) {
+            match self.inner_in.read(context, &mut raw_buf, 0) {
                 Poll::Pending => {
-                    // Inner device has registered the waker from cx.
+                    // Inner device has registered the waker from context.
                     // Returning Pending guarantees a wake-up when hardware input arrives.
                     // The waker is also kept here for a change of attributes
                     // that releases the partial line; if that already happened,
                     // deliver it now.
                     let lock_res = self.with_state(|state| {
                         match &mut state.reader_waker {
-                            Some(waker) => waker.clone_from(cx.waker()),
-                            None => state.reader_waker = Some(cx.waker().clone()),
+                            Some(waker) => waker.clone_from(context.waker()),
+                            None => state.reader_waker = Some(context.waker().clone()),
                         }
                         Ok(state.editor.is_readable())
                     });
@@ -272,7 +272,7 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
                     // Loop again:
                     // If the chunk completed a line, the next iteration returns it immediately.
                     // If the chunk did not complete a line, we MUST poll inner_in again until it
-                    // returns Pending, ensuring cx.waker() is registered before we return Pending.
+                    // returns Pending, ensuring context.waker() is registered before we return Pending.
                 }
             }
         }
@@ -280,20 +280,20 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
 
     fn write(
         &self,
-        _cx: &mut TaskContext<'_>,
+        _context: &mut TaskContext<'_>,
         _buffer: &[u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
         Poll::Ready(Err(Error::UnsupportedOperation))
     }
 
-    fn flush(&self, cx: &mut TaskContext<'_>) -> Poll<Result<()>> {
-        self.inner_in.flush(cx)
+    fn flush(&self, context: &mut TaskContext<'_>) -> Poll<Result<()>> {
+        self.inner_in.flush(context)
     }
 
     fn control(
         &self,
-        cx: &mut TaskContext<'_>,
+        context: &mut TaskContext<'_>,
         command: ControlCommandIdentifier,
         input: &AnyByLayout,
         output: &mut AnyByLayout,
@@ -323,7 +323,7 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
                 }
                 Ok(())
             }),
-            _ => self.inner_in.control(cx, command, input, output),
+            _ => self.inner_in.control(context, command, input, output),
         }
     }
 

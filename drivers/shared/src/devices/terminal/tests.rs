@@ -465,7 +465,7 @@ impl ScriptedInputDevice {
 impl DirectBaseOperations for ScriptedInputDevice {
     fn read(
         &self,
-        _cx: &mut Context<'_>,
+        _context: &mut Context<'_>,
         buffer: &mut [u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -485,7 +485,7 @@ impl DirectBaseOperations for ScriptedInputDevice {
 
     fn write(
         &self,
-        _cx: &mut Context<'_>,
+        _context: &mut Context<'_>,
         _buffer: &[u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -515,7 +515,7 @@ impl RecordingOutputDevice {
 impl DirectBaseOperations for RecordingOutputDevice {
     fn read(
         &self,
-        _cx: &mut Context<'_>,
+        _context: &mut Context<'_>,
         _buffer: &mut [u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -524,7 +524,7 @@ impl DirectBaseOperations for RecordingOutputDevice {
 
     fn write(
         &self,
-        _cx: &mut Context<'_>,
+        _context: &mut Context<'_>,
         buffer: &[u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -541,7 +541,7 @@ struct StalledOutputDevice;
 impl DirectBaseOperations for StalledOutputDevice {
     fn read(
         &self,
-        _cx: &mut Context<'_>,
+        _context: &mut Context<'_>,
         _buffer: &mut [u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -550,7 +550,7 @@ impl DirectBaseOperations for StalledOutputDevice {
 
     fn write(
         &self,
-        _cx: &mut Context<'_>,
+        _context: &mut Context<'_>,
         _buffer: &[u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -569,12 +569,12 @@ fn device_pending_only_after_inner_input_pending() {
 
     let mut buf = [0u8; 32];
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
+    let mut context = Context::from_waker(waker);
 
     // Initial read: pulls "hel", then pulls "lo", neither completes line.
     // Script is exhausted, inner input returns Pending, registering waker.
     // TerminalInputDevice returns Pending!
-    let poll_res = terminal.read(&mut cx, &mut buf, 0);
+    let poll_res = terminal.read(&mut context, &mut buf, 0);
     assert_eq!(poll_res, Poll::Pending);
 
     // Inner input was polled until Pending and registered the waker once
@@ -589,9 +589,9 @@ fn device_line_arriving_in_chunks_delivered_when_complete() {
 
     let mut buf = [0u8; 32];
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
+    let mut context = Context::from_waker(waker);
 
-    let poll_res = terminal.read(&mut cx, &mut buf, 0);
+    let poll_res = terminal.read(&mut context, &mut buf, 0);
     assert_eq!(poll_res, Poll::Ready(Ok(5)));
     assert_eq!(&buf[..5], b"abcd\n");
 }
@@ -604,9 +604,9 @@ fn device_echo_bytes_reach_output_in_order() {
 
     let mut buf = [0u8; 32];
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
+    let mut context = Context::from_waker(waker);
 
-    let poll_res = terminal.read(&mut cx, &mut buf, 0);
+    let poll_res = terminal.read(&mut context, &mut buf, 0);
     assert_eq!(poll_res, Poll::Ready(Ok(2)));
     assert_eq!(&buf[..2], b"b\n");
 
@@ -622,11 +622,11 @@ fn device_stalled_output_does_not_prevent_delivery() {
 
     let mut buf = [0u8; 32];
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
+    let mut context = Context::from_waker(waker);
 
     // Output write returns Pending, which is dropped per echo policy.
     // Line delivery succeeds without stalling!
-    let poll_res = terminal.read(&mut cx, &mut buf, 0);
+    let poll_res = terminal.read(&mut context, &mut buf, 0);
     assert_eq!(poll_res, Poll::Ready(Ok(8)));
     assert_eq!(&buf[..8], b"command\n");
 }
@@ -635,15 +635,25 @@ fn device_stalled_output_does_not_prevent_delivery() {
 fn device_control_forwarding() {
     struct MockTerminalDevice;
     impl DirectBaseOperations for MockTerminalDevice {
-        fn read(&self, _cx: &mut Context<'_>, _buf: &mut [u8], _pos: Size) -> Poll<Result<usize>> {
+        fn read(
+            &self,
+            _context: &mut Context<'_>,
+            _buf: &mut [u8],
+            _pos: Size,
+        ) -> Poll<Result<usize>> {
             Poll::Pending
         }
-        fn write(&self, _cx: &mut Context<'_>, _buf: &[u8], _pos: Size) -> Poll<Result<usize>> {
+        fn write(
+            &self,
+            _context: &mut Context<'_>,
+            _buf: &[u8],
+            _pos: Size,
+        ) -> Poll<Result<usize>> {
             Poll::Ready(Ok(0))
         }
         fn control(
             &self,
-            _cx: &mut Context<'_>,
+            _context: &mut Context<'_>,
             command: ControlCommandIdentifier,
             _input: &AnyByLayout,
             output: &mut AnyByLayout,
@@ -667,10 +677,10 @@ fn device_control_forwarding() {
     let input = ();
     let in_layout = AnyByLayout::from(&input);
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
+    let mut context = Context::from_waker(waker);
 
     let res = terminal.control(
-        &mut cx,
+        &mut context,
         file_system::character_device::IS_A_TERMINAL::IDENTIFIER,
         in_layout,
         out,
@@ -693,7 +703,7 @@ struct LimitedOutputDevice {
 impl DirectBaseOperations for LimitedOutputDevice {
     fn read(
         &self,
-        _cx: &mut Context<'_>,
+        _context: &mut Context<'_>,
         _buffer: &mut [u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -702,7 +712,7 @@ impl DirectBaseOperations for LimitedOutputDevice {
 
     fn write(
         &self,
-        _cx: &mut Context<'_>,
+        _context: &mut Context<'_>,
         buffer: &[u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -726,12 +736,12 @@ impl DirectCharacterDevice for LimitedOutputDevice {}
 
 fn write_all<D: DirectBaseOperations>(device: &D, mut buffer: &[u8]) {
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
+    let mut context = Context::from_waker(waker);
     let mut attempts = 0;
     while !buffer.is_empty() {
         attempts += 1;
         assert!(attempts < 1000, "write made no progress");
-        if let Poll::Ready(result) = device.write(&mut cx, buffer, 0) {
+        if let Poll::Ready(result) = device.write(&mut context, buffer, 0) {
             buffer = &buffer[result.unwrap()..];
         }
     }
@@ -774,8 +784,8 @@ fn output_survives_partial_inner_writes() {
 fn output_is_pending_when_inner_is_pending_before_any_progress() {
     let terminal = TerminalOutputDevice::new(StalledOutputDevice);
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
-    assert_eq!(terminal.write(&mut cx, b"text\n", 0), Poll::Pending);
+    let mut context = Context::from_waker(waker);
+    assert_eq!(terminal.write(&mut context, b"text\n", 0), Poll::Pending);
 }
 
 // -----------------------------------------------------------------------------
@@ -946,9 +956,9 @@ fn returning_to_canonical_mode_edits_lines_again() {
 fn get_attributes<D: DirectBaseOperations>(device: &D) -> TerminalAttributes {
     let mut attributes = TerminalAttributes::RAW;
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
+    let mut context = Context::from_waker(waker);
     let result = device.control(
-        &mut cx,
+        &mut context,
         GET_TERMINAL_ATTRIBUTES::IDENTIFIER,
         AnyByLayout::from(&()),
         AnyByLayout::from_mutable(&mut attributes),
@@ -962,9 +972,9 @@ fn set_attributes<D: DirectBaseOperations>(
     attributes: TerminalAttributes,
 ) -> Poll<Result<()>> {
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
+    let mut context = Context::from_waker(waker);
     device.control(
-        &mut cx,
+        &mut context,
         SET_TERMINAL_ATTRIBUTES::IDENTIFIER,
         AnyByLayout::from(&attributes),
         AnyByLayout::from_mutable(&mut ()),
@@ -1019,8 +1029,11 @@ fn device_reads_a_password_without_echo() {
 
     let mut buffer = [0u8; 32];
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
-    assert_eq!(terminal.read(&mut cx, &mut buffer, 0), Poll::Ready(Ok(8)));
+    let mut context = Context::from_waker(waker);
+    assert_eq!(
+        terminal.read(&mut context, &mut buffer, 0),
+        Poll::Ready(Ok(8))
+    );
     assert_eq!(&buffer[..8], b"hunter2\n");
     assert_eq!(terminal.inner_out().recorded(), b"\r\n");
 }
@@ -1038,13 +1051,16 @@ fn device_raw_mode_returns_bytes_without_waiting_for_enter() {
 
     let mut buffer = [0u8; 32];
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
-    assert_eq!(terminal.read(&mut cx, &mut buffer, 0), Poll::Ready(Ok(3)));
+    let mut context = Context::from_waker(waker);
+    assert_eq!(
+        terminal.read(&mut context, &mut buffer, 0),
+        Poll::Ready(Ok(3))
+    );
     assert_eq!(&buffer[..3], b"\x1b[A");
     assert!(terminal.inner_out().recorded().is_empty());
 
     // Nothing more is buffered: the next read waits for the inner device.
-    assert_eq!(terminal.read(&mut cx, &mut buffer, 0), Poll::Pending);
+    assert_eq!(terminal.read(&mut context, &mut buffer, 0), Poll::Pending);
 }
 
 #[test]
@@ -1055,11 +1071,11 @@ fn device_forwards_other_control_commands_to_the_input_device() {
     );
     let mut block_size = 0u32;
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
+    let mut context = Context::from_waker(waker);
     // The scripted device keeps the default control, which rejects every command.
     assert_eq!(
         terminal.control(
-            &mut cx,
+            &mut context,
             file_system::block_device::GET_BLOCK_SIZE::IDENTIFIER,
             AnyByLayout::from(&()),
             AnyByLayout::from_mutable(&mut block_size),
