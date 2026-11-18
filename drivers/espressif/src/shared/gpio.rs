@@ -1,7 +1,7 @@
 use core::cell::Cell;
 
 use critical_section::Mutex;
-use drivers_core::GpioDevice;
+use drivers_peripherals::gpio::mount_gpio;
 use esp_hal::gpio::{
     AnyPin, DriveMode as HalDriveMode, Flex, InputConfig as HalInputConfig, Level,
     OutputConfig as HalOutputConfig, Pull as HalPull,
@@ -14,12 +14,42 @@ use virtual_file_system::VirtualFileSystem;
 
 use super::{Error, Result};
 
-/// One physical GPIO line of a chip, its VFS path and the features it supports.
+/// Limitations of a GPIO line, from esp-hal's chip metadata.
+///
+/// A flagged line works as a GPIO, but something else may need it. The board
+/// decides: pass the flags it wants withheld to [`reserved_mask`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LineFlags(u8);
+
+impl LineFlags {
+    /// No limitation.
+    pub const NONE: Self = Self(0);
+    /// Sampled at reset to select the boot mode: an external circuit holding it
+    /// at the wrong level changes how the chip boots.
+    pub const STRAPPING: Self = Self(1 << 0);
+    /// Carries an external JTAG debugger.
+    pub const JTAG: Self = Self(1 << 1);
+    /// UART0 TX or RX, used by the ROM bootloader and the default console.
+    pub const CONSOLE: Self = Self(1 << 2);
+    /// Used by PSRAM, or by octal flash/PSRAM, on modules that have them.
+    pub const MODULE_MEMORY: Self = Self(1 << 3);
+
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    pub const fn intersects(self, other: Self) -> bool {
+        self.0 & other.0 != 0
+    }
+}
+
+/// One physical GPIO line of a chip, its VFS device name and the features it supports.
 #[derive(Clone, Copy, Debug)]
 pub struct Line {
     pub number: u8,
-    pub path: &'static str,
+    pub name: &'static str,
     pub capabilities: LineCapabilities,
+    pub flags: LineFlags,
 }
 
 /// Capabilities of a line that can be an input or an output, with pulls and open drain.
@@ -40,55 +70,99 @@ pub const INPUT_ONLY_CAPABILITIES: LineCapabilities = LineCapabilities {
     open_drain: false,
 };
 
-/// Declares a line of `FULL_CAPABILITIES`, mounted at `/devices/Pin<number>`.
+/// Declares a line of `FULL_CAPABILITIES`, mounted at `/devices/gpio/pin<number>`.
 #[macro_export]
 macro_rules! pin_line {
     ($number:literal) => {
+        $crate::pin_line!($number, $crate::shared::LineFlags::NONE)
+    };
+    ($number:literal, $flags:expr) => {
         $crate::shared::Line {
             number: $number,
-            path: concat!("/devices/Pin", $number),
+            name: concat!("pin", $number),
             capabilities: $crate::shared::FULL_CAPABILITIES,
+            flags: $flags,
         }
     };
 }
 
-/// Declares a line of `INPUT_ONLY_CAPABILITIES`, mounted at `/devices/Pin<number>`.
+/// Declares a line of `INPUT_ONLY_CAPABILITIES`, mounted at `/devices/gpio/pin<number>`.
 #[macro_export]
 macro_rules! pin_input_only {
     ($number:literal) => {
+        $crate::pin_input_only!($number, $crate::shared::LineFlags::NONE)
+    };
+    ($number:literal, $flags:expr) => {
         $crate::shared::Line {
             number: $number,
-            path: concat!("/devices/Pin", $number),
+            name: concat!("pin", $number),
             capabilities: $crate::shared::INPUT_ONLY_CAPABILITIES,
+            flags: $flags,
         }
     };
+}
+
+/// Mask of the lines of `lines` that have any of `flags`, for [`Gpio::new`].
+pub const fn reserved_mask(lines: &[Line], flags: LineFlags) -> u64 {
+    let mut mask = 0;
+    let mut index = 0;
+    while index < lines.len() {
+        if lines[index].flags.intersects(flags) {
+            mask |= 1 << lines[index].number;
+        }
+        index += 1;
+    }
+    mask
+}
+
+/// Mask of the given GPIO numbers, for [`Gpio::new`].
+pub const fn pins_mask(pins: &[u8]) -> u64 {
+    let mut mask = 0;
+    let mut index = 0;
+    while index < pins.len() {
+        mask |= 1 << pins[index];
+        index += 1;
+    }
+    mask
 }
 
 /// ESP GPIO controller implementing the portable `GpioController` contract.
 ///
-/// `LineId` is the physical GPIO number. A bit per GPIO number records which
-/// lines have a live handle, so one pin cannot be requested twice.
+/// `LineId` is the physical GPIO number. Withheld lines do not exist for the
+/// controller. A bit per GPIO number records which lines have a live handle,
+/// so one pin cannot be requested twice.
 pub struct Gpio {
     lines: &'static [Line],
-    reserved: Mutex<Cell<u64>>,
+    withheld: u64,
+    in_use: Mutex<Cell<u64>>,
 }
 
 impl Gpio {
-    pub const fn new(lines: &'static [Line]) -> Self {
+    /// Creates a controller over `lines` without the lines whose bit is set in
+    /// `withheld` (see [`reserved_mask`] and [`pins_mask`]).
+    ///
+    /// # Safety
+    ///
+    /// Requesting a line reconfigures its pin. Every line of `lines` that is
+    /// not withheld must not be used by anything else for the controller's
+    /// lifetime: no other esp-hal driver, peripheral signal or flash/PSRAM.
+    pub const unsafe fn new(lines: &'static [Line], withheld: u64) -> Self {
         Self {
             lines,
-            reserved: Mutex::new(Cell::new(0)),
+            withheld,
+            in_use: Mutex::new(Cell::new(0)),
         }
     }
 
-    /// Every line of the chip, in the order they are mounted.
-    pub const fn lines(&self) -> &'static [Line] {
+    /// The lines the controller exposes, in table order.
+    pub fn lines(&self) -> impl Iterator<Item = &'static Line> + '_ {
         self.lines
+            .iter()
+            .filter(|line| self.withheld & (1 << line.number) == 0)
     }
 
     fn line(&self, id: LineId) -> Result<Line> {
-        self.lines
-            .iter()
+        self.lines()
             .copied()
             .find(|line| u16::from(line.number) == id.offset())
             .ok_or(Error::InvalidLine)
@@ -98,14 +172,14 @@ impl Gpio {
         let bit = reservation_bit(number)?;
 
         critical_section::with(|cs| {
-            let reserved = self.reserved.borrow(cs);
-            let bits = reserved.get();
+            let in_use = self.in_use.borrow(cs);
+            let bits = in_use.get();
 
             if bits & bit != 0 {
                 return Err(Error::AlreadyReserved);
             }
 
-            reserved.set(bits | bit);
+            in_use.set(bits | bit);
             Ok(())
         })
     }
@@ -113,8 +187,8 @@ impl Gpio {
     fn release(&self, number: u8) {
         if let Ok(bit) = reservation_bit(number) {
             critical_section::with(|cs| {
-                let reserved = self.reserved.borrow(cs);
-                reserved.set(reserved.get() & !bit);
+                let in_use = self.in_use.borrow(cs);
+                in_use.set(in_use.get() & !bit);
             });
         }
     }
@@ -197,8 +271,9 @@ impl GpioController for Gpio {
         check_pull(&info.capabilities, config.pull)?;
         self.reserve(info.number)?;
 
-        // SAFETY: the reservation above is the only live handle to this GPIO
-        // number, and it is released when the returned `GpioInput` is dropped.
+        // SAFETY: the line is not withheld, so `Gpio::new`'s contract leaves the
+        // pin to this controller; the reservation above makes this the only
+        // live handle, released when the returned `GpioInput` is dropped.
         let mut pin = Flex::new(unsafe { AnyPin::steal(info.number) });
         pin.apply_input_config(&HalInputConfig::default().with_pull(to_hal_pull(config.pull)));
         pin.set_output_enable(false);
@@ -314,19 +389,22 @@ impl embedded_hal::digital::StatefulOutputPin for GpioOutput<'_> {
     }
 }
 
-/// Mounts one character device per GPIO line of `controller` in the VFS.
+/// Mounts `/devices/gpio/pin<number>` for every line `gpio` exposes.
 pub async fn mount_pin_devices(
     virtual_file_system: &VirtualFileSystem,
     task: TaskIdentifier,
-    controller: &'static Gpio,
+    gpio: &'static Gpio,
 ) -> Result<()> {
-    for line in controller.lines() {
-        let device = GpioDevice::new(controller, LineId::new(u16::from(line.number)));
-
-        virtual_file_system
-            .mount_character_device(task, line.path, device)
-            .await
-            .map_err(|_| Error::FailedToMountPinDevice)?;
+    for line in gpio.lines() {
+        mount_gpio(
+            virtual_file_system,
+            task,
+            line.name,
+            gpio,
+            LineId::new(u16::from(line.number)),
+        )
+        .await
+        .map_err(|_| Error::FailedToMountPinDevice)?;
     }
 
     Ok(())

@@ -3,20 +3,49 @@ name = "xila-drivers-espressif"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
-critical-section = { workspace = true }
-drivers_core = { workspace = true }
-embedded-hal = { workspace = true }
-peripherals = { workspace = true, features = ["gpio"] }
-task = { workspace = true }
-virtual_file_system = { workspace = true }
-
+# Everything is target-gated: on host targets this crate is empty and builds
+# nothing, so the Platforms workspace stays checkable on x86_64.
 [target.'cfg(any(target_arch = "xtensa", target_arch = "riscv32"))'.dependencies]
-esp-hal = { version = "=1.2.2", default-features = false, features = ["unstable"] }
+critical-section = { workspace = true }
+embedded-hal = { workspace = true, optional = true }
+esp-hal = { version = "=1.2.2", default-features = false, features = ["unstable"], optional = true }
+peripherals = { workspace = true, optional = true }
+
+# The GPIO adapter mounts lines through Core's VFS, task and device crates,
+# which need atomic compare-and-swap. On chips without it (ESP32-C2, ESP32-C3,
+# ESP32-S2) these are not built and `src/lib.rs` explains why `gpio` fails.
+[target.'cfg(all(any(target_arch = "xtensa", target_arch = "riscv32"), target_has_atomic = "ptr"))'.dependencies]
+drivers_peripherals = { workspace = true, optional = true }
+task = { workspace = true, optional = true }
+virtual_file_system = { workspace = true, optional = true }
 
 [features]
-esp32 = ["esp-hal/esp32"]
-esp32s3 = ["esp-hal/esp32s3"]
+default = ["gpio"]
+
+# GPIO lines as VFS devices.
+gpio = [
+  "dep:drivers_peripherals",
+  "dep:embedded-hal",
+  "dep:peripherals",
+  "dep:task",
+  "dep:virtual_file_system",
+  "drivers_peripherals/gpio",
+  "peripherals/gpio",
+]
+
+# Supported Espressif chips (esp-hal 1.2.2). Enable exactly one; without one
+# the crate is empty.
+esp32 = ["dep:esp-hal", "esp-hal/esp32"]
+esp32c2 = ["dep:esp-hal", "esp-hal/esp32c2"]
+esp32c3 = ["dep:esp-hal", "esp-hal/esp32c3"]
+esp32c5 = ["dep:esp-hal", "esp-hal/esp32c5"]
+esp32c6 = ["dep:esp-hal", "esp-hal/esp32c6"]
+esp32c61 = ["dep:esp-hal", "esp-hal/esp32c61"]
+esp32h2 = ["dep:esp-hal", "esp-hal/esp32h2"]
+esp32p4 = ["dep:esp-hal", "esp-hal/esp32p4"]
+esp32s2 = ["dep:esp-hal", "esp-hal/esp32s2"]
+esp32s3 = ["dep:esp-hal", "esp-hal/esp32s3"]
+esp32s31 = ["dep:esp-hal", "esp-hal/esp32s31"]
 
 [lib]
 name = "drivers_espressif"
