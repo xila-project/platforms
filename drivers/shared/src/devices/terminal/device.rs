@@ -2,13 +2,19 @@
 //!
 //! Provides canonical mode cooked input for the Xila shell and applications,
 //! translating raw input into line-buffered input with echo.
+//!
+//! Programs read and change the line discipline with the
+//! `GET_TERMINAL_ATTRIBUTES` and `SET_TERMINAL_ATTRIBUTES` control commands
+//! (echo, canonical or raw input); see [`LineEditor`] for their behaviour.
+//! Every other control command is forwarded to the raw input device.
 
 use core::cell::RefCell;
 use core::task::{Context as TaskContext, Poll, Waker};
 use critical_section::Mutex;
 use file_system::{
-    ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice, Error, MountOperations,
-    Operation, Result, Size,
+    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice, Error,
+    MountOperations, Operation, Result, Size,
+    character_device::{GET_TERMINAL_ATTRIBUTES, SET_TERMINAL_ATTRIBUTES},
 };
 use shared::AnyByLayout;
 
@@ -167,7 +173,24 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
         input: &AnyByLayout,
         output: &mut AnyByLayout,
     ) -> Poll<Result<()>> {
-        self.inner_in.control(cx, command, input, output)
+        match command {
+            GET_TERMINAL_ATTRIBUTES::IDENTIFIER => file_system::ready(|| {
+                let attributes = GET_TERMINAL_ATTRIBUTES::cast_output(output)?;
+                *attributes = self.with_state(|state| Ok(state.attributes()))?;
+                Ok(())
+            }),
+            SET_TERMINAL_ATTRIBUTES::IDENTIFIER => file_system::ready(|| {
+                let attributes = *SET_TERMINAL_ATTRIBUTES::cast_input(input)?;
+                if !attributes.has_only_known_flags() {
+                    return Err(Error::InvalidParameter);
+                }
+                self.with_state(|state| {
+                    state.set_attributes(attributes);
+                    Ok(())
+                })
+            }),
+            _ => self.inner_in.control(cx, command, input, output),
+        }
     }
 
     fn cancel_operation(&self, operation: Operation) {

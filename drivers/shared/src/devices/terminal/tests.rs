@@ -5,6 +5,9 @@ use core::task::{Context, Poll, Waker};
 use file_system::{
     ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice, Error,
     MountOperations, Result, Size,
+    character_device::{
+        GET_TERMINAL_ATTRIBUTES, SET_TERMINAL_ATTRIBUTES, TerminalAttributes, TerminalFlags,
+    },
 };
 use shared::AnyByLayout;
 
@@ -773,4 +776,294 @@ fn output_is_pending_when_inner_is_pending_before_any_progress() {
     let waker = Waker::noop();
     let mut cx = Context::from_waker(waker);
     assert_eq!(terminal.write(&mut cx, b"text\n", 0), Poll::Pending);
+}
+
+// -----------------------------------------------------------------------------
+// Terminal attributes: echo off and raw (non-canonical) input
+// -----------------------------------------------------------------------------
+
+fn without_echo() -> TerminalAttributes {
+    TerminalAttributes::INTERACTIVE.with_echo(false)
+}
+
+#[test]
+fn editor_starts_interactive() {
+    let editor = LineEditor::<256>::new();
+    assert_eq!(editor.attributes(), TerminalAttributes::INTERACTIVE);
+}
+
+#[test]
+fn echo_off_hides_typed_characters_but_ends_the_line() {
+    let mut editor = LineEditor::<256>::new();
+    editor.set_attributes(without_echo());
+    let mut echo = Vec::new();
+
+    let result = editor.feed_slice("sécret\r".as_bytes(), &mut echo);
+    assert!(result.line_ready);
+    assert_eq!(echo, b"\r\n");
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], "sécret\n".as_bytes());
+}
+
+#[test]
+fn echo_off_still_edits_the_line_silently() {
+    let mut editor = LineEditor::<256>::new();
+    editor.set_attributes(without_echo());
+    let mut echo = Vec::new();
+
+    // Backspace, Ctrl-U, Tab and an escape sequence are applied without output.
+    editor.feed_slice(b"ab\x08c\x15x\ty\x1b[D\r\n", &mut echo);
+    assert_eq!(echo, b"\r\n");
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"x y\n");
+}
+
+#[test]
+fn echo_off_ctrl_c_writes_only_the_line_break() {
+    let mut editor = LineEditor::<256>::new();
+    editor.set_attributes(without_echo());
+    let mut echo = Vec::new();
+
+    let result = editor.feed_slice(b"secret\x03", &mut echo);
+    assert!(result.line_ready);
+    assert_eq!(echo, b"\r\n");
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"\n");
+}
+
+#[test]
+fn echo_off_does_not_ring_the_bell_on_overflow() {
+    let mut editor = LineEditor::<4>::new();
+    editor.set_attributes(without_echo());
+    let mut echo = Vec::new();
+
+    editor.feed_slice(b"abcdef", &mut echo);
+    assert!(echo.is_empty());
+    assert_eq!(editor.current_line(), b"abcd");
+}
+
+#[test]
+fn echo_back_on_restores_echo() {
+    let mut editor = LineEditor::<256>::new();
+    let mut echo = Vec::new();
+
+    editor.set_attributes(without_echo());
+    editor.feed_slice(b"secret\r", &mut echo);
+    editor.set_attributes(TerminalAttributes::INTERACTIVE);
+    echo.clear();
+    editor.feed_slice(b"ls\r", &mut echo);
+    assert_eq!(echo, b"ls\r\n");
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"secret\nls\n");
+}
+
+#[test]
+fn raw_mode_delivers_every_byte_unchanged_and_at_once() {
+    let mut editor = LineEditor::<256>::new();
+    editor.set_attributes(TerminalAttributes::RAW);
+    let mut echo = Vec::new();
+
+    let input = b"a\r\x03\x04\x08\x7f\x15\x1b[A\n";
+    for &byte in input {
+        let result = editor.feed_byte(byte, &mut echo);
+        assert!(result.line_ready);
+        assert!(!result.eof);
+    }
+    assert!(echo.is_empty());
+    assert!(!editor.has_eof());
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], input);
+}
+
+#[test]
+fn raw_mode_with_echo_writes_bytes_back_verbatim() {
+    let mut editor = LineEditor::<256>::new();
+    editor.set_attributes(TerminalAttributes::INTERACTIVE.with_canonical(false));
+    let mut echo = Vec::new();
+
+    editor.feed_slice(b"q\r\x08", &mut echo);
+    assert_eq!(echo, b"q\r\x08");
+}
+
+#[test]
+fn raw_mode_drops_bytes_when_the_reader_queue_is_full() {
+    let mut editor = LineEditor::<16, 4>::new();
+    editor.set_attributes(TerminalAttributes::INTERACTIVE.with_canonical(false));
+    let mut echo = Vec::new();
+
+    editor.feed_slice(b"abcdef", &mut echo);
+    // Dropped bytes are not echoed either.
+    assert_eq!(echo, b"abcd");
+
+    let mut buffer = [0u8; 8];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"abcd");
+}
+
+#[test]
+fn leaving_canonical_mode_releases_the_partial_line() {
+    let mut editor = LineEditor::<256>::new();
+    let mut echo = Vec::new();
+
+    editor.feed_slice(b"first\npart", &mut echo);
+    editor.set_attributes(TerminalAttributes::RAW);
+    assert_eq!(editor.current_line(), b"");
+    editor.feed_slice(b"!", &mut echo);
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"first\npart!");
+}
+
+#[test]
+fn returning_to_canonical_mode_edits_lines_again() {
+    let mut editor = LineEditor::<256>::new();
+    let mut echo = Vec::new();
+
+    editor.set_attributes(TerminalAttributes::RAW);
+    editor.feed_slice(b"x\r", &mut echo);
+    editor.set_attributes(TerminalAttributes::INTERACTIVE);
+    // The '\n' of the raw "\r" must not be swallowed as a CR LF pair.
+    let result = editor.feed_slice(b"\nab\x08c\r", &mut echo);
+    assert!(result.line_ready);
+    assert_eq!(echo, b"\r\nab\x08 \x08c\r\n");
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"x\r\nac\n");
+}
+
+fn get_attributes<D: DirectBaseOperations>(device: &D) -> TerminalAttributes {
+    let mut attributes = TerminalAttributes::RAW;
+    let waker = Waker::noop();
+    let mut cx = Context::from_waker(waker);
+    let result = device.control(
+        &mut cx,
+        GET_TERMINAL_ATTRIBUTES::IDENTIFIER,
+        AnyByLayout::from(&()),
+        AnyByLayout::from_mutable(&mut attributes),
+    );
+    assert_eq!(result, Poll::Ready(Ok(())));
+    attributes
+}
+
+fn set_attributes<D: DirectBaseOperations>(
+    device: &D,
+    attributes: TerminalAttributes,
+) -> Poll<Result<()>> {
+    let waker = Waker::noop();
+    let mut cx = Context::from_waker(waker);
+    device.control(
+        &mut cx,
+        SET_TERMINAL_ATTRIBUTES::IDENTIFIER,
+        AnyByLayout::from(&attributes),
+        AnyByLayout::from_mutable(&mut ()),
+    )
+}
+
+#[test]
+fn device_gets_and_sets_terminal_attributes() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![]),
+        RecordingOutputDevice::new(),
+    );
+    assert_eq!(get_attributes(&terminal), TerminalAttributes::INTERACTIVE);
+
+    assert_eq!(
+        set_attributes(&terminal, without_echo()),
+        Poll::Ready(Ok(()))
+    );
+    assert_eq!(get_attributes(&terminal), without_echo());
+
+    assert_eq!(
+        set_attributes(&terminal, TerminalAttributes::INTERACTIVE),
+        Poll::Ready(Ok(()))
+    );
+    assert_eq!(get_attributes(&terminal), TerminalAttributes::INTERACTIVE);
+}
+
+#[test]
+fn device_rejects_unknown_terminal_flags() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![]),
+        RecordingOutputDevice::new(),
+    );
+    let unknown = TerminalAttributes::new(TerminalFlags::from_bits_retain(1 << 31));
+    assert_eq!(
+        set_attributes(&terminal, unknown),
+        Poll::Ready(Err(Error::InvalidParameter))
+    );
+    assert_eq!(get_attributes(&terminal), TerminalAttributes::INTERACTIVE);
+}
+
+#[test]
+fn device_reads_a_password_without_echo() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![b"hunter2\r"]),
+        RecordingOutputDevice::new(),
+    );
+    assert_eq!(
+        set_attributes(&terminal, without_echo()),
+        Poll::Ready(Ok(()))
+    );
+
+    let mut buffer = [0u8; 32];
+    let waker = Waker::noop();
+    let mut cx = Context::from_waker(waker);
+    assert_eq!(terminal.read(&mut cx, &mut buffer, 0), Poll::Ready(Ok(8)));
+    assert_eq!(&buffer[..8], b"hunter2\n");
+    assert_eq!(terminal.inner_out().recorded(), b"\r\n");
+}
+
+#[test]
+fn device_raw_mode_returns_bytes_without_waiting_for_enter() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![b"\x1b[A"]),
+        RecordingOutputDevice::new(),
+    );
+    assert_eq!(
+        set_attributes(&terminal, TerminalAttributes::RAW),
+        Poll::Ready(Ok(()))
+    );
+
+    let mut buffer = [0u8; 32];
+    let waker = Waker::noop();
+    let mut cx = Context::from_waker(waker);
+    assert_eq!(terminal.read(&mut cx, &mut buffer, 0), Poll::Ready(Ok(3)));
+    assert_eq!(&buffer[..3], b"\x1b[A");
+    assert!(terminal.inner_out().recorded().is_empty());
+
+    // Nothing more is buffered: the next read waits for the inner device.
+    assert_eq!(terminal.read(&mut cx, &mut buffer, 0), Poll::Pending);
+}
+
+#[test]
+fn device_forwards_other_control_commands_to_the_input_device() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![]),
+        RecordingOutputDevice::new(),
+    );
+    let mut block_size = 0u32;
+    let waker = Waker::noop();
+    let mut cx = Context::from_waker(waker);
+    // The scripted device keeps the default control, which rejects every command.
+    assert_eq!(
+        terminal.control(
+            &mut cx,
+            file_system::block_device::GET_BLOCK_SIZE::IDENTIFIER,
+            AnyByLayout::from(&()),
+            AnyByLayout::from_mutable(&mut block_size),
+        ),
+        Poll::Ready(Err(Error::UnsupportedOperation))
+    );
 }

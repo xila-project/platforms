@@ -2,6 +2,24 @@
 //!
 //! Provides POSIX cooked-mode (canonical mode) line editing over raw serial input
 //! with a fixed-capacity buffer and no heap allocations.
+//!
+//! The editor follows [`TerminalAttributes`]:
+//!
+//! - Canonical mode (default) buffers and edits a line, then delivers it on
+//!   Enter. With echo off, the line is still edited the same way, but the only
+//!   bytes written back are the `\r\n` that end a line (on Enter, and on
+//!   Ctrl-C, which discards the line). This matches POSIX with `ECHO` clear and
+//!   `ECHONL` set: a password prompt moves to the next line on Enter without
+//!   revealing the password, its length or the edits made to it.
+//! - Raw (non-canonical) mode delivers every byte as soon as it arrives, with
+//!   no editing or translation: `\r`, Ctrl-C, Ctrl-D, backspace and escape
+//!   sequences reach the reader unchanged. With echo on, each byte is written
+//!   back verbatim.
+//!
+//! Switching from canonical to raw mode releases the partially typed line to
+//! the reader, as POSIX does when `ICANON` is cleared.
+
+use file_system::character_device::TerminalAttributes;
 
 /// Sink for receiving echo bytes emitted by the line editor.
 pub trait EchoSink {
@@ -239,6 +257,7 @@ pub struct LineEditor<const N: usize = 256, const Q: usize = 512> {
     escape_state: EscapeState,
     discard_continuation: usize,
     eof: bool,
+    attributes: TerminalAttributes,
 }
 
 impl<const N: usize, const Q: usize> Default for LineEditor<N, Q> {
@@ -258,6 +277,38 @@ impl<const N: usize, const Q: usize> LineEditor<N, Q> {
             escape_state: EscapeState::None,
             discard_continuation: 0,
             eof: false,
+            attributes: TerminalAttributes::INTERACTIVE,
+        }
+    }
+
+    /// Current line discipline settings.
+    pub const fn attributes(&self) -> TerminalAttributes {
+        self.attributes
+    }
+
+    /// Apply new line discipline settings.
+    ///
+    /// Leaving canonical mode moves the partially typed line to the reader
+    /// queue (without a line feed); like raw input, bytes that do not fit in
+    /// the queue are dropped. Entering canonical mode starts a fresh line, and
+    /// bytes already queued stay readable.
+    pub fn set_attributes(&mut self, attributes: TerminalAttributes) {
+        if self.attributes.is_canonical() != attributes.is_canonical() {
+            if !attributes.is_canonical() {
+                self.completed.push_slice(&self.line_buf[..self.line_len]);
+            }
+            self.line_len = 0;
+            self.prev_was_cr = false;
+            self.escape_state = EscapeState::None;
+            self.discard_continuation = 0;
+        }
+        self.attributes = attributes;
+    }
+
+    /// Emit `bytes` only when echo is on.
+    fn echo<E: EchoSink>(&self, echo: &mut E, bytes: &[u8]) {
+        if self.attributes.is_echo_enabled() {
+            echo.emit(bytes);
         }
     }
 
@@ -265,6 +316,10 @@ impl<const N: usize, const Q: usize> LineEditor<N, Q> {
     ///
     /// Echo output is appended to `echo`.
     pub fn feed_byte<E: EchoSink>(&mut self, byte: u8, echo: &mut E) -> ProcessResult {
+        if !self.attributes.is_canonical() {
+            return self.feed_raw_byte(byte, echo);
+        }
+
         // 1. Process escape sequences.
         match self.escape_state {
             EscapeState::Esc => {
@@ -331,7 +386,7 @@ impl<const N: usize, const Q: usize> LineEditor<N, Q> {
                 if self.line_len > 0 {
                     self.line_len -= 1;
                 }
-                echo.emit(b"\x08 \x08");
+                self.echo(echo, b"\x08 \x08");
             }
             return ProcessResult::empty();
         }
@@ -344,15 +399,20 @@ impl<const N: usize, const Q: usize> LineEditor<N, Q> {
                 .count();
             self.line_len = 0;
             for _ in 0..char_count {
-                echo.emit(b"\x08 \x08");
+                self.echo(echo, b"\x08 \x08");
             }
             return ProcessResult::empty();
         }
 
-        // 6. Ctrl-C (0x03): discard line, echo ^C\r\n, make EMPTY line (\n) available.
+        // 6. Ctrl-C (0x03): discard line, echo ^C\r\n (\r\n with echo off), make EMPTY line (\n) available.
         if byte == 0x03 {
             self.line_len = 0;
-            echo.emit(b"^C\r\n");
+            // With echo off, only the line break is written (POSIX `ECHONL`).
+            if self.attributes.is_echo_enabled() {
+                echo.emit(b"^C\r\n");
+            } else {
+                echo.emit(b"\r\n");
+            }
             if self.completed.available_space() >= 1 {
                 self.completed.push_byte(b'\n');
             } else {
@@ -383,9 +443,9 @@ impl<const N: usize, const Q: usize> LineEditor<N, Q> {
             if self.line_len < N {
                 self.line_buf[self.line_len] = b' ';
                 self.line_len += 1;
-                echo.emit(b" ");
+                self.echo(echo, b" ");
             } else {
-                echo.emit(b"\x07");
+                self.echo(echo, b"\x07");
             }
             return ProcessResult::empty();
         }
@@ -409,9 +469,9 @@ impl<const N: usize, const Q: usize> LineEditor<N, Q> {
             if self.line_len < N {
                 self.line_buf[self.line_len] = byte;
                 self.line_len += 1;
-                echo.emit(&[byte]);
+                self.echo(echo, &[byte]);
             } else {
-                echo.emit(b"\x07");
+                self.echo(echo, b"\x07");
             }
             return ProcessResult::empty();
         }
@@ -421,9 +481,9 @@ impl<const N: usize, const Q: usize> LineEditor<N, Q> {
             if self.line_len < N {
                 self.line_buf[self.line_len] = byte;
                 self.line_len += 1;
-                echo.emit(&[byte]);
+                self.echo(echo, &[byte]);
             } else {
-                echo.emit(b"\x07");
+                self.echo(echo, b"\x07");
             }
             return ProcessResult::empty();
         }
@@ -434,15 +494,29 @@ impl<const N: usize, const Q: usize> LineEditor<N, Q> {
             if remaining >= char_len {
                 self.line_buf[self.line_len] = byte;
                 self.line_len += 1;
-                echo.emit(&[byte]);
+                self.echo(echo, &[byte]);
             } else {
                 // Character cannot fit in full; discard leading byte and subsequent continuation bytes.
                 self.discard_continuation = char_len - 1;
-                echo.emit(b"\x07");
+                self.echo(echo, b"\x07");
             }
         }
 
         ProcessResult::empty()
+    }
+
+    /// Queue one byte for the reader in raw mode, echoing it verbatim if echo is on.
+    ///
+    /// The byte is dropped when the reader queue is full.
+    fn feed_raw_byte<E: EchoSink>(&mut self, byte: u8, echo: &mut E) -> ProcessResult {
+        if !self.completed.push_byte(byte) {
+            return ProcessResult::empty();
+        }
+        self.echo(echo, &[byte]);
+        ProcessResult {
+            line_ready: true,
+            eof: false,
+        }
     }
 
     /// Feed multiple input bytes from a slice into the line editor.
@@ -467,6 +541,7 @@ impl<const N: usize, const Q: usize> LineEditor<N, Q> {
             self.completed.push_slice(&self.line_buf[..self.line_len]);
             self.completed.push_byte(b'\n');
             self.line_len = 0;
+            // The line break is written even with echo off (POSIX `ECHONL`).
             echo.emit(b"\r\n");
             ProcessResult {
                 line_ready: true,
@@ -474,7 +549,7 @@ impl<const N: usize, const Q: usize> LineEditor<N, Q> {
             }
         } else {
             // Completed queue is full; preserve current line in buffer and ring the bell.
-            echo.emit(b"\x07");
+            self.echo(echo, b"\x07");
             ProcessResult::empty()
         }
     }
