@@ -8,7 +8,9 @@ edition = "2024"
 [target.'cfg(any(target_arch = "xtensa", target_arch = "riscv32"))'.dependencies]
 critical-section = { workspace = true }
 embedded-hal = { workspace = true, optional = true }
-esp-hal = { version = "=1.2.2", default-features = false, features = ["unstable"], optional = true }
+esp-hal = { version = "=1.2.2", default-features = false, features = [
+  "unstable",
+], optional = true }
 peripherals = { workspace = true, optional = true }
 
 # The GPIO adapter mounts lines through Core's VFS, task and device crates,
