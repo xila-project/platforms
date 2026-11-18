@@ -1135,6 +1135,25 @@ fn device_typed_ahead_lines_keep_carriage_return_line_feed_pairs() {
 }
 
 #[test]
+fn device_carriage_return_line_feed_pair_leaves_nothing_for_raw_mode() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![b"app\r\n"]),
+        RecordingOutputDevice::new(),
+    );
+    let mut buffer = [0u8; 32];
+
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(4)));
+    assert_eq!(&buffer[..4], b"app\n");
+
+    assert_eq!(
+        set_attributes(&terminal, TerminalAttributes::RAW),
+        Poll::Ready(Ok(()))
+    );
+    // The line feed of the Enter key went with its line: no stray byte is left.
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Pending);
+}
+
+#[test]
 fn device_typed_ahead_bytes_follow_a_switch_to_raw_mode() {
     let terminal = TerminalInputDevice::new(
         ScriptedInputDevice::new(vec![b"ls\rq\x03"]),
@@ -1173,6 +1192,7 @@ fn editor_feeds_until_the_end_of_the_first_line() {
     let mut echo = Vec::new();
 
     assert_eq!(editor.feed_until_line_end(b"ab\rcd\r", &mut echo), 3);
+    assert_eq!(editor.feed_until_line_end(b"e\r\nf\r", &mut echo), 3);
     assert_eq!(editor.feed_until_line_end(b"x\x03y", &mut echo), 2);
     assert_eq!(editor.feed_until_line_end(b"\x04z", &mut echo), 1);
     assert_eq!(editor.feed_until_line_end(b"partial", &mut echo), 7);

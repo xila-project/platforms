@@ -541,12 +541,23 @@ impl<const N: usize, const Q: usize> LineEditor<N, Q> {
     /// keep the remaining bytes and feed them later: attribute changes made in
     /// between, such as turning echo off before reading a password, then apply
     /// to the following line. In raw mode, every byte is consumed.
+    ///
+    /// A line ended by `\r` and directly followed by `\n` consumes that `\n`
+    /// too, as the second half of a `\r\n` Enter key. Otherwise it would stay
+    /// behind and reach the reader as a stray byte if raw mode were turned on
+    /// before the next read.
     pub fn feed_until_line_end<E: EchoSink>(&mut self, bytes: &[u8], echo: &mut E) -> usize {
         let canonical = self.attributes.is_canonical();
         for (index, &byte) in bytes.iter().enumerate() {
             let result = self.feed_byte(byte, echo);
             if canonical && (result.line_ready || result.eof) {
-                return index + 1;
+                let mut consumed = index + 1;
+                if self.prev_was_cr && bytes.get(consumed) == Some(&b'\n') {
+                    // Swallowed as the second half of the pair.
+                    self.feed_byte(b'\n', echo);
+                    consumed += 1;
+                }
+                return consumed;
             }
         }
         bytes.len()
