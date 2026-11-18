@@ -9,9 +9,14 @@
 //! - RTS/CTS hardware flow control is not offered: it needs the RTS and CTS
 //!   pins, which chip initialisation does not assign yet;
 //! - `flush_rx` drains the receive FIFO by reading it;
-//! - `flush_tx` fails with `Error::Io`: esp-hal exposes no TX FIFO reset, and
-//!   waiting for the output to drain instead could block forever after the
-//!   peer sends XOFF. `embedded_io::Write::flush` still waits for transmission.
+//! - `flush_tx` fails with `Error::Io`. esp-hal resets the FIFOs only inside
+//!   `apply_config`, which also drives TX low briefly, so it cannot discard
+//!   queued output cleanly; waiting for it to drain is no substitute, since
+//!   after an XOFF from the peer it may never drain;
+//! - `configure` goes through `apply_config`, so it drops data still queued in
+//!   either FIFO;
+//! - `embedded_io::Write::flush` waits for transmission without a bound, so
+//!   it can block indefinitely while XON/XOFF holds the output.
 
 use embedded_io::{ErrorType, Read, Write};
 use esp_hal::{
@@ -156,9 +161,9 @@ impl UartControl for EspUart {
     }
 
     fn flush_tx(&mut self) -> Result<(), Error> {
-        // esp-hal has no TX FIFO reset, so queued output cannot be discarded.
-        // Waiting for it to drain is not a substitute: with XON/XOFF the peer
-        // can stop transmission indefinitely.
+        // Discarding queued output needs a FIFO reset, which esp-hal only does
+        // in `apply_config` with a glitch on TX. Waiting for it to drain is not
+        // a substitute: with XON/XOFF the peer can stop transmission indefinitely.
         Err(Error::Io)
     }
 }
