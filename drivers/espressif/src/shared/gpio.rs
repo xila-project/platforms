@@ -102,13 +102,20 @@ macro_rules! pin_input_only {
     };
 }
 
+/// Bit of GPIO `number` in a mask. Panics, or fails to compile in a `const`
+/// or `static`, when the number does not fit: wrapping would withhold the wrong pin.
+const fn mask_bit(number: u8) -> u64 {
+    assert!(number < 64, "GPIO number out of range for a 64-bit mask");
+    1 << number
+}
+
 /// Mask of the lines of `lines` that have any of `flags`, for [`Gpio::new`].
 pub const fn reserved_mask(lines: &[Line], flags: LineFlags) -> u64 {
     let mut mask = 0;
     let mut index = 0;
     while index < lines.len() {
         if lines[index].flags.intersects(flags) {
-            mask |= 1 << lines[index].number;
+            mask |= mask_bit(lines[index].number);
         }
         index += 1;
     }
@@ -120,7 +127,7 @@ pub const fn pins_mask(pins: &[u8]) -> u64 {
     let mut mask = 0;
     let mut index = 0;
     while index < pins.len() {
-        mask |= 1 << pins[index];
+        mask |= mask_bit(pins[index]);
         index += 1;
     }
     mask
@@ -156,9 +163,9 @@ impl Gpio {
 
     /// The lines the controller exposes, in table order.
     pub fn lines(&self) -> impl Iterator<Item = &'static Line> + '_ {
-        self.lines
-            .iter()
-            .filter(|line| self.withheld & (1 << line.number) == 0)
+        self.lines.iter().filter(
+            |line| matches!(reservation_bit(line.number), Ok(bit) if self.withheld & bit == 0),
+        )
     }
 
     fn line(&self, id: LineId) -> Result<Line> {
