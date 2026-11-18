@@ -460,6 +460,11 @@ impl ScriptedInputDevice {
     fn waker_registrations(&self) -> usize {
         self.waker_count.load(Ordering::SeqCst)
     }
+
+    /// Make `chunk` the next raw input, after the chunks not read yet.
+    fn push_chunk(&self, chunk: &[u8]) {
+        self.state.lock().unwrap().chunks.push(chunk.to_vec());
+    }
 }
 
 impl DirectBaseOperations for ScriptedInputDevice {
@@ -967,7 +972,7 @@ fn get_attributes<D: DirectBaseOperations>(device: &D) -> TerminalAttributes {
     attributes
 }
 
-fn set_attributes<D: DirectBaseOperations>(
+fn set_attributes<D: DirectBaseOperations + ?Sized>(
     device: &D,
     attributes: TerminalAttributes,
 ) -> Poll<Result<()>> {
@@ -1298,20 +1303,100 @@ fn device_switch_to_raw_mode_wakes_the_pending_reader() {
     );
     assert_eq!(counting_waker.wakes(), 1);
 
+    // The waker was taken, not cloned: another switch while the released
+    // line is still readable does not wake the reader again.
+    assert_eq!(
+        set_attributes(&terminal, TerminalAttributes::RAW),
+        Poll::Ready(Ok(()))
+    );
+    assert_eq!(counting_waker.wakes(), 1);
+
     assert_eq!(
         terminal.read(&mut context, &mut buffer, 0),
         Poll::Ready(Ok(4))
     );
     assert_eq!(&buffer[..4], b"part");
 
-    // The waker was consumed: later switches do not wake a reader that is not waiting.
+    // Back in canonical mode, the reader waits for a new line, then reads its
+    // first byte when it is completed.
     assert_eq!(
         set_attributes(&terminal, TerminalAttributes::INTERACTIVE),
         Poll::Ready(Ok(()))
     );
+    terminal.inner_in().push_chunk(b"next");
+    assert_eq!(terminal.read(&mut context, &mut buffer, 0), Poll::Pending);
+    terminal.inner_in().push_chunk(b"\r");
     assert_eq!(
-        set_attributes(&terminal, TerminalAttributes::RAW),
+        terminal.read(&mut context, &mut buffer[..1], 0),
+        Poll::Ready(Ok(1))
+    );
+    assert_eq!(&buffer[..1], b"n");
+
+    // The rest of the line is still queued, but the read that returned data
+    // cleared the waker: a switch now wakes no one.
+    assert_eq!(
+        set_attributes(&terminal, without_echo()),
         Poll::Ready(Ok(()))
     );
     assert_eq!(counting_waker.wakes(), 1);
+}
+
+/// Raw input device that, once its single chunk is read, switches the terminal
+/// wrapping it to raw mode from inside its next `read`, just before answering
+/// `Pending`: the switch lands after the terminal checked for readable input
+/// and before it registered its waker.
+struct SwitchingInputDevice {
+    chunk: std::sync::Mutex<Option<Vec<u8>>>,
+    terminal: std::sync::OnceLock<&'static dyn DirectBaseOperations>,
+}
+
+impl DirectBaseOperations for SwitchingInputDevice {
+    fn read(
+        &self,
+        _context: &mut Context<'_>,
+        buffer: &mut [u8],
+        _absolute_position: Size,
+    ) -> Poll<Result<usize>> {
+        if let Some(chunk) = self.chunk.lock().unwrap().take() {
+            buffer[..chunk.len()].copy_from_slice(&chunk);
+            return Poll::Ready(Ok(chunk.len()));
+        }
+        let terminal = self.terminal.get().expect("the terminal is set");
+        assert_eq!(
+            set_attributes(*terminal, TerminalAttributes::RAW),
+            Poll::Ready(Ok(()))
+        );
+        Poll::Pending
+    }
+
+    fn write(
+        &self,
+        _context: &mut Context<'_>,
+        _buffer: &[u8],
+        _absolute_position: Size,
+    ) -> Poll<Result<usize>> {
+        Poll::Ready(Err(Error::UnsupportedOperation))
+    }
+}
+
+impl MountOperations for SwitchingInputDevice {}
+impl DirectCharacterDevice for SwitchingInputDevice {}
+
+#[test]
+fn device_switch_to_raw_mode_during_the_inner_read_returns_the_partial_line() {
+    let terminal: &'static TerminalInputDevice<SwitchingInputDevice, RecordingOutputDevice> =
+        std::boxed::Box::leak(std::boxed::Box::new(TerminalInputDevice::new(
+            SwitchingInputDevice {
+                chunk: std::sync::Mutex::new(Some(b"part".to_vec())),
+                terminal: std::sync::OnceLock::new(),
+            },
+            RecordingOutputDevice::new(),
+        )));
+    assert!(terminal.inner_in().terminal.set(terminal).is_ok());
+    let mut buffer = [0u8; 32];
+
+    // No wake-up would follow a `Pending` answer: the switch happened before
+    // the waker was registered, so the terminal checks again after registering.
+    assert_eq!(read_now(terminal, &mut buffer), Poll::Ready(Ok(4)));
+    assert_eq!(&buffer[..4], b"part");
 }
