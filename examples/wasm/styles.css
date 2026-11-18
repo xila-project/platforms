@@ -107,7 +107,8 @@ a:hover {
   color: #fff;
   cursor: pointer;
 }
-#disk-select {
+#disk-select,
+#disk-rebuild {
   grid-column: span 2;
   background: #245b87;
 }

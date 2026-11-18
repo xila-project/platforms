@@ -7,6 +7,7 @@
     <link data-trunk rel="copy-dir" href="fonts/" />
     <link data-trunk rel="copy-file" href="disk_manager.mjs" />
     <link data-trunk rel="copy-file" href="disk_names.mjs" />
+    <link data-trunk rel="copy-file" href="disk_preferences.mjs" />
     <link data-trunk rel="copy-file" href="../../target/seed/wasm/seed.img" />
     <link data-trunk rel="css" href="styles.css" />
 
@@ -17,24 +18,29 @@
     <div id="sidebar">
       <h2>Xila Help</h2>
       <p>
-        Choose a saved disk or create a new one. Your files and settings are
-        stored in this browser.
+        Memory is the default. Reloading discards its files and settings.
+        Choose or create a saved disk to keep changes in this browser.
       </p>
       <label for="disk-list">Available disks</label>
       <select
         id="disk-list"
         size="5"
         aria-label="Available Xila disks"
-      ></select>
+      >
+        <option value="memory" selected>Memory (resets on reload)</option>
+      </select>
       <div class="disk-actions">
         <button id="disk-select" type="button" disabled>
           Use selected disk
         </button>
         <button id="disk-create" type="button" disabled>New disk</button>
         <button id="disk-remove" type="button" disabled>Remove</button>
+        <button id="disk-rebuild" type="button" hidden disabled>
+          Rebuild from the current version
+        </button>
       </div>
       <p id="disk-status" role="status" aria-live="polite">
-        Loading browser storage…
+        Starting Xila…
       </p>
       <button id="audio-enable" type="button" aria-live="polite">
         Enable audio before launching Synth

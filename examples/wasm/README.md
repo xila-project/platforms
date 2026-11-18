@@ -6,8 +6,10 @@ From the repository root, prepare the separate application disk and build the
 browser runtime:
 
 ```sh
-mise run image:wasm
-cargo check -p xila-wasm-example --target wasm32-unknown-unknown
+mise run image:browser
+mkdir -p target/seed/wasm
+cp target/seed/browser/seed.img target/seed/wasm/seed.img
+mise run check:browser
 cd examples/wasm
 RUSTUP_TOOLCHAIN=stable trunk serve
 ```
@@ -17,23 +19,20 @@ runtime alone requires no prebuilt guest binaries; serving a fresh installation
 requires this image. Build guests and images with the same
 `EMBEDDED_I18N_LOCALE` as the runtime (`en`, `fr`, `es`, `de`, `pt-BR`, `it` or `pl`).
 
-Use localhost or HTTPS in a browser supporting OPFS,
-`FileSystemFileHandle.createWritable`, and Web Locks.
+Serve the example over localhost or HTTPS. Saved disks require support for
+the origin-private file system, `FileSystemFileHandle.createWritable`, and
+Web Locks.
 
 ## Running guest WebAssembly applications
 
-Calculator, Clock, Pixel Painter, Text Editor and Synth are provisioned in `seed.img` at build time,
-along with their shortcuts. The first startup streams this image into the disk
-cache only when the selected OPFS file is absent or zero bytes. It validates and
-mounts LittleFS before account initialization and the first persistent commit.
-Failures leave a new disk retryable. Existing nonempty disks are mounted without
-downloading a seed, copying applications or running their installers. Mount errors
-never authorize erasing a disk. Publishing a newer image does not upgrade existing
-installations; choose a new disk to try a fresh bundle while retaining the old one.
+Calculator, Clock, Pixel Painter, Text Editor and Synth are provisioned in
+`seed.img` at build time, along with their shortcuts. Memory starts with that
+image on every page load. A new saved disk starts with the same image and
+commits it after mounting LittleFS and initializing accounts.
 
 Clock's settings directory is provisioned per user at
 `/users/<user-id>/applications/clock/configuration`. Its saved preferences and
-alarm follow the OPFS persistence limits below. Clock alerts require the application to stay
+alarm follow the persistence limits of the selected disk. Clock alerts require the application to stay
 open; browser background-tab throttling can delay them.
 
 On a fresh disk, log in as **administrator** with an empty password; otherwise
@@ -71,9 +70,8 @@ The OS canvas still uses the existing localized LVGL Montserrat Regular subsets 
 
 ## Browser limitations
 
-- The example persists its filesystem in OPFS; see the storage and durability
-  limits below. Other guest files must be present before launching; there is no
-  upload mechanism.
+- Choose a saved disk to keep files and settings across reloads. Other guest
+  files must already be on the selected disk before launching.
 - Click **Enable audio** in the browser page before launching Synth. The click
   starts one `WebAudioDevice` and mounts it at `/devices/audio/playback`; Synth
   then writes ordinary PCM through its file descriptor. If Synth is already
@@ -115,24 +113,35 @@ The probes are not included in normal example startup. Generated
 guest binaries are not committed. This is focused browser validation, not a
 claim of full WASI/graphics compatibility or support across all browsers.
 
-## Persistent storage
+## Disk modes
 
-The example stores each 16 MiB MBR/LittleFS disk as an origin-private file.
-Open the left Help panel to select a disk, create a date-named disk, or remove
-an unused disk. New images are named `xila_YYYY-MM-DD.img`; repeated creations
-on the same date receive a numeric suffix. The existing `xila_drive.img` remains
-available as the default disk, preserving data from earlier versions. The
-selected disk is remembered for this browser origin.
+**Memory (default).** Each tab starts from the current `seed.img` and keeps
+changes in its own memory. Reloading or closing the tab discards all changes.
+Memory boots without opening a storage file or acquiring a Web Lock. The
+Help panel lists saved disks when opened.
 
-Switching disks stops new writes, commits pending changes, releases the current
-disk's Web Lock, and reloads Xila on the selected image. A disk open in another
-tab cannot be removed. Removing a disk asks for confirmation and permanently
-deletes its files. The default administrator with an empty password is created
-only on a fresh disk. Existing users/groups are loaded even if the administrator
-account was removed. Invalid MBRs or filesystem mount errors stop boot without
-reformatting an existing image. A Web Lock allows only one Xila tab to open a
-given disk at a time. A new disk imports the reference image; existing nonempty
-disks do not depend on it being available.
+**Saved disks.** Open the Help panel to select, create, or remove a saved
+disk. The example stores each 16 MiB disk in the origin-private file system.
+New images are named `xila_YYYY-MM-DD.img`, with a numeric suffix for repeated
+creations on the same date. The panel still lists `xila_drive.img` and other
+disks created by earlier versions. After this update, earlier selections
+start in Memory. New selections are remembered when browser preferences are
+available.
+
+Switching disks restarts Xila and saves pending changes on the current disk
+if it is persistent. A Web Lock allows only one tab to open a given saved
+disk at a time. Removing an inactive saved disk requires confirmation and
+permanently deletes its contents.
+
+Xila remembers the seed fingerprint of each newly saved disk. The panel
+marks a disk whose fingerprint differs from the current seed as **older
+seed version**. Disks created before fingerprinting show **seed version
+unknown**. You can open either if it is still compatible with the runtime.
+If a disk fails to mount, the Help panel displays the error and offers
+**Rebuild from the current version** when the seed is available. Rebuilding
+requires confirmation and replaces the disk's files and settings once the
+current seed mounts and saves successfully. You can also choose Memory or
+create a new saved disk while retaining the older disk.
 
 Synchronous OPFS handles are available only in workers, while this example's
 UI and filesystem run on the browser main thread. The drive therefore keeps a
@@ -150,13 +159,9 @@ browsing, clearing site data, or browser eviction can remove it. This is not a
 substitute for backups. Changing the disk size does not silently resize an
 existing image.
 
-To reset the demo, clear its site data in browser settings. Alternatively, close
-all Xila tabs and run this on a separate page on the same origin in the console:
-
-```javascript
-const root = await navigator.storage.getDirectory();
-await root.removeEntry("xila_drive.img");
-```
+Reload in Memory to reset the demo. Use **Rebuild from the current version**
+to reset an older or unmountable saved disk, or remove an inactive disk using
+the panel.
 
 ## Browser storage tests
 
@@ -175,6 +180,16 @@ These tests use real OPFS files, including MBR/LittleFS save/reopen coverage.
 The disk-name and collision rules can also be tested with
 `node --test examples/wasm/tests/disk_manager.test.mjs`.
 
+To test mode switching and recovery in Chromium, serve the built example as
+shown above, install Playwright locally, and run the browser regression:
+
+```sh
+npm install --no-save --package-lock=false playwright
+npx playwright install chromium
+XILA_BROWSER_EXAMPLE_ADDRESS=http://localhost:8080 \
+node --test examples/wasm/tests/browser_disk_modes.test.mjs
+```
+
 See [Synth](../../executables/synth/README.md) for controls, silent mode,
 existing-disk behavior and the audio smoke-test procedure.
 
@@ -186,7 +201,6 @@ the firmware; `--no-default-features` omits it); applications write a TFLite
 model to that node and send the `LOAD` control command. `mise run image:browser`
 includes the pinned, signed Digits release in the reference image. For a local
 guest build, follow the commands in `../native/README.md` and create a seed with `--bundle wasm` and
-those bundles. Serve it as `seed.img` beside the matching browser runtime. Select a new
-disk in the disk manager to use a new seed; existing browser disks retain their
-installed applications. The guest uses Xila's VFS NN API inside the browser host,
+those bundles. Serve it as `seed.img` beside the matching browser runtime. Reload in Memory
+or create a saved disk to use the new seed while retaining older saved disks. The guest uses Xila's VFS NN API inside the browser host,
 without WebGPU or a separate JavaScript inference engine.
