@@ -14,7 +14,7 @@ pub type NanogliaModelBuffer = nanoglia::core::Block<Global>;
 pub type ModelBuffer = NanogliaModelBuffer;
 const _: () = assert!(nanoglia::core::MAX_RANK <= MAX_TENSOR_RANK);
 
-/// Shared model owner, using Xila's fallback Arc on targets without pointer atomics.
+/// Shared model owner, portable across targets without pointer atomics via [`Arc`].
 #[doc(hidden)]
 pub struct SharedGraph<G>(Arc<G>);
 // SAFETY: the shared owner always lends the same immutable graph and model storage.
