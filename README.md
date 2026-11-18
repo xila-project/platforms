@@ -9,6 +9,8 @@
 [Try Xila](https://platforms.xila.dev/) ·
 [Community](https://matrix.to/#/#xila:anneraud.fr)
 
+[![vulnerabilities](https://vulnerabilities.xila.dev/badges/2f847275d320cb402f5783a00e432736.svg)](https://vulnerabilities.xila.dev/public/03a8e31dccc60986544bf477121fea40)
+
 This workspace assembles Xila runtimes, drivers, the integration harness and seed images. Core and Applications are pinned Git dependencies in `Cargo.toml`; the current branches are part of an unfinished coordinated migration.
 
 For local development install [mise](https://mise.jdx.dev/), run `mise bootstrap packages apply --manager apt`, and run `npm ci` for the graphics font converter. Tasks activate their own Rust toolchains. `mise run build:native` builds the native runtime and `mise run check:browser` checks the browser assembly. `mise run test:seed` runs filesystem-image and package-preparation tests.
