@@ -1164,3 +1164,47 @@ fn editor_feeds_until_the_end_of_the_first_line() {
     editor.set_attributes(TerminalAttributes::RAW);
     assert_eq!(editor.feed_until_line_end(b"r\rs\r", &mut echo), 4);
 }
+
+// -----------------------------------------------------------------------------
+// Mode switches reset the canonical line state
+// -----------------------------------------------------------------------------
+
+#[test]
+fn mode_switch_forgets_a_pending_carriage_return() {
+    let mut editor = LineEditor::<256>::new();
+    let mut echo = Vec::new();
+
+    // The carriage return would swallow a following line feed as a CR LF pair.
+    editor.feed_slice(b"a\r", &mut echo);
+    editor.set_attributes(TerminalAttributes::RAW);
+    editor.set_attributes(TerminalAttributes::INTERACTIVE);
+
+    // After the switch, a line feed ends a new, empty line.
+    echo.clear();
+    let result = editor.feed_slice(b"\n", &mut echo);
+    assert!(result.line_ready);
+    assert_eq!(echo, b"\r\n");
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"a\n\n");
+}
+
+#[test]
+fn mode_switch_forgets_a_partial_escape_sequence() {
+    let mut editor = LineEditor::<256>::new();
+    let mut echo = Vec::new();
+
+    // A partial control sequence would swallow the next byte as its final byte.
+    editor.feed_slice(b"\x1b[", &mut echo);
+    editor.set_attributes(TerminalAttributes::RAW);
+    editor.set_attributes(TerminalAttributes::INTERACTIVE);
+
+    let result = editor.feed_slice(b"A\r", &mut echo);
+    assert!(result.line_ready);
+    assert_eq!(echo, b"A\r\n");
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"A\n");
+}
