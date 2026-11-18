@@ -17,5 +17,5 @@ export function nextDiskName(date, existingNames) {
 }
 
 export function isManagedDiskName(name) {
-  return name === LEGACY_DISK || /^xila_\d{4}-\d{2}-\d{2}(?:-\d+)?\.img$/.test(name);
+  return typeof name === 'string' && (name === LEGACY_DISK || /^xila_\d{4}-\d{2}-\d{2}(?:-\d+)?\.img$/.test(name));
 }

@@ -1,29 +1,50 @@
-import { isManagedDiskName, nextDiskName } from './disk_names.mjs';
+import { nextDiskName, isManagedDiskName } from './disk_names.mjs';
+import {
+  MEMORY_DISK,
+  clearDiskRestart,
+  prepareDiskRestart,
+  readDiskSelection,
+  readLastSavedDisk,
+  readSeedVersion,
+  rememberSavedDisk,
+  takeDiskStartup,
+  writeDiskSelection,
+  writeSeedVersion,
+} from './disk_preferences.mjs';
 
-const LEGACY_DISK = 'xila_drive.img';
-const SELECTED_DISK_KEY = 'xila.selectedDisk';
+export { takeDiskStartup, writeSeedVersion };
+
 const DISK_LIST_LOCK = 'xila-opfs-disk-list';
 
-const byId = (id) => document.getElementById(id);
-const list = byId('disk-list');
-const status = byId('disk-status');
-const selectButton = byId('disk-select');
-const createButton = byId('disk-create');
-const removeButton = byId('disk-remove');
+const sidebar = document.getElementById('sidebar');
+const persistenceSwitch = document.getElementById('disk-persistence');
+const savedDiskControls = document.getElementById('saved-disk-controls');
+const memoryNotice = document.getElementById('memory-disk-notice');
+const list = document.getElementById('disk-list');
+const status = document.getElementById('disk-status');
+const selectButton = document.getElementById('disk-select');
+const createButton = document.getElementById('disk-create');
+const removeButton = document.getElementById('disk-remove');
+const rebuildButton = document.getElementById('disk-rebuild');
+
+let availableDisks = [];
+let storageAvailable = false;
 let activeDisk = null;
-let runtimeReady = false;
+let startupFailedDisk = null;
+let recoverableDisk = null;
+let currentSeedVersion = '';
+let restartSelection = null;
+let selectionChanges = 0;
+let diskOperationPending = false;
+
+const displayName = (name) => name === MEMORY_DISK ? 'Memory' : name;
 
 function setStatus(message, isError = false) {
   status.textContent = message;
   status.dataset.error = String(isError);
 }
 
-function selectedDisk() {
-  return localStorage.getItem(SELECTED_DISK_KEY) || LEGACY_DISK;
-}
-
-async function diskFiles() {
-  const root = await navigator.storage.getDirectory();
+async function diskFiles(root) {
   const files = [];
   for await (const [name, handle] of root.entries()) {
     if (handle.kind === 'file' && isManagedDiskName(name)) files.push(name);
@@ -31,104 +52,207 @@ async function diskFiles() {
   return files.sort((left, right) => left.localeCompare(right));
 }
 
-function updateControls() {
-  selectButton.disabled = !runtimeReady || list.options.length === 0;
-  createButton.disabled = !runtimeReady;
-  removeButton.disabled = !runtimeReady || !list.value || list.value === activeDisk;
+function versionNotice(name) {
+  const version = readSeedVersion(name);
+  if (!version) return 'seed version unknown';
+  if (currentSeedVersion && version !== currentSeedVersion) return 'older seed version';
+  return '';
 }
 
-function render(files) {
-  const selected = selectedDisk();
+function updateControls() {
+  const name = list.value;
+  const persistent = isManagedDiskName(restartSelection ?? activeDisk ?? startupFailedDisk);
+  const canSwitch = (activeDisk !== null || startupFailedDisk !== null)
+    && restartSelection === null && !diskOperationPending;
+  const canManageDisks = canSwitch && persistent && storageAvailable;
+  persistenceSwitch.checked = persistent;
+  persistenceSwitch.disabled = !canSwitch;
+  savedDiskControls.hidden = !persistent;
+  memoryNotice.hidden = persistent;
+  selectButton.disabled = !canManageDisks || !name || name === activeDisk;
+  createButton.disabled = !canManageDisks;
+  removeButton.disabled = !canManageDisks || !name || name === activeDisk;
+  rebuildButton.hidden = !name || !currentSeedVersion
+    || (name !== recoverableDisk && !versionNotice(name));
+  rebuildButton.disabled = !canManageDisks;
+}
+
+function render(selected) {
   list.replaceChildren();
-  for (const name of files) {
+  for (const name of availableDisks) {
     const option = document.createElement('option');
     option.value = name;
-    option.textContent = name === activeDisk ? `${name} (open)` : name;
-    option.selected = name === selected;
+    const notice = versionNotice(name);
+    option.textContent = [name, notice && `(${notice})`, name === activeDisk && '(open)']
+      .filter(Boolean).join(' ');
     list.append(option);
   }
+  list.value = availableDisks.includes(selected) ? selected : availableDisks[0] ?? '';
   updateControls();
 }
 
-async function refresh(message = 'Choose a disk, or create a new one.') {
+async function findOrCreateDisk(preferredName) {
+  return navigator.locks.request(DISK_LIST_LOCK, async () => {
+    const root = await navigator.storage.getDirectory();
+    const files = await diskFiles(root);
+    if (files.includes(preferredName)) return preferredName;
+    const name = nextDiskName(new Date(), files);
+    await root.getFileHandle(name, { create: true });
+    return name;
+  });
+}
+
+async function refresh(selected) {
+  const changesBeforeRefresh = selectionChanges;
   try {
-    render(await diskFiles());
-    setStatus(message);
-  } catch (error) {
-    setStatus(`Browser storage is unavailable: ${error.message}`, true);
-    selectButton.disabled = createButton.disabled = removeButton.disabled = true;
+    availableDisks = await diskFiles(await navigator.storage.getDirectory());
+    storageAvailable = Boolean(navigator.locks);
+  } catch {
+    availableDisks = [];
+    storageAvailable = false;
+    if (startupFailedDisk === null && restartSelection === null) {
+      setStatus('Saved disks are unavailable in this browser.', true);
+    }
+  }
+  render(changesBeforeRefresh === selectionChanges ? selected ?? list.value : list.value);
+}
+
+function requestDiskSwitch(name, rebuild = false) {
+  if (!prepareDiskRestart(name, rebuild) && rebuild) {
+    setStatus('Browser storage could not remember the rebuild request.', true);
+    return;
+  }
+  if (!writeDiskSelection(name) && (name !== MEMORY_DISK || readDiskSelection() !== MEMORY_DISK)) {
+    clearDiskRestart();
+    setStatus('Browser preferences are unavailable. Xila could not remember your disk choice.', true);
+    return;
+  }
+  restartSelection = name;
+  setStatus(`Restarting Xila using ${displayName(name)}…`);
+  updateControls();
+  if (startupFailedDisk !== null) window.location.reload();
+  else window.dispatchEvent(new Event('xila-disk-switch'));
+}
+
+function confirmDiskSwitch(name) {
+  if (window.confirm(`Restart Xila using ${displayName(name)}?`)) {
+    requestDiskSwitch(name);
   }
 }
 
-function requestDiskSwitch(name) {
-  localStorage.setItem(SELECTED_DISK_KEY, name);
-  setStatus(`Saving and switching to ${name}…`);
-  selectButton.disabled = createButton.disabled = removeButton.disabled = true;
-  window.dispatchEvent(new Event('xila-disk-switch'));
-}
+persistenceSwitch.addEventListener('change', async () => {
+  const enablePersistence = persistenceSwitch.checked;
+  updateControls();
+  if (!enablePersistence) {
+    const saveNotice = isManagedDiskName(activeDisk) ? ' Xila will save your files before restarting.' : '';
+    if (window.confirm(`Restart Xila in Memory?${saveNotice}`)) requestDiskSwitch(MEMORY_DISK);
+    return;
+  }
 
-list.addEventListener('change', updateControls);
-selectButton.addEventListener('click', () => {
+  if (!navigator.locks || !navigator.storage?.getDirectory) {
+    setStatus('Saved disks are unavailable in this browser.', true);
+    return;
+  }
+  if (!window.confirm('Restart Xila with saved files enabled? Changes in Memory will be discarded.')) return;
+  diskOperationPending = true;
+  updateControls();
+  try {
+    requestDiskSwitch(await findOrCreateDisk(readLastSavedDisk()));
+  } catch (error) {
+    setStatus(`Could not enable saved files: ${error.message}`, true);
+  } finally {
+    diskOperationPending = false;
+    updateControls();
+  }
+});
+
+list.addEventListener('change', () => {
+  selectionChanges++;
+  updateControls();
+});
+selectButton.addEventListener('click', () => confirmDiskSwitch(list.value));
+rebuildButton.addEventListener('click', () => {
   const name = list.value;
-  if (!name || name === activeDisk) return;
-  if (window.confirm(`Save and restart Xila using ${name}?`)) requestDiskSwitch(name);
+  if (window.confirm(`Rebuild ${name} from the current version? This permanently discards all files and settings on that disk.`)) {
+    requestDiskSwitch(name, true);
+  }
 });
 
 createButton.addEventListener('click', async () => {
-  createButton.disabled = true;
+  diskOperationPending = true;
+  updateControls();
   try {
-    const root = await navigator.storage.getDirectory();
-    const name = await navigator.locks.request(DISK_LIST_LOCK, async () => {
-      const files = new Set(await diskFiles());
-      const candidate = nextDiskName(new Date(), files);
-      await root.getFileHandle(candidate, { create: true });
-      return candidate;
-    });
-    await refresh(`${name} created. Select it to restart Xila on that disk.`);
-    list.value = name;
-    updateControls();
-    if (window.confirm(`Save and restart Xila using ${name}?`)) requestDiskSwitch(name);
+    const name = await findOrCreateDisk();
+    await refresh(name);
+    setStatus(`${name} created. Select it to restart Xila on that disk.`);
+    confirmDiskSwitch(name);
   } catch (error) {
     setStatus(`Could not create a disk: ${error.message}`, true);
-    createButton.disabled = false;
+  } finally {
+    diskOperationPending = false;
+    updateControls();
   }
 });
 
 removeButton.addEventListener('click', async () => {
   const name = list.value;
-  if (!name || name === activeDisk) return;
   if (!window.confirm(`Permanently remove ${name} and all files stored on it?`)) return;
-  removeButton.disabled = true;
+  diskOperationPending = true;
+  updateControls();
   try {
-    const removed = await navigator.locks.request(`xila-opfs:${name}`, { ifAvailable: true }, async (lock) => {
-      if (!lock) return false;
+    await navigator.locks.request(`xila-opfs:${name}`, { ifAvailable: true }, async (lock) => {
+      if (!lock) throw new Error('This disk is open in another Xila tab. Close that tab first.');
       await (await navigator.storage.getDirectory()).removeEntry(name);
-      return true;
+      writeSeedVersion(name, '');
+      if (readDiskSelection() === name) writeDiskSelection(MEMORY_DISK);
     });
-    if (!removed) throw new Error('This disk is open in another Xila tab. Close that tab first.');
-    if (selectedDisk() === name) localStorage.setItem(SELECTED_DISK_KEY, LEGACY_DISK);
-    await refresh(`${name} removed.`);
+    await refresh();
+    setStatus(`${name} removed.`);
   } catch (error) {
     setStatus(`Could not remove ${name}: ${error.message}`, true);
-    render(await diskFiles().catch(() => []));
+  } finally {
+    diskOperationPending = false;
+    updateControls();
   }
 });
 
-window.xilaDiskManagerReady = (name) => {
-  activeDisk = name;
-  runtimeReady = true;
-  renderFromStorage();
-};
-
-window.xilaDiskManagerError = (message) => {
-  if (activeDisk) localStorage.setItem(SELECTED_DISK_KEY, activeDisk);
-  setStatus(message, true);
-  runtimeReady = true;
-  renderFromStorage();
-};
-
-async function renderFromStorage() {
-  render(await diskFiles().catch(() => []));
+export function setSeedVersion(version) {
+  currentSeedVersion = version;
+  render(list.value);
 }
 
-refresh();
+export function diskManagerReady(name) {
+  activeDisk = name;
+  setStatus(`Using ${displayName(name)}.`);
+  if (isManagedDiskName(name)) {
+    rememberSavedDisk(name);
+    if (!availableDisks.includes(name)) availableDisks.push(name);
+  }
+  render(name);
+  if (persistenceSwitch.checked && sidebar.classList.contains('open')) refresh();
+}
+
+export function diskManagerStartupFailed(name, message, canRebuild) {
+  startupFailedDisk = name;
+  recoverableDisk = canRebuild ? name : null;
+  setStatus(message, true);
+  updateControls();
+  if (isManagedDiskName(name)) {
+    if (!sidebar.classList.contains('open')) window.toggleSidebar();
+    refresh(name);
+  }
+}
+
+export function diskManagerError(message) {
+  if (restartSelection !== null) {
+    clearDiskRestart();
+    if (readDiskSelection() === restartSelection) writeDiskSelection(activeDisk);
+    restartSelection = null;
+  }
+  setStatus(message, true);
+  updateControls();
+}
+
+document.getElementById('sidebar-toggle').addEventListener('click', () => {
+  if (persistenceSwitch.checked && sidebar.classList.contains('open')) refresh();
+});

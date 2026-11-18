@@ -1,13 +1,11 @@
-//! Main-thread OPFS disk with a synchronous memory cache.
+//! Main-thread browser disk with optional origin-private file storage.
 //!
-//! OPFS synchronous access handles are worker-only. Reads and writes therefore
-//! use one disk-sized cache; callers must await [`DriveDevice::sync`] to commit
-//! it to OPFS. The synchronous `flush` operation does not provide durability.
-//! Saves are atomic snapshots, serialized with at most one extra disk-sized
-//! buffer in flight. A lifetime Web Lock prevents conflicting browser tabs.
+//! All reads and writes use a disk-sized memory cache. Persistent disks hold
+//! a Web Lock and save atomic snapshots through [`DriveDevice::sync`], with at
+//! most one extra snapshot in flight. Memory disks have no browser storage.
 
 #[cfg(target_feature = "atomics")]
-compile_error!("The OPFS cache driver requires single-threaded browser WASM");
+compile_error!("The browser drive requires a single browser thread");
 
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -91,7 +89,10 @@ extern "C" {
 #[wasm_bindgen(module = "/src/devices/seed.mjs")]
 extern "C" {
     #[wasm_bindgen(catch, js_name = importSeed)]
-    async fn import_seed(url: &str, data: &Uint8Array) -> Result<JsValue, JsValue>;
+    async fn import_seed(url: &str, data: &Uint8Array) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(catch, js_name = fingerprintSeed)]
+    async fn fingerprint_seed(data: &Uint8Array) -> Result<alloc::string::String, JsValue>;
 }
 
 struct Lease(Reservation);
@@ -118,12 +119,16 @@ fn map_error(value: JsValue) -> Error {
     }
 }
 
-struct Inner {
+struct Persistence {
     handle: FileSystemFileHandle,
-    data: Uint8Array,
     generation: u64,
     saved_generation: u64,
     _lease: Lease,
+}
+
+struct Inner {
+    data: Uint8Array,
+    persistence: Option<Persistence>,
 }
 
 // SAFETY: this module rejects atomics-enabled WASM; all JS objects and device
@@ -142,13 +147,16 @@ impl State {
         let _save = self.saving.lock().await;
         let (handle, snapshot, generation) = {
             let inner = self.inner.try_get()?;
-            if inner.generation == inner.saved_generation {
+            let Some(persistence) = &inner.persistence else {
+                return Ok(());
+            };
+            if persistence.generation == persistence.saved_generation {
                 return Ok(());
             }
             (
-                inner.handle.clone(),
+                persistence.handle.clone(),
                 inner.data.slice(0, inner.data.length()),
-                inner.generation,
+                persistence.generation,
             )
         };
 
@@ -178,7 +186,9 @@ impl State {
         }
 
         // Later writes have a different generation and still need a save.
-        self.inner.try_get()?.saved_generation = generation;
+        if let Some(persistence) = &mut self.inner.try_get()?.persistence {
+            persistence.saved_generation = generation;
+        }
         Ok(())
     }
 }
@@ -186,13 +196,61 @@ impl State {
 pub struct DriveDevice(Arc<State>, bool);
 
 impl DriveDevice {
+    fn validate_size(size: usize) -> file_system::Result<()> {
+        if size == 0 || !size.is_multiple_of(BLOCK_SIZE as usize) || size > isize::MAX as usize {
+            return Err(Error::InvalidParameter);
+        }
+        Ok(())
+    }
+
+    fn from_cache(data: Uint8Array, persistence: Option<Persistence>, is_new: bool) -> Self {
+        Self(
+            Arc::new(State {
+                inner: MutexMountWrapper::new_mounted(Inner { data, persistence }),
+                saving: Mutex::new(()),
+                accepting_writes: AtomicBool::new(true),
+            }),
+            is_new,
+        )
+    }
+
+    /// Load a fresh image into memory without opening browser storage or
+    /// acquiring a Web Lock. Each drive has its own independent cache.
+    pub async fn new_memory_from_seed(size: usize, seed_url: &str) -> file_system::Result<Self> {
+        Self::validate_size(size)?;
+        let data = Uint8Array::new_with_length(size as u32);
+        import_seed(seed_url, &data).await.map_err(map_error)?;
+        Ok(Self::from_cache(data, None, true))
+    }
+
+    /// Hash the bytes in a fresh memory drive before mounting or modifying it.
+    pub async fn seed_fingerprint(&self) -> file_system::Result<alloc::string::String> {
+        let data = self.0.inner.try_get()?.data.clone();
+        fingerprint_seed(&data).await.map_err(map_error)
+    }
+
+    /// Open a persistent disk, using this memory image for a new disk or an
+    /// explicitly requested rebuild. A rebuild replaces the committed image
+    /// only when the caller successfully saves the replacement with `sync`.
+    pub async fn into_persistent(self, name: &Path, rebuild: bool) -> file_system::Result<Self> {
+        let data = self.0.inner.try_get()?.data.clone();
+        Self::open_persistent(name, data.length() as usize, Some(data), rebuild).await
+    }
+
     /// Open a fixed-size OPFS disk. `name` must be a single filename and `size`
     /// a nonzero multiple of 512. A nonempty image must already have this size.
     /// Opening does not erase or resize an existing disk.
     pub async fn new(name: &Path, size: usize) -> file_system::Result<Self> {
-        if size == 0 || !size.is_multiple_of(BLOCK_SIZE as usize) || size > isize::MAX as usize {
-            return Err(Error::InvalidParameter);
-        }
+        Self::validate_size(size)?;
+        Self::open_persistent(name, size, None, false).await
+    }
+
+    async fn open_persistent(
+        name: &Path,
+        size: usize,
+        seed: Option<Uint8Array>,
+        rebuild: bool,
+    ) -> file_system::Result<Self> {
         let name = name.as_str();
         if name.is_empty() || matches!(name, "." | "..") || name.contains(['/', '\\', '\0']) {
             return Err(Error::InvalidPath);
@@ -222,9 +280,9 @@ impl DriveDevice {
             .map_err(map_error)?
             .dyn_into::<File>()
             .map_err(map_error)?;
-        let is_new = file.size() == 0.0;
+        let is_new = rebuild || file.size() == 0.0;
         let data = if is_new {
-            Uint8Array::new_with_length(size as u32)
+            seed.unwrap_or_else(|| Uint8Array::new_with_length(size as u32))
         } else {
             if file.size() != size as f64 {
                 return Err(Error::InvalidParameter);
@@ -236,17 +294,13 @@ impl DriveDevice {
             )
         };
 
-        Ok(Self(
-            Arc::new(State {
-                inner: MutexMountWrapper::new_mounted(Inner {
-                    handle,
-                    data,
-                    generation: u64::from(is_new),
-                    saved_generation: 0,
-                    _lease: lease,
-                }),
-                saving: Mutex::new(()),
-                accepting_writes: AtomicBool::new(true),
+        Ok(Self::from_cache(
+            data,
+            Some(Persistence {
+                handle,
+                generation: u64::from(is_new),
+                saved_generation: 0,
+                _lease: lease,
             }),
             is_new,
         ))
@@ -273,9 +327,8 @@ impl DriveDevice {
         self.0.inner.unmount()
     }
 
-    /// Whether the disk had no committed image when it was opened. This stays
-    /// unchanged after saves so boot code can distinguish initial formatting
-    /// from mounting an existing installation, even if its metadata is invalid.
+    /// Whether the cache started fresh, from a seed or an empty disk,
+    /// rather than from an existing installation. Saves do not change this.
     pub const fn is_new(&self) -> bool {
         self.1
     }
@@ -284,7 +337,11 @@ impl DriveDevice {
     /// Writes made during this save remain dirty for the next call. Saves keep
     /// running if the waiting future is cancelled, retaining the lease and save
     /// mutex until completion. Dropping the device does not save dirty data.
+    /// On a memory drive this does nothing.
     pub async fn sync(&self) -> file_system::Result<()> {
+        if self.0.inner.try_get()?.persistence.is_none() {
+            return Ok(());
+        }
         let completion =
             Arc::new(Signal::<CriticalSectionRawMutex, file_system::Result<()>>::new());
         let state = self.0.clone();
@@ -352,7 +409,9 @@ impl DirectBaseOperations for DriveDevice {
                     .data
                     .subarray(position, position + count as u32)
                     .copy_from(&buffer[..count]);
-                inner.generation = inner.generation.wrapping_add(1);
+                if let Some(persistence) = &mut inner.persistence {
+                    persistence.generation = persistence.generation.wrapping_add(1);
+                }
             }
             Ok(count)
         })
@@ -401,7 +460,11 @@ impl MountOperations for DriveDevice {
         let _save = self.0.saving.try_lock().map_err(|_| Error::RessourceBusy)?;
         {
             let inner = self.0.inner.try_get()?;
-            if inner.generation != inner.saved_generation {
+            if inner
+                .persistence
+                .as_ref()
+                .is_some_and(|persistence| persistence.generation != persistence.saved_generation)
+            {
                 return Err(Error::RessourceBusy);
             }
         }

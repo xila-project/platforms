@@ -4,26 +4,51 @@ extern crate alloc;
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen(inline_js = r#"
-export function selectedXilaDisk() {
-    const selected = localStorage.getItem('xila.selectedDisk');
-    return selected === 'xila_drive.img' || /^xila_\d{4}-\d{2}-\d{2}(?:-\d+)?\.img$/.test(selected)
-        ? selected
-        : 'xila_drive.img';
+let diskManager;
+let diskStartup;
+export async function selectedXilaDisk() {
+    diskManager = await import(new URL('./disk_manager.mjs', document.baseURI));
+    diskStartup = diskManager.takeDiskStartup();
+    return diskStartup.name;
+}
+export function rebuildSelectedXilaDisk() {
+    return diskStartup.rebuild;
+}
+export function setXilaSeedVersion(version) {
+    diskManager.setSeedVersion(version);
+}
+export function recordXilaDiskSeedVersion(name, version) {
+    diskManager.writeSeedVersion(name, version);
 }
 export function xilaDiskManagerReady(name) {
-    window.xilaDiskManagerReady?.(name);
+    diskManager.diskManagerReady(name);
+}
+export function xilaDiskManagerStartupFailed(name, message, canRebuild) {
+    diskManager.diskManagerStartupFailed(name, message, canRebuild);
 }
 export function xilaDiskManagerError(message) {
-    window.xilaDiskManagerError?.(message);
+    diskManager.diskManagerError(message);
 }
 "#)]
 #[cfg(target_arch = "wasm32")]
 extern "C" {
     #[wasm_bindgen::prelude::wasm_bindgen(js_name = selectedXilaDisk)]
-    fn selected_xila_disk() -> alloc::string::String;
+    async fn selected_xila_disk() -> alloc::string::String;
+
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = rebuildSelectedXilaDisk)]
+    fn rebuild_selected_xila_disk() -> bool;
+
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = setXilaSeedVersion)]
+    fn set_xila_seed_version(version: &str);
+
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = recordXilaDiskSeedVersion)]
+    fn record_xila_disk_seed_version(name: &str, version: &str);
 
     #[wasm_bindgen::prelude::wasm_bindgen(js_name = xilaDiskManagerReady)]
     fn disk_manager_ready(name: &str);
+
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = xilaDiskManagerStartupFailed)]
+    fn disk_manager_startup_failed(name: &str, message: &str, can_rebuild: bool);
 
     #[wasm_bindgen::prelude::wasm_bindgen(js_name = xilaDiskManagerError)]
     fn disk_manager_error(message: &str);
@@ -60,13 +85,13 @@ async fn main(task_manager: &'static xila::task::Manager) {
     use alloc::string::ToString;
     use alloc::vec;
     use core::sync::atomic::{AtomicBool, Ordering};
-    use drivers_wasm::devices::graphics::GraphicsDevices;
+    use drivers_wasm::devices::{DriveDevice, graphics::GraphicsDevices};
     use wasm_bindgen::{JsCast, closure::Closure};
     use web_sys::{HtmlElement, MouseEvent};
     use xila::bootsplash::Bootsplash;
     use xila::executable::{self, Standard, mount_executables};
-    use xila::file_system::Path;
     use xila::file_system::mbr::Mbr;
+    use xila::file_system::{Error, Path};
     use xila::log;
     use xila::task;
     use xila::time::{self, Duration};
@@ -84,6 +109,78 @@ async fn main(task_manager: &'static xila::task::Manager) {
     let time_manager: &'static time::Manager<'static> = Box::leak(Box::new(
         time::Manager::new(&drivers_wasm::devices::TimeDevice).unwrap(),
     ));
+
+    // Initialize storage before starting runtime services so startup failures
+    // can return control to the disk panel.
+    const DISK_SIZE: usize = 16 * 1024 * 1024;
+    let selected_disk = selected_xila_disk().await;
+    let persistent = selected_disk != "memory";
+    let disk_label = if persistent { &selected_disk } else { "Memory" };
+    let rebuild = rebuild_selected_xila_disk();
+    let seed = DriveDevice::new_memory_from_seed(DISK_SIZE, "./seed.img").await;
+    let seed_version = match &seed {
+        Ok(seed) => seed.seed_fingerprint().await.unwrap_or_default(),
+        Err(_) => alloc::string::String::new(),
+    };
+    set_xila_seed_version(&seed_version);
+
+    let path = Path::from_str(&selected_disk);
+    let opened = match seed {
+        Ok(seed) if persistent => seed.into_persistent(path, rebuild).await,
+        Ok(seed) => Ok(seed),
+        Err(_) if persistent && !rebuild => DriveDevice::new(path, DISK_SIZE).await,
+        Err(error) => Err(error),
+    };
+    let drive: &'static DriveDevice = match opened {
+        Ok(drive) => Box::leak(Box::new(drive)),
+        Err(error) => {
+            disk_manager_startup_failed(
+                &selected_disk,
+                &alloc::format!("Could not open {disk_label}: {error}"),
+                persistent && matches!(error, Error::InvalidParameter | Error::InvalidFile),
+            );
+            return;
+        }
+    };
+
+    let file_system = match storage::mount(drive) {
+        Ok(file_system) => file_system,
+        Err(error) => {
+            let _ = drive.discard_unsaved();
+            disk_manager_startup_failed(
+                &selected_disk,
+                &alloc::format!("Could not mount {disk_label}: {error}"),
+                persistent,
+            );
+            return;
+        }
+    };
+
+    let mbr = Mbr::read_from_device(drive).unwrap();
+    log::information!("MBR Information: {mbr}");
+
+    let virtual_file_system = match virtual_file_system::initialize(
+        task_manager,
+        users_manager,
+        time_manager,
+        file_system,
+    ) {
+        Ok(virtual_file_system) => Box::leak(Box::new(virtual_file_system)),
+        Err(error) => {
+            let _ = drive.discard_unsaved();
+            disk_manager_startup_failed(
+                &selected_disk,
+                &alloc::format!("Could not initialize {disk_label}: {error}"),
+                persistent,
+            );
+            return;
+        }
+    };
+    let virtual_file_system: &'static virtual_file_system::VirtualFileSystem = virtual_file_system;
+    xila::abi_definitions::initialize(xila::abi_definitions::RuntimeContext {
+        virtual_file_system,
+        time_manager,
+    });
 
     // - Initialize the graphics manager
     // - - Initialize the graphics driver
@@ -126,52 +223,6 @@ async fn main(task_manager: &'static xila::task::Manager) {
         })
         .await
         .unwrap();
-
-    // - Initialize the file system
-    // Open the origin's persistent disk before synchronous MBR/LittleFS setup.
-    let selected_disk = selected_xila_disk();
-    let selected_disk_path = Path::from_str(&selected_disk);
-    let drive: &'static drivers_wasm::devices::DriveDevice =
-        match drivers_wasm::devices::DriveDevice::new_seeded(
-            selected_disk_path,
-            16 * 1024 * 1024,
-            "./seed.img",
-        )
-        .await
-        {
-            Ok(drive) => Box::leak(Box::new(drive)),
-            Err(error) => {
-                let message = alloc::format!("Could not open {selected_disk}: {error}");
-                disk_manager_error(&message);
-                panic!("{message}");
-            }
-        };
-
-    // Imported seeds and saved images must already contain a valid filesystem.
-    let file_system = match storage::mount(drive) {
-        Ok(file_system) => file_system,
-        Err(error) => {
-            // Never commit a failed seed import or changes from a failed mount.
-            let _ = drive.discard_unsaved();
-            let message = alloc::format!("Could not mount {selected_disk}: {error}");
-            disk_manager_error(&message);
-            panic!("{message}; saved data was not reformatted");
-        }
-    };
-
-    // Print MBR information
-    let mbr = Mbr::read_from_device(drive).unwrap();
-    log::information!("MBR Information: {mbr}");
-
-    // Initialize the virtual file system
-    let virtual_file_system: &'static virtual_file_system::VirtualFileSystem = Box::leak(Box::new(
-        virtual_file_system::initialize(task_manager, users_manager, time_manager, file_system)
-            .unwrap(),
-    ));
-    xila::abi_definitions::initialize(xila::abi_definitions::RuntimeContext {
-        virtual_file_system,
-        time_manager,
-    });
 
     // - - Mount the devices
     virtual_file_system
@@ -378,9 +429,15 @@ async fn main(task_manager: &'static xila::task::Manager) {
         users_manager,
         task,
     };
-    storage::initialize_users(&authentication_context, drive.is_new())
-        .await
-        .expect("Failed to initialize users and groups");
+    if let Err(error) = storage::initialize_users(&authentication_context, drive.is_new()).await {
+        let _ = drive.discard_unsaved();
+        disk_manager_startup_failed(
+            &selected_disk,
+            &alloc::format!("Could not load accounts on {disk_label}: {error}"),
+            persistent,
+        );
+        return;
+    }
 
     // System power device, the lifecycle supervisor's final step. Root and
     // the administrator group may use it, and therefore request a shutdown.
@@ -410,29 +467,40 @@ async fn main(task_manager: &'static xila::task::Manager) {
         .await
         .expect("Failed to restrict the power device");
 
-    drive
-        .sync()
-        .await
-        .expect("Failed to save OPFS disk at boot");
-    log::information!("OPFS disk saved at boot");
+    let autosave = if persistent {
+        if let Err(error) = drive.sync().await {
+            let _ = drive.discard_unsaved();
+            disk_manager_startup_failed(
+                &selected_disk,
+                &alloc::format!("Could not save {disk_label}: {error}"),
+                false,
+            );
+            return;
+        }
+        if drive.is_new() {
+            record_xila_disk_seed_version(&selected_disk, &seed_version);
+        }
 
-    // Main-thread OPFS commits are asynchronous. Keep one autosave running and
-    // explicitly join it before the final shutdown save.
-    let autosave_running: &'static AtomicBool = Box::leak(Box::new(AtomicBool::new(true)));
-    let (autosave, _) = task_manager
-        .spawn(task, "OPFS autosave", None, move |_| async move {
-            loop {
-                task::Manager::sleep(Duration::from_secs(1)).await;
-                if !autosave_running.load(Ordering::Relaxed) {
-                    break;
+        // Keep one periodic save running and join it before the final save.
+        let running: &'static AtomicBool = Box::leak(Box::new(AtomicBool::new(true)));
+        let (handle, _) = task_manager
+            .spawn(task, "Disk autosave", None, move |_| async move {
+                loop {
+                    task::Manager::sleep(Duration::from_secs(1)).await;
+                    if !running.load(Ordering::Acquire) {
+                        break;
+                    }
+                    if let Err(error) = drive.sync().await {
+                        log::error!("Failed to save browser disk: {error}");
+                    }
                 }
-                if let Err(error) = drive.sync().await {
-                    log::error!("Failed to save OPFS disk: {error}");
-                }
-            }
-        })
-        .await
-        .unwrap();
+            })
+            .await
+            .unwrap();
+        Some((running, handle))
+    } else {
+        None
+    };
 
     // A disk switch is an explicit restart of this instance: the lifecycle
     // stops the guests, commits the disk, releases its lock and reloads.
@@ -470,7 +538,6 @@ async fn main(task_manager: &'static xila::task::Manager) {
         })
         .await
         .unwrap();
-    disk_manager_ready(&selected_disk);
 
     // - - Set the environment variables
     task_manager
@@ -509,6 +576,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
     )
     .await
     .unwrap();
+    disk_manager_ready(&selected_disk);
     let mut join = core::pin::pin!(shell.join());
     loop {
         use core::{
@@ -534,7 +602,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
         services: &services,
         budget: Duration::from_secs(5),
     };
-    let mut drivers = power::BrowserDrivers::new(drive, autosave_running, autosave);
+    let mut drivers = power::BrowserDrivers::new(drive, autosave);
     if let Err(error) = supervisor.run(&xila::lifecycle::SYSTEM, &mut drivers).await {
         disk_manager_error(&alloc::format!("Xila could not shut down: {error}"));
     }

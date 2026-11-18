@@ -503,3 +503,50 @@ async fn failed_seed_download_keeps_an_empty_disk_retryable() {
     drop(drive);
     remove(&name).await;
 }
+
+#[wasm_bindgen_test]
+async fn rebuilding_replaces_the_saved_image_only_after_sync() {
+    let name = name();
+    let path = Path::from_str(&name);
+    let original = DriveDevice::new(path, 1024).await.unwrap();
+    original.write_sync(b"saved", 0).unwrap();
+    original.sync().await.unwrap();
+    original.unmount().unwrap();
+
+    let seed = [42; 512];
+    let array = js_sys::Uint8Array::from(seed.as_slice());
+    let blob = web_sys::Blob::new_with_u8_array_sequence(&js_sys::Array::of1(&array)).unwrap();
+    let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap();
+
+    let rebuilt = DriveDevice::new_memory_from_seed(seed.len(), &url)
+        .await
+        .unwrap()
+        .into_persistent(path, true)
+        .await
+        .unwrap();
+    assert!(rebuilt.is_new());
+    rebuilt.discard_unsaved().unwrap();
+
+    let original = DriveDevice::new(path, 1024).await.unwrap();
+    let mut bytes = [0; 5];
+    original.read_sync(&mut bytes, 0).unwrap();
+    assert_eq!(&bytes, b"saved");
+    original.unmount().unwrap();
+
+    let rebuilt = DriveDevice::new_memory_from_seed(seed.len(), &url)
+        .await
+        .unwrap()
+        .into_persistent(path, true)
+        .await
+        .unwrap();
+    rebuilt.sync().await.unwrap();
+    rebuilt.unmount().unwrap();
+    web_sys::Url::revoke_object_url(&url).unwrap();
+
+    let reopened = DriveDevice::new(path, seed.len()).await.unwrap();
+    let mut bytes = [0; 512];
+    reopened.read_sync(&mut bytes, 0).unwrap();
+    assert_eq!(bytes, seed);
+    reopened.unmount().unwrap();
+    remove(&name).await;
+}
