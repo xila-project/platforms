@@ -220,11 +220,11 @@ The disk-name and collision rules can also be tested with
 
 The HTTP client device is tested with a replaced `fetch` and needs no network.
 Request translation and response framing also run as library tests in the
-browser (`--lib`); the device tests run under Node:
+browser (`--lib`); the device tests run under Node in CI and locally via
+`mise run test:browser-http`:
 
 ```sh
-CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner \
-cargo test -p xila-drivers-wasm --target wasm32-unknown-unknown --test http_client
+mise run test:browser-http
 ```
 
 To test mode switching and recovery in Chromium, serve the built example as

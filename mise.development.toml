@@ -39,6 +39,9 @@ extends = "dev:rust"
 [tasks."check:browser"]
 extends = "dev:browser"
 
+[tasks."test:browser-http"]
+extends = "dev:browser"
+
 [tasks."test:seed"]
 extends = "dev:rust"
 

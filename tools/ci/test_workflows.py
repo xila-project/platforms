@@ -352,11 +352,18 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         ci = read('.github/workflows/ci.yml')
         for task in ('clippy:drivers', 'test:drivers', 'test:seed', 'firmware:test',
                      'ci:profiling', 'ci:profiling-runtime-tests', 'ci:profiling-native-tests',
-                     'clippy:browser', 'check:browser', 'build:nano-33-ble'):
+                     'clippy:browser', 'check:browser', 'test:browser-http', 'build:nano-33-ble'):
             self.assertIn(f'mise run {task}', ci)
         browser_tests = tomllib.loads(read('mise.ci.toml'))['tasks']['ci:browser-node-tests']['run']
         self.assertIn('drivers/wasm/tests/seed.test.mjs', browser_tests)
         self.assertIn('examples/wasm/tests/disk_manager.test.mjs', browser_tests)
+        mise_vars = tomllib.loads(read('mise.toml'))['vars']
+        wasm_bindgen_versions = {
+            package['version']
+            for package in tomllib.loads(read('Cargo.lock'))['package']
+            if package['name'] == 'wasm-bindgen'
+        }
+        self.assertEqual(wasm_bindgen_versions, {mise_vars['wasm_bindgen_version']})
         self.assertIn('needs: [quality, native, nano-33-ble, browser]', ci)
 
     def test_quality_reuses_shared_job_without_weakening_gate(self):

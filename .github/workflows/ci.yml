@@ -135,6 +135,8 @@ jobs:
         run: mise run check:browser
       - name: "Test | Browser integration"
         run: mise run ci:browser-node-tests
+      - name: "Test | Browser HTTP client device"
+        run: mise run test:browser-http
   required:
     if: always()
     needs: [quality, native, nano-33-ble, browser]
