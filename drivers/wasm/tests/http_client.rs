@@ -10,11 +10,12 @@ use core::{
     task::{Context as TaskContext, Poll, RawWaker, RawWakerVTable, Waker},
 };
 use drivers_wasm::devices::HttpClientDevice;
-use file_system::{BaseOperations, Context, Error, Result};
+use file_system::{BaseOperations, Context, Error, Operation, Result};
 use js_sys::{Function, Reflect};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use wasm_bindgen_test::*;
+use xila_http::{BodyDecoder, BodyKind, parse_response_head};
 
 drivers_wasm::memory::instantiate_global_allocator!();
 
@@ -36,7 +37,7 @@ const mock = globalThis.xilaMock = {
 };
 globalThis.fetch = (url, init) => {
   mock.calls.push({
-    url, method: init.method, credentials: init.credentials, referrerPolicy: init.referrerPolicy,
+    url, method: init.method, cache: init.cache, credentials: init.credentials, referrerPolicy: init.referrerPolicy,
     headers: [...new Headers(init.headers)].map(([n, v]) => n + ': ' + v).join('|'),
     body: init.body ? new TextDecoder().decode(init.body) : null, signal: init.signal,
   });
@@ -143,6 +144,7 @@ async fn weather_style_get_streams_head_then_body_and_ends_with_zero() {
         "https://geocoding-api.open-meteo.com/v1/search?name=Paris"
     );
     assert_eq!(call(&mock, 0, "method"), "GET");
+    assert_eq!(call(&mock, 0, "cache"), "no-store");
     assert_eq!(call(&mock, 0, "headers"), "accept: application/json");
     assert_eq!(call(&mock, 0, "credentials"), "omit");
     assert_eq!(call(&mock, 0, "referrerPolicy"), "no-referrer");
@@ -201,34 +203,87 @@ async fn the_body_is_pulled_one_chunk_at_a_time() {
 }
 
 #[wasm_bindgen_test]
-async fn content_encoding_headers_are_not_forwarded_to_the_guest() {
+async fn cors_filtered_content_length_is_dropped_and_xila_http_reads_full_body() {
     let mock = mock();
+    // Under CORS, Content-Encoding is hidden unless exposed while Content-Length
+    // stays visible with the compressed wire length (shorter than the decoded body).
+    let expected =
+        br#"{"results":[{"name":"Paris","latitude":48.85341,"longitude":2.3488,"country":"France"}]}"#;
     handler(
         &mock,
-        "() => mock.stream(['plain'], 200, { 'content-encoding': 'gzip', 'content-length': '999', 'x-kept': 'y' })",
+        r#"() => mock.stream(['{"results":[{"name":"Paris",', '"latitude":48.85341,"longitude":2.3488,"country":"France"}]}'], 200, { 'content-type': 'application/json', 'content-length': '12', 'x-kept': 'y' })"#,
     );
     let device = HttpClientDevice::HTTPS;
     let mut context = open(&device);
     write(&device, &mut context, GET).unwrap();
     let mut head = [0; 256];
     let count = read(&device, &mut context, &mut head).await.unwrap();
-    assert_eq!(&head[..count], b"HTTP/1.1 200 OK\r\nx-kept: y\r\n\r\n");
     assert_eq!(
-        read_all(&device, &mut context, 256).await.unwrap(),
-        b"plain"
+        &head[..count],
+        b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nx-kept: y\r\n\r\n"
     );
+    // A guest framing through Core's xila_http must not truncate the decoded body.
+    let parsed = parse_response_head::<32>(&head[..count], false)
+        .unwrap()
+        .expect("complete head");
+    assert_eq!(parsed.status, 200);
+    assert_eq!(parsed.body, BodyKind::UntilClose);
+    let mut decoder = BodyDecoder::new(parsed.body);
+    let mut body = Vec::new();
+    let mut chunk = [0; 19];
+    loop {
+        let count = read(&device, &mut context, &mut chunk).await.unwrap();
+        if count == 0 {
+            decoder.finish().unwrap();
+            break;
+        }
+        let decoded = decoder.decode(&mut chunk[..count]).unwrap();
+        body.extend_from_slice(&chunk[..decoded]);
+    }
+    assert_eq!(body, expected);
 }
 
 #[wasm_bindgen_test]
-async fn empty_responses_end_right_after_the_head() {
+async fn empty_responses_and_head_preserve_content_length() {
     let mock = mock();
-    handler(&mock, "() => new Response(null, { status: 204 })");
+    handler(
+        &mock,
+        "() => new Response(null, { status: 204, headers: { 'content-length': '674' } })",
+    );
     let device = HttpClientDevice::HTTPS;
     let mut context = open(&device);
     write(&device, &mut context, GET).unwrap();
     let mut buffer = [0; 256];
     let count = read(&device, &mut context, &mut buffer).await.unwrap();
-    assert!(buffer[..count].starts_with(b"HTTP/1.1 204"));
+    assert_eq!(
+        &buffer[..count],
+        b"HTTP/1.1 204\r\ncontent-length: 674\r\n\r\n"
+    );
+    assert_eq!(read(&device, &mut context, &mut buffer).await, Ok(0));
+
+    handler(
+        &mock,
+        "() => new Response(null, { status: 304, headers: { 'content-length': '674' } })",
+    );
+    write(&device, &mut context, GET).unwrap();
+    let count = read(&device, &mut context, &mut buffer).await.unwrap();
+    assert_eq!(
+        &buffer[..count],
+        b"HTTP/1.1 304\r\ncontent-length: 674\r\n\r\n"
+    );
+    assert_eq!(read(&device, &mut context, &mut buffer).await, Ok(0));
+
+    handler(
+        &mock,
+        "() => new Response(null, { status: 200, statusText: 'OK', headers: { 'content-length': '674' } })",
+    );
+    let head_request = b"HEAD /v1/search HTTP/1.1\r\nHost: geocoding-api.open-meteo.com\r\n\r\n";
+    write(&device, &mut context, head_request).unwrap();
+    let count = read(&device, &mut context, &mut buffer).await.unwrap();
+    assert_eq!(
+        &buffer[..count],
+        b"HTTP/1.1 200 OK\r\ncontent-length: 674\r\n\r\n"
+    );
     assert_eq!(read(&device, &mut context, &mut buffer).await, Ok(0));
 }
 
@@ -250,17 +305,23 @@ struct Counter;
 static WAKES: AtomicUsize = AtomicUsize::new(0);
 impl Counter {
     fn waker() -> Waker {
+        Self::waker_for(&WAKES)
+    }
+
+    fn waker_for(counter: &'static AtomicUsize) -> Waker {
         const VTABLE: RawWakerVTable = RawWakerVTable::new(
-            |_| RawWaker::new(core::ptr::null(), &VTABLE),
-            |_| {
-                WAKES.fetch_add(1, Ordering::SeqCst);
+            |data| RawWaker::new(data, &VTABLE),
+            |data| {
+                // SAFETY: `data` always points to a `'static AtomicUsize`.
+                unsafe { &*(data as *const AtomicUsize) }.fetch_add(1, Ordering::SeqCst);
             },
-            |_| {
-                WAKES.fetch_add(1, Ordering::SeqCst);
+            |data| {
+                // SAFETY: `data` always points to a `'static AtomicUsize`.
+                unsafe { &*(data as *const AtomicUsize) }.fetch_add(1, Ordering::SeqCst);
             },
             |_| {},
         );
-        unsafe { Waker::from_raw(RawWaker::new(core::ptr::null(), &VTABLE)) }
+        unsafe { Waker::from_raw(RawWaker::new(core::ptr::from_ref(counter).cast(), &VTABLE)) }
     }
 }
 
@@ -396,4 +457,105 @@ async fn the_http_device_requests_http_urls() {
     )
     .unwrap();
     assert_eq!(call(&mock, 0, "url"), "http://localhost:8080/ping");
+}
+
+async fn yield_microtasks() {
+    for _ in 0..4 {
+        JsFuture::from(js_sys::Promise::resolve(&JsValue::NULL))
+            .await
+            .unwrap();
+    }
+}
+
+#[wasm_bindgen_test]
+async fn two_readers_on_cloned_contexts_are_both_woken() {
+    static WAKES_A: AtomicUsize = AtomicUsize::new(0);
+    static WAKES_B: AtomicUsize = AtomicUsize::new(0);
+
+    let mock = mock();
+    handler(
+        &mock,
+        "() => new Promise((resolve) => { mock.finish = () => resolve(mock.stream(['ok'], 200, {})); })",
+    );
+    let device = HttpClientDevice::HTTPS;
+    let mut first = open(&device);
+    let mut second = device.clone_context(&first).unwrap();
+    write(&device, &mut first, GET).unwrap();
+
+    let waker_a = Counter::waker_for(&WAKES_A);
+    let waker_b = Counter::waker_for(&WAKES_B);
+    let mut cx_a = TaskContext::from_waker(&waker_a);
+    let mut cx_b = TaskContext::from_waker(&waker_b);
+    let mut buffer = [0; 64];
+
+    let before_a = WAKES_A.load(Ordering::SeqCst);
+    let before_b = WAKES_B.load(Ordering::SeqCst);
+    assert_eq!(
+        device.read(&mut first, &mut cx_a, &mut buffer, 0),
+        Poll::Pending
+    );
+    assert_eq!(
+        device.read(&mut second, &mut cx_b, &mut buffer, 0),
+        Poll::Pending
+    );
+    yield_microtasks().await;
+    Function::new_no_args("globalThis.xilaMock.finish()")
+        .call0(&JsValue::NULL)
+        .unwrap();
+    yield_microtasks().await;
+    assert_eq!(WAKES_A.load(Ordering::SeqCst), before_a + 1);
+    assert_eq!(WAKES_B.load(Ordering::SeqCst), before_b + 1);
+
+    // Drain the response and verify cancelling one clone only cancels its own waker.
+    read(&device, &mut first, &mut buffer).await.unwrap();
+    assert_eq!(read_all(&device, &mut second, 64).await.unwrap(), b"ok");
+
+    write(&device, &mut first, GET).unwrap();
+    let before_a = WAKES_A.load(Ordering::SeqCst);
+    let before_b = WAKES_B.load(Ordering::SeqCst);
+    assert_eq!(
+        device.read(&mut first, &mut cx_a, &mut buffer, 0),
+        Poll::Pending
+    );
+    assert_eq!(
+        device.read(&mut second, &mut cx_b, &mut buffer, 0),
+        Poll::Pending
+    );
+    device.cancel_operation(&mut first, Operation::Read);
+    yield_microtasks().await;
+    Function::new_no_args("globalThis.xilaMock.finish()")
+        .call0(&JsValue::NULL)
+        .unwrap();
+    yield_microtasks().await;
+    assert_eq!(WAKES_A.load(Ordering::SeqCst), before_a);
+    assert_eq!(WAKES_B.load(Ordering::SeqCst), before_b + 1);
+}
+
+#[wasm_bindgen_test]
+async fn dropping_the_context_aborts_an_in_flight_request() {
+    let mock = mock();
+    handler(&mock, "() => new Promise(() => {})");
+    let device = HttpClientDevice::HTTPS;
+    let mut context = open(&device);
+    write(&device, &mut context, GET).unwrap();
+    assert!(!aborted(&mock, 0));
+    drop(context);
+    assert!(aborted(&mock, 0));
+}
+
+#[wasm_bindgen_test]
+async fn an_oversized_response_header_is_refused_with_file_too_large() {
+    let mock = mock();
+    handler(
+        &mock,
+        "() => mock.stream(['ok'], 200, { 'x-huge': 'a'.repeat(9000) })",
+    );
+    let device = HttpClientDevice::HTTPS;
+    let mut context = open(&device);
+    write(&device, &mut context, GET).unwrap();
+    let mut buffer = [0; 64];
+    assert_eq!(
+        read(&device, &mut context, &mut buffer).await,
+        Err(Error::FileTooLarge)
+    );
 }

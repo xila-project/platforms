@@ -4,14 +4,14 @@
 //! and under test with a replaced `fetch`. Nothing here blocks: each step
 //! returns a future the device resolves from the executor.
 use super::{request::PreparedRequest, response};
-use alloc::vec::Vec;
+use alloc::{string::String, vec::Vec};
 use file_system::{Error, Result};
-use js_sys::{Array, Function, Promise, Reflect, Uint8Array};
+use js_sys::{Array, Function, JsString, Promise, Reflect, Uint8Array};
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
     AbortController, Headers, ReadableStream, ReadableStreamDefaultReader, ReferrerPolicy,
-    RequestCredentials, RequestInit, RequestMode, Response,
+    RequestCache, RequestCredentials, RequestInit, RequestMode, Response,
 };
 
 fn global_function(name: &str) -> Result<Function> {
@@ -89,6 +89,8 @@ pub(super) fn options(
     options.set_method(request.method);
     options.set_headers(&headers);
     options.set_mode(RequestMode::Cors);
+    // Match the native devices, which never serve cached responses.
+    options.set_cache(RequestCache::NoStore);
     // No ambient cookies or HTTP authentication; also keeps `Access-Control-Allow-Origin: *` valid.
     options.set_credentials(RequestCredentials::Omit);
     options.set_referrer_policy(ReferrerPolicy::NoReferrer);
@@ -119,13 +121,14 @@ pub(super) async fn receive(
     promise: Promise,
     controller: &AbortController,
     timeout_ms: u32,
+    head_request: bool,
 ) -> Result<Head> {
     let response = within(promise, controller, timeout_ms)
         .await?
         .dyn_into::<Response>()
         .map_err(|_| Error::InputOutput)?;
     let mut headers = Vec::new();
-    let mut size = 0;
+    let mut size = 0usize;
     for entry in js_sys::try_iter(&response.headers())
         .ok()
         .flatten()
@@ -135,18 +138,41 @@ pub(super) async fn receive(
         let entry = entry
             .map_err(|_| Error::InternalError)?
             .unchecked_into::<Array>();
-        if let (Some(name), Some(value)) = (entry.get(0).as_string(), entry.get(1).as_string()) {
-            // Stop copying from the browser as soon as the head cannot fit.
-            size += name.len() + value.len() + 4;
+        if let (Ok(name), Ok(value)) = (
+            entry.get(0).dyn_into::<JsString>(),
+            entry.get(1).dyn_into::<JsString>(),
+        ) {
+            // Check the UTF-16 length before copying from JavaScript so an oversized
+            // header never enters WebAssembly memory; UTF-8 is at least as long.
+            if size
+                .saturating_add(name.length() as usize)
+                .saturating_add(value.length() as usize)
+                .saturating_add(4)
+                > response::MAX_HEAD_SIZE
+            {
+                return Err(Error::FileTooLarge);
+            }
+            let name = String::from(name);
+            let value = String::from(value);
+            size = size
+                .saturating_add(name.len())
+                .saturating_add(value.len())
+                .saturating_add(4);
             if size > response::MAX_HEAD_SIZE {
                 return Err(Error::FileTooLarge);
             }
             headers.push((name, value));
         }
     }
-    let bytes = response::build_head(response.status(), &response.status_text(), &headers)?;
-    let body = response
-        .body()
+    let bytes = response::build_head(
+        response.status(),
+        &response.status_text(),
+        &headers,
+        head_request,
+    )?;
+    let body = (!head_request)
+        .then(|| response.body())
+        .flatten()
         .and_then(|body: ReadableStream| body.get_reader().dyn_into().ok());
     Ok(Head { bytes, body })
 }

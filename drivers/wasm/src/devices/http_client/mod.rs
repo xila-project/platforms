@@ -22,8 +22,11 @@ mod response;
 
 use ::alloc::boxed::Box;
 use alloc::{rc::Rc, vec::Vec};
-use core::{cell::RefCell, task::Waker};
-use file_system::{BaseOperations, CharacterDevice, Context, Error, MountOperations, Result, Size};
+use core::cell::RefCell;
+use file_system::{
+    BaseOperations, CharacterDevice, Context, Error, MountOperations, Result, Size, WaitQueue,
+    Waiter,
+};
 use js_sys::Uint8Array;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{AbortController, ReadableStreamDefaultReader};
@@ -51,10 +54,14 @@ struct Exchange {
     controller: Option<AbortController>,
     reading: bool,
     body_done: bool,
-    waker: Option<Waker>,
 }
 
-type Shared = Rc<RefCell<Exchange>>;
+struct SharedExchange {
+    state: RefCell<Exchange>,
+    waiters: WaitQueue<16>,
+}
+
+type Shared = Rc<SharedExchange>;
 
 impl Exchange {
     fn new(timeout_ms: u32) -> Self {
@@ -69,13 +76,6 @@ impl Exchange {
             controller: None,
             reading: false,
             body_done: false,
-            waker: None,
-        }
-    }
-
-    fn wake(&mut self) {
-        if let Some(waker) = self.waker.take() {
-            waker.wake();
         }
     }
 
@@ -96,7 +96,6 @@ impl Exchange {
     fn fail(&mut self, error: Error) {
         self.release();
         self.phase = Phase::Failed(error);
-        self.wake();
     }
 
     fn begin(&mut self, controller: AbortController) -> Result<u64> {
@@ -110,29 +109,45 @@ impl Exchange {
     }
 }
 
+impl Drop for Exchange {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
 fn start_request(
     shared: &Shared,
     generation: u64,
     response: js_sys::Promise,
     controller: AbortController,
     timeout_ms: u32,
+    head_request: bool,
 ) {
-    let shared = shared.clone();
+    let shared = Rc::downgrade(shared);
     spawn_local(async move {
-        let result = fetch::receive(response, &controller, timeout_ms).await;
-        let mut exchange = shared.borrow_mut();
-        if exchange.generation != generation {
+        let result = fetch::receive(response, &controller, timeout_ms, head_request).await;
+        let Some(shared) = shared.upgrade() else {
             return;
-        }
-        match result {
-            Ok(head) => {
-                exchange.head = head.bytes;
-                exchange.body_done = head.body.is_none();
-                exchange.reader = head.body;
-                exchange.phase = Phase::Streaming;
-                exchange.wake();
+        };
+        let wake = {
+            let mut exchange = shared.state.borrow_mut();
+            if exchange.generation != generation {
+                false
+            } else {
+                match result {
+                    Ok(head) => {
+                        exchange.head = head.bytes;
+                        exchange.body_done = head.body.is_none();
+                        exchange.reader = head.body;
+                        exchange.phase = Phase::Streaming;
+                    }
+                    Err(error) => exchange.fail(error),
+                }
+                true
             }
-            Err(error) => exchange.fail(error),
+        };
+        if wake {
+            shared.waiters.wake_all();
         }
     });
 }
@@ -145,30 +160,34 @@ fn start_read(shared: &Shared, exchange: &mut Exchange) {
     exchange.reading = true;
     let generation = exchange.generation;
     let timeout_ms = exchange.timeout_ms;
-    let shared = shared.clone();
+    let shared = Rc::downgrade(shared);
     spawn_local(async move {
         let result = fetch::read_chunk(&reader, &controller, timeout_ms).await;
-        let mut exchange = shared.borrow_mut();
-        if exchange.generation != generation {
+        let Some(shared) = shared.upgrade() else {
             return;
-        }
-        exchange.reading = false;
-        match result {
-            Ok(Some(chunk)) => {
-                exchange.chunk = Some((chunk, 0));
-                exchange.wake();
+        };
+        let wake = {
+            let mut exchange = shared.state.borrow_mut();
+            if exchange.generation != generation {
+                false
+            } else {
+                exchange.reading = false;
+                match result {
+                    Ok(Some(chunk)) => exchange.chunk = Some((chunk, 0)),
+                    Ok(None) => exchange.body_done = true,
+                    Err(error) => exchange.fail(error),
+                }
+                true
             }
-            Ok(None) => {
-                exchange.body_done = true;
-                exchange.wake();
-            }
-            Err(error) => exchange.fail(error),
+        };
+        if wake {
+            shared.waiters.wake_all();
         }
     });
 }
 
 fn poll_read(
-    shared: &Shared,
+    client: &mut HttpClientContext,
     cx: &mut core::task::Context<'_>,
     buffer: &mut [u8],
 ) -> core::task::Poll<Result<usize>> {
@@ -176,58 +195,77 @@ fn poll_read(
     if buffer.is_empty() {
         return Poll::Ready(Ok(0));
     }
-    let mut exchange = shared.borrow_mut();
-    loop {
-        match exchange.phase {
-            Phase::Idle => return Poll::Ready(Ok(0)),
-            Phase::Failed(error) => {
-                exchange.phase = Phase::Idle;
-                return Poll::Ready(Err(error));
-            }
-            Phase::Connecting => break,
-            Phase::Streaming => {
-                if exchange.head_cursor < exchange.head.len() {
-                    let start = exchange.head_cursor;
-                    let count = buffer.len().min(exchange.head.len() - start);
-                    buffer[..count].copy_from_slice(&exchange.head[start..start + count]);
-                    exchange.head_cursor += count;
-                    if exchange.head_cursor == exchange.head.len() {
-                        exchange.head = Vec::new();
-                        exchange.head_cursor = 0;
-                    }
-                    return Poll::Ready(Ok(count));
-                }
-                if let Some((chunk, offset)) = exchange.chunk.as_mut() {
-                    let remaining = chunk.length() - *offset;
-                    if remaining != 0 {
-                        let count = remaining.min(buffer.len().min(u32::MAX as usize) as u32);
-                        chunk
-                            .subarray(*offset, *offset + count)
-                            .copy_to(&mut buffer[..count as usize]);
-                        *offset += count;
-                        return Poll::Ready(Ok(count as usize));
-                    }
-                    exchange.chunk = None;
-                    continue;
-                }
-                if exchange.body_done {
-                    exchange.release();
+    let result = {
+        let mut exchange = client.exchange.state.borrow_mut();
+        loop {
+            match exchange.phase {
+                Phase::Idle => break Poll::Ready(Ok(0)),
+                Phase::Failed(error) => {
                     exchange.phase = Phase::Idle;
-                    return Poll::Ready(Ok(0));
+                    break Poll::Ready(Err(error));
                 }
-                if !exchange.reading {
-                    start_read(shared, &mut exchange);
+                Phase::Connecting => break Poll::Pending,
+                Phase::Streaming => {
+                    if exchange.head_cursor < exchange.head.len() {
+                        let start = exchange.head_cursor;
+                        let count = buffer.len().min(exchange.head.len() - start);
+                        buffer[..count].copy_from_slice(&exchange.head[start..start + count]);
+                        exchange.head_cursor += count;
+                        if exchange.head_cursor == exchange.head.len() {
+                            exchange.head = Vec::new();
+                            exchange.head_cursor = 0;
+                        }
+                        break Poll::Ready(Ok(count));
+                    }
+                    if let Some((chunk, offset)) = exchange.chunk.as_mut() {
+                        let remaining = chunk.length() - *offset;
+                        if remaining != 0 {
+                            let count = remaining.min(buffer.len().min(u32::MAX as usize) as u32);
+                            chunk
+                                .subarray(*offset, *offset + count)
+                                .copy_to(&mut buffer[..count as usize]);
+                            *offset += count;
+                            break Poll::Ready(Ok(count as usize));
+                        }
+                        exchange.chunk = None;
+                        continue;
+                    }
+                    if exchange.body_done {
+                        exchange.release();
+                        exchange.phase = Phase::Idle;
+                        break Poll::Ready(Ok(0));
+                    }
+                    if !exchange.reading {
+                        start_read(&client.exchange, &mut exchange);
+                    }
+                    break Poll::Pending;
                 }
-                break;
             }
         }
+    };
+    if result.is_ready() {
+        client.exchange.waiters.cancel(&mut client.waiter);
+        return result;
     }
-    exchange.waker = Some(cx.waker().clone());
+    if let Err(error) = client
+        .exchange
+        .waiters
+        .register(&mut client.waiter, cx.waker())
+    {
+        return Poll::Ready(Err(error));
+    }
     Poll::Pending
 }
 
 struct HttpClientContext {
     exchange: Shared,
+    waiter: Waiter,
+}
+
+impl Drop for HttpClientContext {
+    fn drop(&mut self) {
+        self.exchange.waiters.cancel(&mut self.waiter);
+    }
 }
 
 // SAFETY: this crate only exists on `wasm32`, where the runtime is a single
@@ -261,17 +299,24 @@ impl HttpClientDevice {
 impl BaseOperations for HttpClientDevice {
     fn open(&self, context: &mut Context) -> Result<()> {
         context.set_private_data(Box::new(HttpClientContext {
-            exchange: Rc::new(RefCell::new(Exchange::new(self.timeout_ms))),
+            exchange: Rc::new(SharedExchange {
+                state: RefCell::new(Exchange::new(self.timeout_ms)),
+                waiters: WaitQueue::new(),
+            }),
+            waiter: Waiter::new(),
         }));
         Ok(())
     }
 
     fn close(&self, context: &mut Context) -> Result<()> {
-        if let Some(client) = context.take_private_data_of_type::<HttpClientContext>() {
-            let mut exchange = client.exchange.borrow_mut();
-            exchange.release();
-            exchange.phase = Phase::Idle;
-            exchange.wake();
+        if let Some(mut client) = context.take_private_data_of_type::<HttpClientContext>() {
+            client.exchange.waiters.cancel(&mut client.waiter);
+            {
+                let mut exchange = client.exchange.state.borrow_mut();
+                exchange.release();
+                exchange.phase = Phase::Idle;
+            }
+            client.exchange.waiters.wake_all();
         }
         Ok(())
     }
@@ -284,9 +329,9 @@ impl BaseOperations for HttpClientDevice {
         _: Size,
     ) -> core::task::Poll<Result<usize>> {
         let client = context
-            .get_private_data_of_type::<HttpClientContext>()
+            .get_private_data_mutable_of_type::<HttpClientContext>()
             .ok_or(Error::InvalidContext)?;
-        poll_read(&client.exchange, cx, buffer)
+        poll_read(client, cx, buffer)
     }
 
     fn write(
@@ -301,9 +346,10 @@ impl BaseOperations for HttpClientDevice {
                 .get_private_data_of_type::<HttpClientContext>()
                 .ok_or(Error::InvalidContext)?;
             let prepared = request::prepare(self.scheme, buffer)?;
+            let head_request = prepared.method.eq_ignore_ascii_case("HEAD");
             let controller = AbortController::new().map_err(|_| Error::InternalError)?;
             let options = fetch::options(&prepared, &controller)?;
-            let mut exchange = client.exchange.borrow_mut();
+            let mut exchange = client.exchange.state.borrow_mut();
             if matches!(exchange.phase, Phase::Connecting | Phase::Streaming) {
                 return Err(Error::RessourceBusy);
             }
@@ -316,6 +362,7 @@ impl BaseOperations for HttpClientDevice {
                 response,
                 controller,
                 self.timeout_ms,
+                head_request,
             );
             Ok(buffer.len())
         })
@@ -324,17 +371,18 @@ impl BaseOperations for HttpClientDevice {
     fn clone_context(&self, context: &Context) -> Result<Context> {
         let client = context
             .get_private_data_of_type::<HttpClientContext>()
-            .ok_or(Error::InvalidParameter)?;
+            .ok_or(Error::InvalidContext)?;
         Ok(Context::new(Some(HttpClientContext {
             exchange: client.exchange.clone(),
+            waiter: Waiter::new(),
         })))
     }
 
     fn cancel_operation(&self, context: &mut Context, operation: file_system::Operation) {
         if operation == file_system::Operation::Read
-            && let Some(client) = context.get_private_data_of_type::<HttpClientContext>()
+            && let Some(client) = context.get_private_data_mutable_of_type::<HttpClientContext>()
         {
-            client.exchange.borrow_mut().waker = None;
+            client.exchange.waiters.cancel(&mut client.waiter);
         }
     }
 }

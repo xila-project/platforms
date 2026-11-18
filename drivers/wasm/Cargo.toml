@@ -67,6 +67,7 @@ web-sys = { version = "0.3.64", features = [
   "AbortSignal",
   "ReadableStreamDefaultReader",
   "ReferrerPolicy",
+  "RequestCache",
   "RequestCredentials",
   "RequestMode",
   "Request",
@@ -87,6 +88,7 @@ wasm-bindgen-test = "0.3"
 little_fs = { workspace = true }
 abi_definitions = { workspace = true }
 xila = { workspace = true }
+xila_http = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies.web-sys]
 version = "0.3.64"

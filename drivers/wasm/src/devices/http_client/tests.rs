@@ -157,17 +157,18 @@ fn head_is_parsable_by_the_guest_helpers() {
             ("content-type", "application/json"),
             ("content-length", "11"),
         ]),
+        false,
     )
     .unwrap();
     assert_eq!(
         head,
-        b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 11\r\n\r\n"
+        b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n"
     );
     let parser = HttpResponseParser::from_buffer(&head);
     assert_eq!(parser.get_status_code(), Some(200));
     assert_eq!(parser.get_body(), Some(&b""[..]));
     // HTTP/2 responses carry no reason phrase.
-    let head = build_head(404, "", &[]).unwrap();
+    let head = build_head(404, "", &[], false).unwrap();
     assert_eq!(head, b"HTTP/1.1 404\r\n\r\n");
     assert_eq!(
         HttpResponseParser::from_buffer(&head).get_status_code(),
@@ -187,19 +188,31 @@ fn head_drops_framing_headers_that_describe_the_encoded_body() {
             ("Transfer-Encoding", "chunked"),
             ("X-Kept", "yes"),
         ]),
+        false,
     )
     .unwrap();
     assert_eq!(head, b"HTTP/1.1 200 OK\r\nX-Kept: yes\r\n\r\n");
-    // Without a content coding the length is still the body's length.
-    let head = build_head(200, "OK", &pairs(&[("Content-Length", "3")])).unwrap();
-    assert_eq!(head, b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\n");
+    // Under CORS, Content-Encoding is hidden while Content-Length stays visible
+    // with the encoded wire length, so Content-Length is still dropped.
+    let head = build_head(200, "OK", &pairs(&[("Content-Length", "674")]), false).unwrap();
+    assert_eq!(head, b"HTTP/1.1 200 OK\r\n\r\n");
+    // HEAD and null-body statuses carry no body, so Content-Length stays.
+    let head = build_head(200, "OK", &pairs(&[("Content-Length", "674")]), true).unwrap();
+    assert_eq!(head, b"HTTP/1.1 200 OK\r\nContent-Length: 674\r\n\r\n");
+    for status in [100, 204, 304] {
+        let head = build_head(status, "", &pairs(&[("Content-Length", "674")]), false).unwrap();
+        assert_eq!(
+            head,
+            alloc::format!("HTTP/1.1 {status}\r\nContent-Length: 674\r\n\r\n").into_bytes()
+        );
+    }
 }
 
 #[wasm_bindgen_test]
 fn head_larger_than_the_native_buffer_is_refused() {
     let value = "x".repeat(MAX_HEAD_SIZE);
     assert_eq!(
-        build_head(200, "OK", &pairs(&[("X-Big", &value)])),
+        build_head(200, "OK", &pairs(&[("X-Big", &value)]), false),
         Err(Error::FileTooLarge)
     );
 }
