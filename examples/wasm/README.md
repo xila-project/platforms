@@ -107,9 +107,18 @@ The OS canvas still uses the existing localized LVGL Montserrat Regular subsets 
 - Guests run cooperatively in Wasmi on the browser's executor, not as separate
   native browser WebAssembly instances. Fuel exhaustion and supported WASI
   suspension calls yield to the executor.
-- There is no Xila network manager in this example. The browser HTTP device
-  uses Fetch and remains subject to browser security restrictions, including
-  CORS; it does not provide raw sockets.
+- There is no Xila network manager in this example. `/devices/network/http_client`
+  and `/devices/network/https_client` speak the native devices' protocol (one
+  raw HTTP/1.1 request written, then the response head and the decoded body
+  read) on top of Fetch, so Weather and the shell's `web_request` work against
+  servers that allow cross-origin requests (for example Open-Meteo). The
+  browser owns the connection: `Host`, `Connection`, `User-Agent`,
+  `Accept-Encoding` and other headers pages may not set are dropped (the browser
+  sets them; `User-Agent` is not CORS-safelisted either), redirects are followed by the
+  browser, failures are all reported as an I/O error, and raw sockets and
+  `dns_resolve` are unavailable. Plain `http` only works from an `http` page.
+  The body is read from the browser one chunk at a time, so large responses do
+  not accumulate in WebAssembly memory.
 - Runtime limitations still apply, including the supported graphics subset,
   clock-only WASI polling, unsupported suspension in WebAssembly start sections,
   and the currently unused stack-size option.
@@ -208,6 +217,15 @@ file containing `{"goog:chromeOptions":{"binary":"/path/to/chromium"}}`.
 These tests use real OPFS files, including MBR/LittleFS save/reopen coverage.
 The disk-name and collision rules can also be tested with
 `node --test examples/wasm/tests/disk_manager.test.mjs`.
+
+The HTTP client device is tested with a replaced `fetch` and needs no network.
+Request translation and response framing also run as library tests in the
+browser (`--lib`); the device tests run under Node:
+
+```sh
+CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner \
+cargo test -p xila-drivers-wasm --target wasm32-unknown-unknown --test http_client
+```
 
 To test mode switching and recovery in Chromium, serve the built example as
 shown above, install Playwright locally, and run the browser regression:

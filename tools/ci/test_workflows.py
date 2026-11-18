@@ -424,12 +424,12 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         self.assertIn('--profile release-wasm', build['run'])
         self.assertIn('wasm32-wasip1/release-wasm', workflow)
 
-    def test_profiles_are_explicit_and_browser_does_not_gain_weather(self):
+    def test_profiles_are_explicit_and_both_seed_weather(self):
         profiles = ROOT / 'tools/fs_image/profiles'
         native = (profiles / 'native.txt').read_text().splitlines()
         browser = (profiles / 'browser.txt').read_text().splitlines()
         self.assertEqual(native, ['calculator', 'clock', 'digits', 'pixel_painter', 'synth', 'text_editor', 'weather'])
-        self.assertEqual(browser, native[:-1])
+        self.assertEqual(browser, native)
 
 
 if __name__ == '__main__':

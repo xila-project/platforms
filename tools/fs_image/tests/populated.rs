@@ -134,8 +134,8 @@ fn browser_and_native_bundles_contain_their_declared_apps() {
                 assert!(contains(content.as_bytes()), "{profile}: {content}");
             }
         }
-        assert_eq!(text.contains(",weather"), profile == "native");
-        assert_eq!(contains(b"guest fixture for weather"), profile == "native");
+        assert!(text.contains(",weather"), "{profile}");
+        assert!(contains(b"guest fixture for weather"), "{profile}");
         assert!(contains(b"/applications/executables/activity"));
         assert!(contains(b"/applications/executables/terminal"));
         assert!(contains(
