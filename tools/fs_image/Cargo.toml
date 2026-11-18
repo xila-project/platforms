@@ -5,15 +5,7 @@ edition = "2024"
 rust-version.workspace = true
 
 [dependencies]
-authentication = { workspace = true }
-users = { workspace = true }
-drivers_std = { workspace = true }
-file_system = { workspace = true }
-little_fs = { workspace = true }
-critical-section = { workspace = true, features = ["std"] }
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
+tools_image = { workspace = true }
 
 [[bin]]
 name = "fs_image"
