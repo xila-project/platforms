@@ -5,6 +5,9 @@ use core::task::{Context, Poll, Waker};
 use file_system::{
     ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice, Error,
     MountOperations, Result, Size,
+    character_device::{
+        GET_TERMINAL_ATTRIBUTES, SET_TERMINAL_ATTRIBUTES, TerminalAttributes, TerminalFlags,
+    },
 };
 use shared::AnyByLayout;
 
@@ -457,12 +460,17 @@ impl ScriptedInputDevice {
     fn waker_registrations(&self) -> usize {
         self.waker_count.load(Ordering::SeqCst)
     }
+
+    /// Make `chunk` the next raw input, after the chunks not read yet.
+    fn push_chunk(&self, chunk: &[u8]) {
+        self.state.lock().unwrap().chunks.push(chunk.to_vec());
+    }
 }
 
 impl DirectBaseOperations for ScriptedInputDevice {
     fn read(
         &self,
-        _cx: &mut Context<'_>,
+        _context: &mut Context<'_>,
         buffer: &mut [u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -482,7 +490,7 @@ impl DirectBaseOperations for ScriptedInputDevice {
 
     fn write(
         &self,
-        _cx: &mut Context<'_>,
+        _context: &mut Context<'_>,
         _buffer: &[u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -512,7 +520,7 @@ impl RecordingOutputDevice {
 impl DirectBaseOperations for RecordingOutputDevice {
     fn read(
         &self,
-        _cx: &mut Context<'_>,
+        _context: &mut Context<'_>,
         _buffer: &mut [u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -521,7 +529,7 @@ impl DirectBaseOperations for RecordingOutputDevice {
 
     fn write(
         &self,
-        _cx: &mut Context<'_>,
+        _context: &mut Context<'_>,
         buffer: &[u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -538,7 +546,7 @@ struct StalledOutputDevice;
 impl DirectBaseOperations for StalledOutputDevice {
     fn read(
         &self,
-        _cx: &mut Context<'_>,
+        _context: &mut Context<'_>,
         _buffer: &mut [u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -547,7 +555,7 @@ impl DirectBaseOperations for StalledOutputDevice {
 
     fn write(
         &self,
-        _cx: &mut Context<'_>,
+        _context: &mut Context<'_>,
         _buffer: &[u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -566,12 +574,12 @@ fn device_pending_only_after_inner_input_pending() {
 
     let mut buf = [0u8; 32];
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
+    let mut context = Context::from_waker(waker);
 
     // Initial read: pulls "hel", then pulls "lo", neither completes line.
     // Script is exhausted, inner input returns Pending, registering waker.
     // TerminalInputDevice returns Pending!
-    let poll_res = terminal.read(&mut cx, &mut buf, 0);
+    let poll_res = terminal.read(&mut context, &mut buf, 0);
     assert_eq!(poll_res, Poll::Pending);
 
     // Inner input was polled until Pending and registered the waker once
@@ -586,9 +594,9 @@ fn device_line_arriving_in_chunks_delivered_when_complete() {
 
     let mut buf = [0u8; 32];
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
+    let mut context = Context::from_waker(waker);
 
-    let poll_res = terminal.read(&mut cx, &mut buf, 0);
+    let poll_res = terminal.read(&mut context, &mut buf, 0);
     assert_eq!(poll_res, Poll::Ready(Ok(5)));
     assert_eq!(&buf[..5], b"abcd\n");
 }
@@ -601,9 +609,9 @@ fn device_echo_bytes_reach_output_in_order() {
 
     let mut buf = [0u8; 32];
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
+    let mut context = Context::from_waker(waker);
 
-    let poll_res = terminal.read(&mut cx, &mut buf, 0);
+    let poll_res = terminal.read(&mut context, &mut buf, 0);
     assert_eq!(poll_res, Poll::Ready(Ok(2)));
     assert_eq!(&buf[..2], b"b\n");
 
@@ -619,11 +627,11 @@ fn device_stalled_output_does_not_prevent_delivery() {
 
     let mut buf = [0u8; 32];
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
+    let mut context = Context::from_waker(waker);
 
     // Output write returns Pending, which is dropped per echo policy.
     // Line delivery succeeds without stalling!
-    let poll_res = terminal.read(&mut cx, &mut buf, 0);
+    let poll_res = terminal.read(&mut context, &mut buf, 0);
     assert_eq!(poll_res, Poll::Ready(Ok(8)));
     assert_eq!(&buf[..8], b"command\n");
 }
@@ -632,15 +640,25 @@ fn device_stalled_output_does_not_prevent_delivery() {
 fn device_control_forwarding() {
     struct MockTerminalDevice;
     impl DirectBaseOperations for MockTerminalDevice {
-        fn read(&self, _cx: &mut Context<'_>, _buf: &mut [u8], _pos: Size) -> Poll<Result<usize>> {
+        fn read(
+            &self,
+            _context: &mut Context<'_>,
+            _buf: &mut [u8],
+            _pos: Size,
+        ) -> Poll<Result<usize>> {
             Poll::Pending
         }
-        fn write(&self, _cx: &mut Context<'_>, _buf: &[u8], _pos: Size) -> Poll<Result<usize>> {
+        fn write(
+            &self,
+            _context: &mut Context<'_>,
+            _buf: &[u8],
+            _pos: Size,
+        ) -> Poll<Result<usize>> {
             Poll::Ready(Ok(0))
         }
         fn control(
             &self,
-            _cx: &mut Context<'_>,
+            _context: &mut Context<'_>,
             command: ControlCommandIdentifier,
             _input: &AnyByLayout,
             output: &mut AnyByLayout,
@@ -664,10 +682,10 @@ fn device_control_forwarding() {
     let input = ();
     let in_layout = AnyByLayout::from(&input);
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
+    let mut context = Context::from_waker(waker);
 
     let res = terminal.control(
-        &mut cx,
+        &mut context,
         file_system::character_device::IS_A_TERMINAL::IDENTIFIER,
         in_layout,
         out,
@@ -690,7 +708,7 @@ struct LimitedOutputDevice {
 impl DirectBaseOperations for LimitedOutputDevice {
     fn read(
         &self,
-        _cx: &mut Context<'_>,
+        _context: &mut Context<'_>,
         _buffer: &mut [u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -699,7 +717,7 @@ impl DirectBaseOperations for LimitedOutputDevice {
 
     fn write(
         &self,
-        _cx: &mut Context<'_>,
+        _context: &mut Context<'_>,
         buffer: &[u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
@@ -723,12 +741,12 @@ impl DirectCharacterDevice for LimitedOutputDevice {}
 
 fn write_all<D: DirectBaseOperations>(device: &D, mut buffer: &[u8]) {
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
+    let mut context = Context::from_waker(waker);
     let mut attempts = 0;
     while !buffer.is_empty() {
         attempts += 1;
         assert!(attempts < 1000, "write made no progress");
-        if let Poll::Ready(result) = device.write(&mut cx, buffer, 0) {
+        if let Poll::Ready(result) = device.write(&mut context, buffer, 0) {
             buffer = &buffer[result.unwrap()..];
         }
     }
@@ -771,6 +789,614 @@ fn output_survives_partial_inner_writes() {
 fn output_is_pending_when_inner_is_pending_before_any_progress() {
     let terminal = TerminalOutputDevice::new(StalledOutputDevice);
     let waker = Waker::noop();
-    let mut cx = Context::from_waker(waker);
-    assert_eq!(terminal.write(&mut cx, b"text\n", 0), Poll::Pending);
+    let mut context = Context::from_waker(waker);
+    assert_eq!(terminal.write(&mut context, b"text\n", 0), Poll::Pending);
+}
+
+// -----------------------------------------------------------------------------
+// Terminal attributes: echo off and raw (non-canonical) input
+// -----------------------------------------------------------------------------
+
+fn without_echo() -> TerminalAttributes {
+    TerminalAttributes::INTERACTIVE.with_echo(false)
+}
+
+#[test]
+fn editor_starts_interactive() {
+    let editor = LineEditor::<256>::new();
+    assert_eq!(editor.attributes(), TerminalAttributes::INTERACTIVE);
+}
+
+#[test]
+fn echo_off_hides_typed_characters_but_ends_the_line() {
+    let mut editor = LineEditor::<256>::new();
+    editor.set_attributes(without_echo());
+    let mut echo = Vec::new();
+
+    let result = editor.feed_slice("sécret\r".as_bytes(), &mut echo);
+    assert!(result.line_ready);
+    assert_eq!(echo, b"\r\n");
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], "sécret\n".as_bytes());
+}
+
+#[test]
+fn echo_off_still_edits_the_line_silently() {
+    let mut editor = LineEditor::<256>::new();
+    editor.set_attributes(without_echo());
+    let mut echo = Vec::new();
+
+    // Backspace, Ctrl-U, Tab and an escape sequence are applied without output.
+    editor.feed_slice(b"ab\x08c\x15x\ty\x1b[D\r\n", &mut echo);
+    assert_eq!(echo, b"\r\n");
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"x y\n");
+}
+
+#[test]
+fn echo_off_ctrl_c_writes_only_the_line_break() {
+    let mut editor = LineEditor::<256>::new();
+    editor.set_attributes(without_echo());
+    let mut echo = Vec::new();
+
+    let result = editor.feed_slice(b"secret\x03", &mut echo);
+    assert!(result.line_ready);
+    assert_eq!(echo, b"\r\n");
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"\n");
+}
+
+#[test]
+fn echo_off_does_not_ring_the_bell_on_overflow() {
+    let mut editor = LineEditor::<4>::new();
+    editor.set_attributes(without_echo());
+    let mut echo = Vec::new();
+
+    editor.feed_slice(b"abcdef", &mut echo);
+    assert!(echo.is_empty());
+    assert_eq!(editor.current_line(), b"abcd");
+}
+
+#[test]
+fn echo_back_on_restores_echo() {
+    let mut editor = LineEditor::<256>::new();
+    let mut echo = Vec::new();
+
+    editor.set_attributes(without_echo());
+    editor.feed_slice(b"secret\r", &mut echo);
+    editor.set_attributes(TerminalAttributes::INTERACTIVE);
+    echo.clear();
+    editor.feed_slice(b"ls\r", &mut echo);
+    assert_eq!(echo, b"ls\r\n");
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"secret\nls\n");
+}
+
+#[test]
+fn raw_mode_delivers_every_byte_unchanged_and_at_once() {
+    let mut editor = LineEditor::<256>::new();
+    editor.set_attributes(TerminalAttributes::RAW);
+    let mut echo = Vec::new();
+
+    let input = b"a\r\x03\x04\x08\x7f\x15\x1b[A\n";
+    for &byte in input {
+        let result = editor.feed_byte(byte, &mut echo);
+        assert!(result.line_ready);
+        assert!(!result.eof);
+    }
+    assert!(echo.is_empty());
+    assert!(!editor.has_eof());
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], input);
+}
+
+#[test]
+fn raw_mode_with_echo_writes_bytes_back_verbatim() {
+    let mut editor = LineEditor::<256>::new();
+    editor.set_attributes(TerminalAttributes::INTERACTIVE.with_canonical(false));
+    let mut echo = Vec::new();
+
+    editor.feed_slice(b"q\r\x08", &mut echo);
+    assert_eq!(echo, b"q\r\x08");
+}
+
+#[test]
+fn raw_mode_drops_bytes_when_the_reader_queue_is_full() {
+    let mut editor = LineEditor::<16, 4>::new();
+    editor.set_attributes(TerminalAttributes::INTERACTIVE.with_canonical(false));
+    let mut echo = Vec::new();
+
+    editor.feed_slice(b"abcdef", &mut echo);
+    // Dropped bytes are not echoed either.
+    assert_eq!(echo, b"abcd");
+
+    let mut buffer = [0u8; 8];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"abcd");
+}
+
+#[test]
+fn leaving_canonical_mode_releases_the_partial_line() {
+    let mut editor = LineEditor::<256>::new();
+    let mut echo = Vec::new();
+
+    editor.feed_slice(b"first\npart", &mut echo);
+    editor.set_attributes(TerminalAttributes::RAW);
+    assert_eq!(editor.current_line(), b"");
+    editor.feed_slice(b"!", &mut echo);
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"first\npart!");
+}
+
+#[test]
+fn returning_to_canonical_mode_edits_lines_again() {
+    let mut editor = LineEditor::<256>::new();
+    let mut echo = Vec::new();
+
+    editor.set_attributes(TerminalAttributes::RAW);
+    editor.feed_slice(b"x\r", &mut echo);
+    editor.set_attributes(TerminalAttributes::INTERACTIVE);
+    // The '\n' of the raw "\r" must not be swallowed as a CR LF pair.
+    let result = editor.feed_slice(b"\nab\x08c\r", &mut echo);
+    assert!(result.line_ready);
+    assert_eq!(echo, b"\r\nab\x08 \x08c\r\n");
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"x\r\nac\n");
+}
+
+fn get_attributes<D: DirectBaseOperations>(device: &D) -> TerminalAttributes {
+    let mut attributes = TerminalAttributes::RAW;
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    let result = device.control(
+        &mut context,
+        GET_TERMINAL_ATTRIBUTES::IDENTIFIER,
+        AnyByLayout::from(&()),
+        AnyByLayout::from_mutable(&mut attributes),
+    );
+    assert_eq!(result, Poll::Ready(Ok(())));
+    attributes
+}
+
+fn set_attributes<D: DirectBaseOperations + ?Sized>(
+    device: &D,
+    attributes: TerminalAttributes,
+) -> Poll<Result<()>> {
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    device.control(
+        &mut context,
+        SET_TERMINAL_ATTRIBUTES::IDENTIFIER,
+        AnyByLayout::from(&attributes),
+        AnyByLayout::from_mutable(&mut ()),
+    )
+}
+
+#[test]
+fn device_gets_and_sets_terminal_attributes() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![]),
+        RecordingOutputDevice::new(),
+    );
+    assert_eq!(get_attributes(&terminal), TerminalAttributes::INTERACTIVE);
+
+    assert_eq!(
+        set_attributes(&terminal, without_echo()),
+        Poll::Ready(Ok(()))
+    );
+    assert_eq!(get_attributes(&terminal), without_echo());
+
+    assert_eq!(
+        set_attributes(&terminal, TerminalAttributes::INTERACTIVE),
+        Poll::Ready(Ok(()))
+    );
+    assert_eq!(get_attributes(&terminal), TerminalAttributes::INTERACTIVE);
+}
+
+#[test]
+fn device_rejects_unknown_terminal_flags() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![]),
+        RecordingOutputDevice::new(),
+    );
+    let unknown = TerminalAttributes::new(TerminalFlags::from_bits_retain(1 << 31));
+    assert_eq!(
+        set_attributes(&terminal, unknown),
+        Poll::Ready(Err(Error::InvalidParameter))
+    );
+    assert_eq!(get_attributes(&terminal), TerminalAttributes::INTERACTIVE);
+}
+
+#[test]
+fn device_reads_a_password_without_echo() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![b"hunter2\r"]),
+        RecordingOutputDevice::new(),
+    );
+    assert_eq!(
+        set_attributes(&terminal, without_echo()),
+        Poll::Ready(Ok(()))
+    );
+
+    let mut buffer = [0u8; 32];
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    assert_eq!(
+        terminal.read(&mut context, &mut buffer, 0),
+        Poll::Ready(Ok(8))
+    );
+    assert_eq!(&buffer[..8], b"hunter2\n");
+    assert_eq!(terminal.inner_out().recorded(), b"\r\n");
+}
+
+#[test]
+fn device_raw_mode_returns_bytes_without_waiting_for_enter() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![b"\x1b[A"]),
+        RecordingOutputDevice::new(),
+    );
+    assert_eq!(
+        set_attributes(&terminal, TerminalAttributes::RAW),
+        Poll::Ready(Ok(()))
+    );
+
+    let mut buffer = [0u8; 32];
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    assert_eq!(
+        terminal.read(&mut context, &mut buffer, 0),
+        Poll::Ready(Ok(3))
+    );
+    assert_eq!(&buffer[..3], b"\x1b[A");
+    assert!(terminal.inner_out().recorded().is_empty());
+
+    // Nothing more is buffered: the next read waits for the inner device.
+    assert_eq!(terminal.read(&mut context, &mut buffer, 0), Poll::Pending);
+}
+
+#[test]
+fn device_forwards_other_control_commands_to_the_input_device() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![]),
+        RecordingOutputDevice::new(),
+    );
+    let mut block_size = 0u32;
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    // The scripted device keeps the default control, which rejects every command.
+    assert_eq!(
+        terminal.control(
+            &mut context,
+            file_system::block_device::GET_BLOCK_SIZE::IDENTIFIER,
+            AnyByLayout::from(&()),
+            AnyByLayout::from_mutable(&mut block_size),
+        ),
+        Poll::Ready(Err(Error::UnsupportedOperation))
+    );
+}
+
+// -----------------------------------------------------------------------------
+// Type-ahead: a raw chunk is fed one line at a time
+// -----------------------------------------------------------------------------
+
+fn read_now<D: DirectBaseOperations>(device: &D, buffer: &mut [u8]) -> Poll<Result<usize>> {
+    let mut context = Context::from_waker(Waker::noop());
+    device.read(&mut context, buffer, 0)
+}
+
+#[test]
+fn device_typed_ahead_password_is_not_echoed() {
+    // The user name and the password arrive in one raw chunk, before the
+    // shell turns echo off at the password prompt.
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![b"admin\rhunter2\r"]),
+        RecordingOutputDevice::new(),
+    );
+    let mut buffer = [0u8; 32];
+
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(6)));
+    assert_eq!(&buffer[..6], b"admin\n");
+    assert_eq!(terminal.inner_out().recorded(), b"admin\r\n");
+
+    assert_eq!(
+        set_attributes(&terminal, without_echo()),
+        Poll::Ready(Ok(()))
+    );
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(8)));
+    assert_eq!(&buffer[..8], b"hunter2\n");
+    // Only the line break of the password line is written.
+    assert_eq!(terminal.inner_out().recorded(), b"admin\r\n\r\n");
+}
+
+#[test]
+fn device_typed_ahead_lines_keep_carriage_return_line_feed_pairs() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![b"a\r\nb\r\n"]),
+        RecordingOutputDevice::new(),
+    );
+    let mut buffer = [0u8; 32];
+
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(2)));
+    assert_eq!(&buffer[..2], b"a\n");
+    // The line feed kept for the next read is still paired with its carriage return.
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(2)));
+    assert_eq!(&buffer[..2], b"b\n");
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Pending);
+    assert_eq!(terminal.inner_out().recorded(), b"a\r\nb\r\n");
+}
+
+#[test]
+fn device_carriage_return_line_feed_pair_leaves_nothing_for_raw_mode() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![b"app\r\n"]),
+        RecordingOutputDevice::new(),
+    );
+    let mut buffer = [0u8; 32];
+
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(4)));
+    assert_eq!(&buffer[..4], b"app\n");
+
+    assert_eq!(
+        set_attributes(&terminal, TerminalAttributes::RAW),
+        Poll::Ready(Ok(()))
+    );
+    // The line feed of the Enter key went with its line: no stray byte is left.
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Pending);
+}
+
+#[test]
+fn device_typed_ahead_bytes_follow_a_switch_to_raw_mode() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![b"ls\rq\x03"]),
+        RecordingOutputDevice::new(),
+    );
+    let mut buffer = [0u8; 32];
+
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(3)));
+    assert_eq!(&buffer[..3], b"ls\n");
+
+    assert_eq!(
+        set_attributes(&terminal, TerminalAttributes::RAW),
+        Poll::Ready(Ok(()))
+    );
+    // The rest of the chunk is delivered raw: Ctrl-C is not interpreted.
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(2)));
+    assert_eq!(&buffer[..2], b"q\x03");
+}
+
+#[test]
+fn device_typed_ahead_end_of_input_comes_before_the_next_line() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![b"\x04next\r"]),
+        RecordingOutputDevice::new(),
+    );
+    let mut buffer = [0u8; 32];
+
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(0)));
+    assert_eq!(read_now(&terminal, &mut buffer), Poll::Ready(Ok(5)));
+    assert_eq!(&buffer[..5], b"next\n");
+}
+
+#[test]
+fn editor_feeds_until_the_end_of_the_first_line() {
+    let mut editor = LineEditor::<256>::new();
+    let mut echo = Vec::new();
+
+    assert_eq!(editor.feed_until_line_end(b"ab\rcd\r", &mut echo), 3);
+    assert_eq!(editor.feed_until_line_end(b"e\r\nf\r", &mut echo), 3);
+    assert_eq!(editor.feed_until_line_end(b"x\x03y", &mut echo), 2);
+    assert_eq!(editor.feed_until_line_end(b"\x04z", &mut echo), 1);
+    assert_eq!(editor.feed_until_line_end(b"partial", &mut echo), 7);
+
+    editor.set_attributes(TerminalAttributes::RAW);
+    assert_eq!(editor.feed_until_line_end(b"r\rs\r", &mut echo), 4);
+}
+
+// -----------------------------------------------------------------------------
+// Mode switches reset the canonical line state
+// -----------------------------------------------------------------------------
+
+#[test]
+fn mode_switch_forgets_a_pending_carriage_return() {
+    let mut editor = LineEditor::<256>::new();
+    let mut echo = Vec::new();
+
+    // The carriage return would swallow a following line feed as a CR LF pair.
+    editor.feed_slice(b"a\r", &mut echo);
+    editor.set_attributes(TerminalAttributes::RAW);
+    editor.set_attributes(TerminalAttributes::INTERACTIVE);
+
+    // After the switch, a line feed ends a new, empty line.
+    echo.clear();
+    let result = editor.feed_slice(b"\n", &mut echo);
+    assert!(result.line_ready);
+    assert_eq!(echo, b"\r\n");
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"a\n\n");
+}
+
+#[test]
+fn mode_switch_forgets_a_partial_escape_sequence() {
+    let mut editor = LineEditor::<256>::new();
+    let mut echo = Vec::new();
+
+    // A partial control sequence would swallow the next byte as its final byte.
+    editor.feed_slice(b"\x1b[", &mut echo);
+    editor.set_attributes(TerminalAttributes::RAW);
+    editor.set_attributes(TerminalAttributes::INTERACTIVE);
+
+    let result = editor.feed_slice(b"A\r", &mut echo);
+    assert!(result.line_ready);
+    assert_eq!(echo, b"A\r\n");
+
+    let mut buffer = [0u8; 32];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"A\n");
+}
+
+// -----------------------------------------------------------------------------
+// A pending reader is woken when a mode switch releases input
+// -----------------------------------------------------------------------------
+
+#[derive(Default)]
+struct CountingWaker {
+    wakes: AtomicUsize,
+}
+
+impl CountingWaker {
+    fn wakes(&self) -> usize {
+        self.wakes.load(Ordering::SeqCst)
+    }
+}
+
+impl std::task::Wake for CountingWaker {
+    fn wake(self: std::sync::Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    fn wake_by_ref(self: &std::sync::Arc<Self>) {
+        self.wakes.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+#[test]
+fn device_switch_to_raw_mode_wakes_the_pending_reader() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![b"part"]),
+        RecordingOutputDevice::new(),
+    );
+    let counting_waker = std::sync::Arc::new(CountingWaker::default());
+    let waker = Waker::from(counting_waker.clone());
+    let mut context = Context::from_waker(&waker);
+    let mut buffer = [0u8; 32];
+
+    // The partial line is buffered and the reader waits for Enter.
+    assert_eq!(terminal.read(&mut context, &mut buffer, 0), Poll::Pending);
+
+    // Turning echo off releases nothing: the reader is not woken.
+    assert_eq!(
+        set_attributes(&terminal, without_echo()),
+        Poll::Ready(Ok(()))
+    );
+    assert_eq!(counting_waker.wakes(), 0);
+
+    // Leaving canonical mode releases the partial line and wakes the reader.
+    assert_eq!(
+        set_attributes(&terminal, TerminalAttributes::RAW),
+        Poll::Ready(Ok(()))
+    );
+    assert_eq!(counting_waker.wakes(), 1);
+
+    // The waker was taken, not cloned: another switch while the released
+    // line is still readable does not wake the reader again.
+    assert_eq!(
+        set_attributes(&terminal, TerminalAttributes::RAW),
+        Poll::Ready(Ok(()))
+    );
+    assert_eq!(counting_waker.wakes(), 1);
+
+    assert_eq!(
+        terminal.read(&mut context, &mut buffer, 0),
+        Poll::Ready(Ok(4))
+    );
+    assert_eq!(&buffer[..4], b"part");
+
+    // Back in canonical mode, the reader waits for a new line, then reads its
+    // first byte when it is completed.
+    assert_eq!(
+        set_attributes(&terminal, TerminalAttributes::INTERACTIVE),
+        Poll::Ready(Ok(()))
+    );
+    terminal.inner_in().push_chunk(b"next");
+    assert_eq!(terminal.read(&mut context, &mut buffer, 0), Poll::Pending);
+    terminal.inner_in().push_chunk(b"\r");
+    assert_eq!(
+        terminal.read(&mut context, &mut buffer[..1], 0),
+        Poll::Ready(Ok(1))
+    );
+    assert_eq!(&buffer[..1], b"n");
+
+    // The rest of the line is still queued, but the read that returned data
+    // cleared the waker: a switch now wakes no one.
+    assert_eq!(
+        set_attributes(&terminal, without_echo()),
+        Poll::Ready(Ok(()))
+    );
+    assert_eq!(counting_waker.wakes(), 1);
+}
+
+/// Raw input device that, once its single chunk is read, switches the terminal
+/// wrapping it to raw mode from inside its next `read`, just before answering
+/// `Pending`: the switch lands after the terminal checked for readable input
+/// and before it registered its waker.
+struct SwitchingInputDevice {
+    chunk: std::sync::Mutex<Option<Vec<u8>>>,
+    terminal: std::sync::OnceLock<&'static dyn DirectBaseOperations>,
+}
+
+impl DirectBaseOperations for SwitchingInputDevice {
+    fn read(
+        &self,
+        _context: &mut Context<'_>,
+        buffer: &mut [u8],
+        _absolute_position: Size,
+    ) -> Poll<Result<usize>> {
+        if let Some(chunk) = self.chunk.lock().unwrap().take() {
+            buffer[..chunk.len()].copy_from_slice(&chunk);
+            return Poll::Ready(Ok(chunk.len()));
+        }
+        let terminal = self.terminal.get().expect("the terminal is set");
+        assert_eq!(
+            set_attributes(*terminal, TerminalAttributes::RAW),
+            Poll::Ready(Ok(()))
+        );
+        Poll::Pending
+    }
+
+    fn write(
+        &self,
+        _context: &mut Context<'_>,
+        _buffer: &[u8],
+        _absolute_position: Size,
+    ) -> Poll<Result<usize>> {
+        Poll::Ready(Err(Error::UnsupportedOperation))
+    }
+}
+
+impl MountOperations for SwitchingInputDevice {}
+impl DirectCharacterDevice for SwitchingInputDevice {}
+
+#[test]
+fn device_switch_to_raw_mode_during_the_inner_read_returns_the_partial_line() {
+    let terminal: &'static TerminalInputDevice<SwitchingInputDevice, RecordingOutputDevice> =
+        std::boxed::Box::leak(std::boxed::Box::new(TerminalInputDevice::new(
+            SwitchingInputDevice {
+                chunk: std::sync::Mutex::new(Some(b"part".to_vec())),
+                terminal: std::sync::OnceLock::new(),
+            },
+            RecordingOutputDevice::new(),
+        )));
+    assert!(terminal.inner_in().terminal.set(terminal).is_ok());
+    let mut buffer = [0u8; 32];
+
+    // No wake-up would follow a `Pending` answer: the switch happened before
+    // the waker was registered, so the terminal checks again after registering.
+    assert_eq!(read_now(terminal, &mut buffer), Poll::Ready(Ok(4)));
+    assert_eq!(&buffer[..4], b"part");
 }
