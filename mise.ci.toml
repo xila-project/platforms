@@ -92,6 +92,10 @@ tools.rust = { version = "nightly-2026-10-12", profile = "minimal", components =
 tools."github:trunk-rs/trunk" = "0.21.14"
 run = "trunk build --release --public-url ./"
 
+[tasks."ci:font-japanese"]
+description = "Install the verified Japanese font from the matching Core checkout"
+run = "bash .ci-core-fonts/tools/localization/fetch-japanese-font.sh"
+
 [tasks."pages:build"]
 tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
   "rustfmt",
@@ -102,7 +106,7 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", compone
 run = '''
 set -eu
 mkdir -p pages/demonstrations/wasm target/reference-filesystem-images
-for locale in ${XILA_DEMO_LOCALES:-en fr es de pt-BR it pl}; do
+for locale in ${XILA_DEMO_LOCALES:-en fr es de pt-BR it pl ja zh-CN}; do
   export EMBEDDED_I18N_LOCALE="$locale"
   export CARGO_TARGET_DIR="${CARGO_TARGET_ROOT:-$PWD/target/pages}/$locale"
   mise run ci:build-applications

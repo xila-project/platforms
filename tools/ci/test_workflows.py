@@ -91,15 +91,19 @@ class PlatformWorkflowPolicy(unittest.TestCase):
     def test_browser_demo_profiles_and_images_are_reproducible(self):
         tasks = tomllib.loads(read('mise.ci.toml'))['tasks']
         script = tasks['pages:build']['run']
-        for locale in ('en', 'fr', 'es', 'de', 'pt-BR', 'it', 'pl'):
+        for locale in ('en', 'fr', 'es', 'de', 'pt-BR', 'it', 'pl', 'ja', 'zh-CN'):
             self.assertRegex(script, rf'\b{re.escape(locale)}\b')
         self.assertIn('cmp "$CARGO_TARGET_DIR/seed/wasm/seed.img"', script)
         self.assertIn('cmp "$CARGO_TARGET_DIR/seed/wasm/native.img"', script)
         self.assertIn('mise run pages:demo', script)
+        self.assertIn('fetch-japanese-font.sh', tasks['ci:font-japanese']['run'])
         demo = read('.github/workflows/demo.yml')
+        self.assertIn('en fr es de pt-BR it pl ja zh-CN', demo)
         self.assertIn('platform-demonstrations', demo)
         self.assertIn('reference-filesystem-images', demo)
         self.assertIn('XILA_FONT_CATALOG_ROOTS', demo)
+        self.assertIn('XILA_JAPANESE_FONT_PATH', demo)
+        self.assertIn('mise run ci:font-japanese', demo)
         self.assertIn('actions/upload-pages-artifact', demo)
         self.assertIn('actions/deploy-pages', demo)
         self.assertIn("github.event_name == 'workflow_run'", demo)
@@ -163,7 +167,7 @@ class PlatformWorkflowPolicy(unittest.TestCase):
             env = os.environ | {'PATH': f"{bin_dir}:{os.environ['PATH']}", 'CARGO_TARGET_ROOT': str(root / 'locale targets')}
             result = subprocess.run(['sh', '-c', script], cwd=root, env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            for locale in ('en', 'fr', 'es', 'de', 'pt-BR', 'it', 'pl'):
+            for locale in ('en', 'fr', 'es', 'de', 'pt-BR', 'it', 'pl', 'ja', 'zh-CN'):
                 for bundle in ('wasm', 'native'):
                     self.assertEqual((root / 'target/reference-filesystem-images' / locale / f'{bundle}.img').read_text(), f'{locale}:{bundle}')
                 self.assertEqual((root / 'pages/demonstrations/wasm' / locale / 'seed.img').read_text(), f'{locale}:wasm')

@@ -34,7 +34,7 @@ jobs:
       MISE_ENV: ci
       CARGO_TERM_COLOR: always
       XILA_MBX: "1"
-      XILA_DEMO_LOCALES: ${{ github.event_name == 'pull_request' && 'en' || 'en fr es de pt-BR it pl' }}
+      XILA_DEMO_LOCALES: ${{ github.event_name == 'pull_request' && 'en' || 'en fr es de pt-BR it pl ja zh-CN' }}
       XILA_FONT_CATALOG_ROOTS: ${{ github.workspace }}/.application-src
     steps:
       - uses: actions/checkout@v7
@@ -57,11 +57,25 @@ jobs:
           ref: ${{ steps.locked.outputs.applications }}
           path: .application-src
           persist-credentials: false
-      - run: mise run ci:deps-npm
-      - run: mise run ci:packages-host
-      - name: Build localized demonstrations and verify filesystem images
+      - name: "Setup | Checkout locked Core font tooling"
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v7
+        with:
+          repository: xila-project/core
+          ref: ${{ steps.locked.outputs.core }}
+          path: .ci-core-fonts
+          persist-credentials: false
+      - name: "Setup | Locked npm dependencies"
+        run: mise run ci:deps-npm
+      - name: "Setup | Native build packages"
+        run: mise run ci:packages-host
+      - name: "Setup | Japanese font"
+        if: github.event_name != 'pull_request'
+        run: mise run ci:font-japanese
+      - name: "Build | Localized demonstrations and verify filesystem images"
         env:
           CARGO_TARGET_ROOT: ${{ github.workspace }}/target/pages
+          XILA_JAPANESE_FONT_PATH: ${{ github.workspace }}/.ci-core-fonts/subsystems/graphics/fonts/SourceHanSansJP-Regular.otf
         run: mise run pages:build
       - name: Add Pages landing page
         run: cp examples/wasm/pages-index.html pages/index.html
