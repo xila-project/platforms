@@ -4,6 +4,13 @@
 LittleFS. It exclusively creates its output, remounts it, and verifies imported
 contents and metadata. Existing output files are never replaced.
 
+The image engine is the `xila-tools-image` library of
+[`xila-project/tools`](https://github.com/xila-project/tools), also behind
+`xila image build`. Platforms depends on it through Git, so `Cargo.lock` pins
+it with this firmware's Core and the images always match the Core revision that
+mounts them. This crate keeps Platforms' seed data (`profiles/`, `shortcuts/`,
+`repositories/`) and a thin command line that passes it to the library.
+
 ```sh
 # Empty disk (16 MiB by default).
 cargo run -p xila-fs-image -- empty.img
