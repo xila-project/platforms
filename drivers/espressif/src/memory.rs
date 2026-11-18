@@ -50,18 +50,20 @@ const INTERNAL_DESCRIPTOR: RegionDescriptor = RegionDescriptor::new(
     feature = "esp32s31",
 ))]
 const PSRAM_DESCRIPTOR: RegionDescriptor = {
-    if cfg!(feature = "esp32") {
-        // esp-hal does not enable dma_can_access_psram on ESP32.
+    if cfg!(any(feature = "esp32", feature = "esp32s2")) {
+        // ESP32: esp-hal does not enable dma_can_access_psram at all.
+        // ESP32-S2: only SPI2, I2S0 and the crypto DMA can reach PSRAM
+        // (`can_access_psram()` is false for SPI3 and copy DMA), and a
+        // capability flag cannot say which channel will use the buffer.
         RegionDescriptor::new(CapabilityFlags::empty())
     } else if cfg!(feature = "esp32p4") {
         // ESP32-P4 PSRAM sits behind the L2 cache (up to 128-byte line size).
         RegionDescriptor::new(CapabilityFlags::DirectMemoryAccess).with_dma_alignment(128)
-    } else if cfg!(any(feature = "esp32s3", feature = "esp32s31")) {
-        // ESP32-S3 supports 16/32/64B DCache lines (64B is safe across all configs); ESP32-S31 uses 64B.
-        RegionDescriptor::new(CapabilityFlags::DirectMemoryAccess).with_dma_alignment(64)
     } else {
-        // ESP32-S2 (16/32B), ESP32-C5 (32B), and ESP32-C61 (32B).
-        RegionDescriptor::new(CapabilityFlags::DirectMemoryAccess).with_dma_alignment(32)
+        // ESP32-S3, S31, C5 and C61: 64 bytes covers the largest cache line
+        // and the 64-byte external burst esp-hal allows on these chips
+        // (inbound PSRAM transfers need alignment to the burst size).
+        RegionDescriptor::new(CapabilityFlags::DirectMemoryAccess).with_dma_alignment(64)
     }
 };
 
