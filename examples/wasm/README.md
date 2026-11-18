@@ -17,7 +17,7 @@ RUSTUP_TOOLCHAIN=stable trunk serve
 Trunk copies `target/seed/wasm/seed.img` beside the runtime. Building the Rust
 runtime alone requires no prebuilt guest binaries; serving a fresh installation
 requires this image. Build guests and images with the same
-`EMBEDDED_I18N_LOCALE` as the runtime (`en`, `fr`, `es`, `de`, `pt-BR`, `it` or `pl`).
+`EMBEDDED_I18N_LOCALE` as the runtime (`en`, `fr`, `es`, `de`, `pt-BR`, `it`, `pl`, `ja` or `zh-CN`).
 
 Serve the example over localhost or HTTPS. Saved disks require support for
 the origin-private file system, `FileSystemFileHandle.createWritable`, and
@@ -62,9 +62,34 @@ instead. Graphical guests must use compatible Xila graphics bindings; see the
 [runtime documentation](../../executables/wasm/README.md) for supported APIs and
 limits.
 
+## Localized and CJK builds
+
+Build the Applications guests (`XILA_FONT_CATALOG_ROOTS=/path/to/applications`)
+and browser runtime with the same `EMBEDDED_I18N_LOCALE`:
+
+- **Simplified Chinese (`zh-CN`):** Core vendors `SourceHanSansSC-Regular.otf`
+  and subsets only the characters used in translation catalogs and localized
+  date/time formats.
+- **Japanese (`ja`):** Core reads `SourceHanSansJP-Regular.otf` from
+  `XILA_JAPANESE_FONT_PATH`. From the repository root, run `mise -E ci run ci:font-japanese`
+  to check out the locked Core revision into `.ci-core-fonts` and download and
+  verify the font, then export:
+
+  ```sh
+  export XILA_JAPANESE_FONT_PATH="$PWD/.ci-core-fonts/subsystems/graphics/fonts/SourceHanSansJP-Regular.otf"
+  ```
+
+For full multi-locale Pages builds (`mise -E ci run pages:build`), ensure
+`.application-src` holds the locked `xila-project/applications` checkout (or
+restrict `XILA_DEMO_LOCALES`). When `ja` is included, `pages:build` runs
+`ci:font-japanese` to check the Core revision and verify the font. If
+`XILA_JAPANESE_FONT_PATH` is unset, it defaults to the verified font.
+
 ## Visual identity
 
 The browser help panel uses local Montserrat normal and italic variable web fonts, following the shared 400/600/700 text, heading and emphasis hierarchy. Trunk copies `fonts/` alongside the example; font rendering needs no Google Fonts connection. Keep `fonts/OFL.txt` with those files. The font and logo source revision is recorded in `fonts/README.md`.
+
+Trunk also copies `licenses/THIRD_PARTY_NOTICES.txt` (linked from the browser help panel) alongside each demonstration. That file carries the copyright notices and license texts for Montserrat (`OFL-1.1`), Source Han Sans JP and SC (`OFL-1.1`, embedded in `ja` and `zh-CN` builds), Font Awesome Free (`OFL-1.1` for the embedded icon font; `CC BY 4.0` for the help-panel chevron SVGs), and base Unscii (Public Domain / CC0) and its public domain source font Fixedsys Excelsior.
 
 The OS canvas still uses the existing localized LVGL Montserrat Regular subsets at 10/14/18/28px, and Unscii for terminal content. Web font files are not compiled into the OS font tables or loaded into MCU flash. Bold wordmarks are outlined SVG assets.
 

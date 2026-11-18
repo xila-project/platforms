@@ -188,3 +188,8 @@ a:hover {
 #sidebar ul {
   padding-left: 18px;
 }
+#sidebar p.notices {
+  margin-top: 12px;
+  font-size: 0.78em;
+  opacity: 0.85;
+}
