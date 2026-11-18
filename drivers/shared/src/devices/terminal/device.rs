@@ -79,11 +79,15 @@ impl PendingInput {
     }
 }
 
-/// Line editor and raw input still to be fed to it.
+/// Line editor, raw input still to be fed to it, and the waiting reader.
 #[derive(Debug)]
 struct TerminalState<const N: usize, const Q: usize> {
     editor: LineEditor<N, Q>,
     pending_input: PendingInput,
+    /// Waker of the last read that returned `Pending`, woken when a change of
+    /// attributes makes input readable (leaving canonical mode releases the
+    /// partially typed line) without new raw bytes arriving.
+    reader_waker: Option<Waker>,
 }
 
 impl<const N: usize, const Q: usize> TerminalState<N, Q> {
@@ -91,6 +95,7 @@ impl<const N: usize, const Q: usize> TerminalState<N, Q> {
         Self {
             editor: LineEditor::new(),
             pending_input: PendingInput::new(),
+            reader_waker: None,
         }
     }
 }
@@ -147,6 +152,7 @@ impl<I, O: DirectCharacterDevice, const N: usize, const Q: usize> TerminalInputD
         let TerminalState {
             editor,
             pending_input,
+            ..
         } = state;
         let mut echo = |echo_bytes: &[u8]| {
             let mut noop_cx = TaskContext::from_waker(Waker::noop());
@@ -184,6 +190,9 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
             let mut data_to_return = None;
             let mut fed_pending_input = false;
             let lock_res = self.with_state(|state| {
+                if state.editor.is_readable() {
+                    state.reader_waker = None;
+                }
                 if state.editor.has_completed_bytes() {
                     let n = state.editor.pop_completed(buffer);
                     data_to_return = Some(Ok(n));
@@ -216,7 +225,21 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
                 Poll::Pending => {
                     // Inner device has registered the waker from cx.
                     // Returning Pending guarantees a wake-up when hardware input arrives.
-                    return Poll::Pending;
+                    // The waker is also kept here for a change of attributes
+                    // that releases the partial line; if that already happened,
+                    // deliver it now.
+                    let lock_res = self.with_state(|state| {
+                        match &mut state.reader_waker {
+                            Some(waker) => waker.clone_from(cx.waker()),
+                            None => state.reader_waker = Some(cx.waker().clone()),
+                        }
+                        Ok(state.editor.is_readable())
+                    });
+                    match lock_res {
+                        Ok(true) => continue,
+                        Ok(false) => return Poll::Pending,
+                        Err(e) => return Poll::Ready(Err(e)),
+                    }
                 }
                 Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
                 Poll::Ready(Ok(0)) => {
@@ -286,10 +309,19 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
                 if !attributes.has_only_known_flags() {
                     return Err(Error::InvalidParameter);
                 }
-                self.with_state(|state| {
+                let reader_waker = self.with_state(|state| {
                     state.editor.set_attributes(attributes);
-                    Ok(())
-                })
+                    Ok(if state.editor.is_readable() {
+                        state.reader_waker.take()
+                    } else {
+                        None
+                    })
+                })?;
+                // Leaving canonical mode can release a partial line to a waiting reader.
+                if let Some(waker) = reader_waker {
+                    waker.wake();
+                }
+                Ok(())
             }),
             _ => self.inner_in.control(cx, command, input, output),
         }

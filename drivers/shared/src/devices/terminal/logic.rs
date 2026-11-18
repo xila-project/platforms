@@ -579,6 +579,11 @@ impl<const N: usize, const Q: usize> LineEditor<N, Q> {
         self.completed.pop_slice(buffer)
     }
 
+    /// Whether the reader has something to collect: completed bytes or an end of input.
+    pub fn is_readable(&self) -> bool {
+        self.has_completed_bytes() || self.eof
+    }
+
     /// Whether there are bytes of a completed line ready to be read.
     pub fn has_completed_bytes(&self) -> bool {
         !self.completed.is_empty()

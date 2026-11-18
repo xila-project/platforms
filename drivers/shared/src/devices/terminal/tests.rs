@@ -1208,3 +1208,74 @@ fn mode_switch_forgets_a_partial_escape_sequence() {
     let count = editor.pop_completed(&mut buffer);
     assert_eq!(&buffer[..count], b"A\n");
 }
+
+// -----------------------------------------------------------------------------
+// A pending reader is woken when a mode switch releases input
+// -----------------------------------------------------------------------------
+
+#[derive(Default)]
+struct CountingWaker {
+    wakes: AtomicUsize,
+}
+
+impl CountingWaker {
+    fn wakes(&self) -> usize {
+        self.wakes.load(Ordering::SeqCst)
+    }
+}
+
+impl std::task::Wake for CountingWaker {
+    fn wake(self: std::sync::Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    fn wake_by_ref(self: &std::sync::Arc<Self>) {
+        self.wakes.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+#[test]
+fn device_switch_to_raw_mode_wakes_the_pending_reader() {
+    let terminal = TerminalInputDevice::new(
+        ScriptedInputDevice::new(vec![b"part"]),
+        RecordingOutputDevice::new(),
+    );
+    let counting_waker = std::sync::Arc::new(CountingWaker::default());
+    let waker = Waker::from(counting_waker.clone());
+    let mut context = Context::from_waker(&waker);
+    let mut buffer = [0u8; 32];
+
+    // The partial line is buffered and the reader waits for Enter.
+    assert_eq!(terminal.read(&mut context, &mut buffer, 0), Poll::Pending);
+
+    // Turning echo off releases nothing: the reader is not woken.
+    assert_eq!(
+        set_attributes(&terminal, without_echo()),
+        Poll::Ready(Ok(()))
+    );
+    assert_eq!(counting_waker.wakes(), 0);
+
+    // Leaving canonical mode releases the partial line and wakes the reader.
+    assert_eq!(
+        set_attributes(&terminal, TerminalAttributes::RAW),
+        Poll::Ready(Ok(()))
+    );
+    assert_eq!(counting_waker.wakes(), 1);
+
+    assert_eq!(
+        terminal.read(&mut context, &mut buffer, 0),
+        Poll::Ready(Ok(4))
+    );
+    assert_eq!(&buffer[..4], b"part");
+
+    // The waker was consumed: later switches do not wake a reader that is not waiting.
+    assert_eq!(
+        set_attributes(&terminal, TerminalAttributes::INTERACTIVE),
+        Poll::Ready(Ok(()))
+    );
+    assert_eq!(
+        set_attributes(&terminal, TerminalAttributes::RAW),
+        Poll::Ready(Ok(()))
+    );
+    assert_eq!(counting_waker.wakes(), 1);
+}
