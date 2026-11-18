@@ -37,7 +37,7 @@ const BUILD_EPOCH: u64 = {
     value
 };
 
-const SHELL_PATH: &str = "/applications/executables/command_line_shell";
+const SHELL_PATH: &str = "/system/executables/command_line_shell";
 
 static TASK_MANAGER: task::Manager = task::Manager::new();
 
@@ -176,6 +176,14 @@ async fn run(task_manager: &'static task::Manager) {
     virtual_file_system::create_default_hierarchy(virtual_file_system, task)
         .await
         .expect("Failed to create the default hierarchy");
+    virtual_file_system
+        .mount_file_system(
+            memory_file_system::FileSystem::new(),
+            Path::SYSTEM_EXECUTABLES,
+            task,
+        )
+        .await
+        .expect("Failed to mount the in-memory executable file system");
     virtual_file_system::clear_temporary(virtual_file_system, task)
         .await
         .expect("Failed to clear temporary storage");
@@ -282,7 +290,7 @@ async fn run(task_manager: &'static task::Manager) {
     .expect("Failed to mount the executables");
 
     task_manager
-        .set_environment_variable(task, "Paths", "/")
+        .set_environment_variable(task, "Paths", "/system/executables:/")
         .await
         .expect("Failed to set the environment");
     task_manager
