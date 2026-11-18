@@ -1,0 +1,173 @@
+//! JavaScript glue: `fetch`, deadlines and body streaming.
+//!
+//! Everything goes through `globalThis`, so it works on the page, in a worker
+//! and under test with a replaced `fetch`. Nothing here blocks: each step
+//! returns a future the device resolves from the executor.
+use super::{request::PreparedRequest, response};
+use alloc::vec::Vec;
+use file_system::{Error, Result};
+use js_sys::{Array, Function, Promise, Reflect, Uint8Array};
+use wasm_bindgen::{JsCast, JsValue, closure::Closure};
+use wasm_bindgen_futures::JsFuture;
+use web_sys::{
+    AbortController, Headers, ReadableStream, ReadableStreamDefaultReader, ReferrerPolicy,
+    RequestCredentials, RequestInit, RequestMode, Response,
+};
+
+fn global_function(name: &str) -> Result<Function> {
+    Reflect::get(&js_sys::global(), &JsValue::from_str(name))
+        .ok()
+        .and_then(|value| value.dyn_into::<Function>().ok())
+        .ok_or(Error::UnsupportedOperation)
+}
+
+/// A pending `setTimeout` cleared when dropped.
+struct Deadline {
+    identifier: JsValue,
+    _callback: Closure<dyn FnMut()>,
+}
+
+impl Drop for Deadline {
+    fn drop(&mut self) {
+        if let Ok(clear) = global_function("clearTimeout") {
+            let _ = clear.call1(&JsValue::NULL, &self.identifier);
+        }
+    }
+}
+
+/// Wait for `promise`, giving up after `timeout_ms`.
+///
+/// The deadline aborts the request as well as failing the wait, so the browser
+/// releases the connection. Every failure, whether network, CORS, abort or
+/// timeout, is reported as [`Error::InputOutput`], like the native devices'
+/// connection and timeout errors: the browser deliberately does not say which.
+async fn within(
+    promise: Promise,
+    controller: &AbortController,
+    timeout_ms: u32,
+) -> Result<JsValue> {
+    let set_timeout = global_function("setTimeout")?;
+    let mut deadline = None;
+    let expired = Promise::new(&mut |_resolve: Function, reject: Function| {
+        let controller = controller.clone();
+        let callback = Closure::once(move || {
+            controller.abort();
+            let _ = reject.call1(&JsValue::NULL, &JsValue::from_str("timeout"));
+        });
+        if let Ok(identifier) = set_timeout.call2(
+            &JsValue::NULL,
+            callback.as_ref(),
+            &JsValue::from_f64(f64::from(timeout_ms)),
+        ) {
+            deadline = Some(Deadline {
+                identifier,
+                _callback: callback,
+            });
+        }
+    });
+    if deadline.is_none() {
+        return Err(Error::InputOutput);
+    }
+    let result = JsFuture::from(Promise::race(&Array::of2(&promise, &expired))).await;
+    drop(deadline);
+    result.map_err(|_| Error::InputOutput)
+}
+
+/// The `fetch` options for a request, without its URL.
+pub(super) fn options(
+    request: &PreparedRequest<'_>,
+    controller: &AbortController,
+) -> Result<RequestInit> {
+    let headers = Headers::new().map_err(|_| Error::InternalError)?;
+    for (name, value) in &request.headers {
+        // Invalid names or values are the guest's mistake, not the network's.
+        headers
+            .append(name, value)
+            .map_err(|_| Error::InvalidParameter)?;
+    }
+    let options = RequestInit::new();
+    options.set_method(request.method);
+    options.set_headers(&headers);
+    options.set_mode(RequestMode::Cors);
+    // No ambient cookies or HTTP authentication; also keeps `Access-Control-Allow-Origin: *` valid.
+    options.set_credentials(RequestCredentials::Omit);
+    options.set_referrer_policy(ReferrerPolicy::NoReferrer);
+    options.set_signal(Some(&controller.signal()));
+    if let Some(body) = request.body {
+        options.set_body(&Uint8Array::from(body));
+    }
+    Ok(options)
+}
+
+pub(super) struct Head {
+    pub bytes: Vec<u8>,
+    pub body: Option<ReadableStreamDefaultReader>,
+}
+
+/// Hand the request to the browser. `fetch` starts now; the answer is awaited
+/// by [`receive`], so `write` returns while the request is on its way.
+pub(super) fn send(url: &str, options: &RequestInit) -> Result<Promise> {
+    global_function("fetch")?
+        .call2(&JsValue::NULL, &JsValue::from_str(url), options)
+        .map_err(|_| Error::InputOutput)?
+        .dyn_into::<Promise>()
+        .map_err(|_| Error::InputOutput)
+}
+
+/// Wait for the response and frame its head. The body stays in the browser.
+pub(super) async fn receive(
+    promise: Promise,
+    controller: &AbortController,
+    timeout_ms: u32,
+) -> Result<Head> {
+    let response = within(promise, controller, timeout_ms)
+        .await?
+        .dyn_into::<Response>()
+        .map_err(|_| Error::InputOutput)?;
+    let mut headers = Vec::new();
+    let mut size = 0;
+    for entry in js_sys::try_iter(&response.headers())
+        .ok()
+        .flatten()
+        .into_iter()
+        .flatten()
+    {
+        let entry = entry
+            .map_err(|_| Error::InternalError)?
+            .unchecked_into::<Array>();
+        if let (Some(name), Some(value)) = (entry.get(0).as_string(), entry.get(1).as_string()) {
+            // Stop copying from the browser as soon as the head cannot fit.
+            size += name.len() + value.len() + 4;
+            if size > response::MAX_HEAD_SIZE {
+                return Err(Error::FileTooLarge);
+            }
+            headers.push((name, value));
+        }
+    }
+    let bytes = response::build_head(response.status(), &response.status_text(), &headers)?;
+    let body = response
+        .body()
+        .and_then(|body: ReadableStream| body.get_reader().dyn_into().ok());
+    Ok(Head { bytes, body })
+}
+
+/// The next piece of the body, or `None` at the end of the stream.
+pub(super) async fn read_chunk(
+    reader: &ReadableStreamDefaultReader,
+    controller: &AbortController,
+    timeout_ms: u32,
+) -> Result<Option<Uint8Array>> {
+    let result = within(reader.read(), controller, timeout_ms).await?;
+    let done = Reflect::get(&result, &JsValue::from_str("done"))
+        .map_err(|_| Error::InputOutput)?
+        .as_bool()
+        .unwrap_or(false);
+    if done {
+        return Ok(None);
+    }
+    Reflect::get(&result, &JsValue::from_str("value"))
+        .ok()
+        .and_then(|value| value.dyn_into::<Uint8Array>().ok())
+        .map(Some)
+        .ok_or(Error::InputOutput)
+}
