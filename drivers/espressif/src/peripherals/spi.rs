@@ -113,12 +113,18 @@ impl<const N: usize> SpiReservation for EspSpiReservation<'_, N> {
         if index >= N {
             return Err(SpiError::InvalidChipSelect);
         }
+        validate_frequency(config.frequency_hz)?;
+        if config.bits_per_word != 8 {
+            return Err(SpiError::BitsPerWordNotSupported);
+        }
         let inner = self.inner.as_mut().ok_or(SpiError::Busy)?;
 
         let mut asserted = false;
         let result = run_segments(inner, index, config, &mut asserted, segments);
         if asserted {
+            let flushed = SpiBus::flush(&mut inner.bus).map_err(|_| SpiError::Unsupported);
             inner.chip_selects[index].set_high();
+            return result.and(flushed);
         }
         result
     }
@@ -156,6 +162,8 @@ fn run_segments<'s, const N: usize>(
         transfer_operation(&mut inner.bus, segment.operation)?;
 
         if segment.cs_change {
+            // embedded-hal lets a write return before the last word is out.
+            SpiBus::flush(&mut inner.bus).map_err(|_| SpiError::Unsupported)?;
             inner.chip_selects[index].set_high();
             *asserted = false;
         }

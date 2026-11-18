@@ -8,9 +8,10 @@
 //! Limits of this endpoint:
 //! - RTS/CTS hardware flow control is not offered: it needs the RTS and CTS
 //!   pins, which chip initialisation does not assign yet;
-//! - `flush_rx` drains the receive FIFO by reading it; esp-hal exposes no FIFO
-//!   reset, so `flush_tx` waits for queued output to be transmitted instead of
-//!   discarding it.
+//! - `flush_rx` drains the receive FIFO by reading it;
+//! - `flush_tx` fails with `Error::Io`: esp-hal exposes no TX FIFO reset, and
+//!   waiting for the output to drain instead could block forever after the
+//!   peer sends XOFF. `embedded_io::Write::flush` still waits for transmission.
 
 use embedded_io::{ErrorType, Read, Write};
 use esp_hal::{
@@ -56,22 +57,28 @@ pub struct EspUart {
 }
 
 impl EspUart {
-    /// Applies `config` to the driver. Fails without touching the driver when
-    /// the endpoint cannot express the settings.
-    pub fn new(uart: HalUart<'static, Blocking>, config: Config) -> Result<Self, Error> {
-        CAPABILITIES.check(&config)?;
+    /// Applies `config` to the driver. On failure the driver is handed back
+    /// with the error, so the caller can retry with other settings.
+    pub fn new(
+        mut uart: HalUart<'static, Blocking>,
+        config: Config,
+    ) -> Result<Self, (Error, HalUart<'static, Blocking>)> {
+        let hal_config = match CAPABILITIES
+            .check(&config)
+            .and_then(|()| to_hal_config(&config))
+        {
+            Ok(hal_config) => hal_config,
+            Err(error) => return Err((error, uart)),
+        };
+        if uart.apply_config(&hal_config).is_err() {
+            return Err((Error::Io, uart));
+        }
 
-        let mut endpoint = Self {
+        Ok(Self {
             uart,
             config,
             nonblocking: false,
-        };
-        endpoint
-            .uart
-            .apply_config(&to_hal_config(&config)?)
-            .map_err(|_| Error::Io)?;
-
-        Ok(endpoint)
+        })
     }
 }
 
@@ -149,9 +156,10 @@ impl UartControl for EspUart {
     }
 
     fn flush_tx(&mut self) -> Result<(), Error> {
-        // esp-hal has no TX FIFO reset: queued output is transmitted before
-        // this returns, so nothing remains queued afterwards.
-        self.uart.flush().map_err(|_| Error::Io)
+        // esp-hal has no TX FIFO reset, so queued output cannot be discarded.
+        // Waiting for it to drain is not a substitute: with XON/XOFF the peer
+        // can stop transmission indefinitely.
+        Err(Error::Io)
     }
 }
 
