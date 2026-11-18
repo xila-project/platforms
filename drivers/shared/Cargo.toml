@@ -35,6 +35,9 @@ sha2 = { version = "0.11" }
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows", target_arch = "wasm32"))'.dependencies]
 getrandom = { version = "0.4.2" }
 
+[target.'cfg(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none")))'.dependencies]
+getrandom = { version = "0.4.2", features = ["wasm_js"] }
+
 [features]
 default = ["network"]
 network = [
