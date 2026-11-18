@@ -114,7 +114,19 @@ pub struct TerminalInputDevice<I, O, const N: usize = 256, const Q: usize = 512>
 
 impl<I, O, const N: usize, const Q: usize> TerminalInputDevice<I, O, N, Q> {
     /// Create a new `TerminalInputDevice` wrapping raw input and output devices with custom capacities.
+    ///
+    /// The reader queue capacity `Q` must be greater than the line capacity
+    /// `N`, which is checked at compile time: a line is queued with its line
+    /// feed, so a full line needs `N + 1` bytes. With a smaller queue, a full
+    /// line could never be delivered and its reader would wait forever, and a
+    /// queue of 0 bytes would make the queue arithmetic divide by zero.
     pub const fn new_with_capacities(inner_in: I, inner_out: O) -> Self {
+        const {
+            assert!(
+                Q > N,
+                "the reader queue must hold a full line and its line feed"
+            )
+        };
         Self {
             inner_in,
             inner_out,
