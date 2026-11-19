@@ -20,15 +20,16 @@ if [[ -n "${CARGO_CONFIG:-}" ]]; then
   CONFIG_ARGS=(--config "$CARGO_CONFIG")
 fi
 
-# chip:target:architecture:features. ESP32-C2, ESP32-C3 and ESP32-S2 have no
-# atomic compare-and-swap, which the `gpio` adapter needs from Core
-# (https://github.com/xila-project/core/issues/649).
+# chip:target:architecture:features. ESP32-C2, ESP32-C3 and ESP32-S2 lack native
+# atomic compare-and-swap; esp-hal's chip features enable
+# `portable-atomic/unsafe-assume-single-core` for them so Core and `gpio` build
+# on every supported chip.
 CHIPS=(
   "esp32:xtensa-esp32-none-elf:xtensa:gpio,i2c,spi,uart"
-  "esp32s2:xtensa-esp32s2-none-elf:xtensa:i2c,spi,uart"
+  "esp32s2:xtensa-esp32s2-none-elf:xtensa:gpio,i2c,spi,uart"
   "esp32s3:xtensa-esp32s3-none-elf:xtensa:gpio,i2c,spi,uart"
-  "esp32c2:riscv32imc-unknown-none-elf:riscv:i2c,spi,uart"
-  "esp32c3:riscv32imc-unknown-none-elf:riscv:i2c,spi,uart"
+  "esp32c2:riscv32imc-unknown-none-elf:riscv:gpio,i2c,spi,uart"
+  "esp32c3:riscv32imc-unknown-none-elf:riscv:gpio,i2c,spi,uart"
   "esp32c5:riscv32imac-unknown-none-elf:riscv:gpio,i2c,spi,uart"
   "esp32c6:riscv32imac-unknown-none-elf:riscv:gpio,i2c,spi,uart"
   "esp32c61:riscv32imac-unknown-none-elf:riscv:gpio,i2c,spi,uart"
