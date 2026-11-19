@@ -4,3 +4,4 @@ digits
 pixel_painter
 synth
 text_editor
+weather

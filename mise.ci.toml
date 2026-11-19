@@ -233,6 +233,9 @@ description = "Run Web runtime and disk manager JavaScript tests with pinned Nod
 tools.node = "{{ vars.node_version }}"
 run = "node --test drivers/wasm/tests/seed.test.mjs && node --test examples/wasm/tests/disk_manager.test.mjs"
 
+[tasks."test:browser-http"]
+extends = "ci:browser"
+
 [tasks."ci:quality-extra"]
 description = "Validate platform-specific CI workflow and source policies"
 tools.uv = "{{ vars.uv_version }}"

@@ -1,6 +1,7 @@
 [vars]
 rust_version = "1.100.0"
 node_version = "24.22.0"
+wasm_bindgen_version = "0.2.129"
 taplo_version = "0.10.0"
 actionlint_version = "1.7.7"
 shellcheck_version = "0.11.0"
@@ -30,6 +31,13 @@ run = "examples/nano_33_ble/flash.sh target/thumbv7em-none-eabihf/release-embedd
 [tasks."check:browser"]
 description = "Check the browser runtime and driver tests"
 run = "cargo check --locked -p xila-wasm-example -p xila-drivers-wasm --target wasm32-unknown-unknown --tests"
+
+[tasks."test:browser-http"]
+description = "Run browser HTTP client device tests under Node"
+env.CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER = "wasm-bindgen-test-runner"
+tools.node = "{{ vars.node_version }}"
+tools."github:wasm-bindgen/wasm-bindgen" = "{{ vars.wasm_bindgen_version }}"
+run = "cargo test --locked -p xila-drivers-wasm --target wasm32-unknown-unknown --test http_client"
 
 [tasks."test:seed"]
 description = "Test filesystem images and package verification"

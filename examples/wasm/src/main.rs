@@ -345,12 +345,12 @@ async fn main(task_manager: &'static xila::task::Manager) {
             (
                 &"/devices/network/http_client",
                 CharacterDevice,
-                drivers_wasm::devices::HttpClientDevice
+                drivers_wasm::devices::HttpClientDevice::HTTP
             ),
             (
                 &"/devices/network/https_client",
                 CharacterDevice,
-                drivers_wasm::devices::HttpClientDevice
+                drivers_wasm::devices::HttpClientDevice::HTTPS
             ),
             (
                 &"/devices/compute/hasher",

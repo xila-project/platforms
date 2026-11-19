@@ -6485,6 +6485,7 @@ dependencies = [
  "xila-synchronization",
  "xila-task",
  "xila-time",
+ "xila_http",
 ]
 
 [[package]]
