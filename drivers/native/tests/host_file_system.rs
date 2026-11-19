@@ -99,3 +99,40 @@ async fn hostfs_absolute_link_uses_vfs_root_without_escaping_host_capability() {
     vfs.unmount(Path::from_str("/host"), true).await.unwrap();
     let _ = fs::remove_dir_all(root);
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+async fn hostfs_symlink_escaping_the_root_is_permission_denied() {
+    use std::{
+        fs,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    static NEXT_ROOT: AtomicUsize = AtomicUsize::new(0);
+    let root = std::env::temp_dir().join(format!(
+        "xila-hostfs-escape-{}-{}",
+        std::process::id(),
+        NEXT_ROOT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let host_root = root.join("host");
+    let outside = root.join("outside");
+    fs::create_dir_all(&host_root).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(outside.join("secret"), b"secret").unwrap();
+    std::os::unix::fs::symlink(&outside, host_root.join("escape")).unwrap();
+
+    let file_system = HostFileSystem::open(&host_root, HostFileSystemOptions::default()).unwrap();
+    let mut context = Context::new_empty();
+    assert_eq!(
+        file_system
+            .lookup_file(
+                &mut context,
+                Path::from_str("/escape/secret"),
+                file_system::Flags::new(file_system::AccessFlags::Read, None, None),
+            )
+            .err(),
+        Some(file_system::Error::PermissionDenied)
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
