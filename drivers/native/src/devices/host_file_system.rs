@@ -368,10 +368,14 @@ fn map_io_error(error: std::io::Error) -> Error {
     #[cfg(unix)]
     if let Some(code) = error.raw_os_error() {
         return match code {
-            libc::ELOOP | libc::EXDEV => Error::UnsupportedOperation,
-            libc::ENOSYS => Error::UnsupportedOperation,
+            libc::ELOOP => Error::InvalidSymbolicLink,
+            // Core has no cross-device FS error. The operation is unsupported across mounts.
+            libc::EXDEV | libc::ENOSYS | libc::ENOTSUP => Error::UnsupportedOperation,
+            // Core represents both per-process and system-wide descriptor exhaustion with this variant.
             libc::EMFILE | libc::ENFILE => Error::TooManyOpenFiles,
             libc::ENAMETOOLONG => Error::NameTooLong,
+            libc::EBADF => Error::InvalidIdentifier,
+            libc::EINVAL => Error::InvalidParameter,
             _ => map_io_error_kind(error.kind()),
         };
     }
@@ -383,14 +387,18 @@ fn map_io_error_kind(kind: std::io::ErrorKind) -> Error {
     match kind {
         Io::NotFound => Error::NotFound,
         Io::AlreadyExists => Error::AlreadyExists,
-        Io::PermissionDenied => Error::PermissionDenied,
+        Io::PermissionDenied | Io::ReadOnlyFilesystem => Error::PermissionDenied,
         Io::NotADirectory => Error::NotDirectory,
         Io::IsADirectory => Error::IsDirectory,
         Io::DirectoryNotEmpty => Error::DirectoryNotEmpty,
-        Io::InvalidInput => Error::InvalidPath,
-        Io::WouldBlock => Error::RessourceBusy,
+        Io::InvalidInput | Io::InvalidFilename => Error::InvalidPath,
+        Io::InvalidData => Error::InvalidFile,
+        Io::WouldBlock | Io::ResourceBusy | Io::ExecutableFileBusy => Error::RessourceBusy,
+        Io::Unsupported | Io::CrossesDevices | Io::NotSeekable => Error::UnsupportedOperation,
         Io::OutOfMemory => Error::NoMemory,
-        Io::StorageFull => Error::NoSpaceLeft,
+        Io::StorageFull | Io::QuotaExceeded => Error::NoSpaceLeft,
+        Io::FileTooLarge => Error::FileTooLarge,
+        Io::TimedOut => Error::TimeError,
         _ => Error::InputOutput,
     }
 }
@@ -866,6 +874,73 @@ mod tests {
     use file_system::{AccessFlags, AttributeFlags, Flags};
     use std::fs;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[cfg(unix)]
+    #[test]
+    fn maps_host_errno_to_file_system_error() {
+        use libc::*;
+
+        for (errno, expected) in [
+            (ENOENT, Error::NotFound),
+            (EACCES, Error::PermissionDenied),
+            (EPERM, Error::PermissionDenied),
+            (EROFS, Error::PermissionDenied),
+            (EEXIST, Error::AlreadyExists),
+            (ENOTDIR, Error::NotDirectory),
+            (EISDIR, Error::IsDirectory),
+            (ENOTEMPTY, Error::DirectoryNotEmpty),
+            (ELOOP, Error::InvalidSymbolicLink),
+            (EXDEV, Error::UnsupportedOperation),
+            (ENOSYS, Error::UnsupportedOperation),
+            (ENOTSUP, Error::UnsupportedOperation),
+            (EOPNOTSUPP, Error::UnsupportedOperation),
+            (ESPIPE, Error::UnsupportedOperation),
+            (EMFILE, Error::TooManyOpenFiles),
+            (ENFILE, Error::TooManyOpenFiles),
+            (ENAMETOOLONG, Error::NameTooLong),
+            (ENOSPC, Error::NoSpaceLeft),
+            (EDQUOT, Error::NoSpaceLeft),
+            (EBUSY, Error::RessourceBusy),
+            (EAGAIN, Error::RessourceBusy),
+            (EWOULDBLOCK, Error::RessourceBusy),
+            (ETXTBSY, Error::RessourceBusy),
+            (EINTR, Error::InputOutput),
+            (EIO, Error::InputOutput),
+            (ESTALE, Error::InputOutput),
+            (EINVAL, Error::InvalidParameter),
+            (EBADF, Error::InvalidIdentifier),
+            (ENOMEM, Error::NoMemory),
+            (EFBIG, Error::FileTooLarge),
+            (ETIMEDOUT, Error::TimeError),
+            (i32::MAX, Error::InputOutput),
+        ] {
+            assert_eq!(
+                map_io_error(std::io::Error::from_raw_os_error(errno)),
+                expected,
+                "errno {errno}"
+            );
+        }
+    }
+
+    #[test]
+    fn maps_portable_io_error_kinds() {
+        use std::io::ErrorKind as Io;
+
+        for (kind, expected) in [
+            (Io::InvalidInput, Error::InvalidPath),
+            (Io::ReadOnlyFilesystem, Error::PermissionDenied),
+            (Io::StorageFull, Error::NoSpaceLeft),
+            (Io::FileTooLarge, Error::FileTooLarge),
+            (Io::Unsupported, Error::UnsupportedOperation),
+            (Io::ResourceBusy, Error::RessourceBusy),
+            (Io::ExecutableFileBusy, Error::RessourceBusy),
+            (Io::TimedOut, Error::TimeError),
+            (Io::Interrupted, Error::InputOutput),
+            (Io::Other, Error::InputOutput),
+        ] {
+            assert_eq!(map_io_error(kind.into()), expected, "{kind:?}");
+        }
+    }
 
     fn temp_root() -> PathBuf {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
