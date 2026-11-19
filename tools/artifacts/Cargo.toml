@@ -13,7 +13,7 @@ xila-package-verification = { git = "https://github.com/xila-project/package_man
   "sha256",
   "ed25519",
 ] }
-tar-no-std = { version = "0.5.0", default-features = false }
+tar-no-std = { version = "0.6.0", default-features = false }
 
 [dev-dependencies]
 ed25519-dalek = { version = "3.0", default-features = false }
