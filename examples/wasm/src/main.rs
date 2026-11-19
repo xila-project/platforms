@@ -177,10 +177,6 @@ async fn main(task_manager: &'static xila::task::Manager) {
         }
     };
     let virtual_file_system: &'static virtual_file_system::VirtualFileSystem = virtual_file_system;
-    xila::abi_definitions::initialize(xila::abi_definitions::RuntimeContext {
-        virtual_file_system,
-        time_manager,
-    });
 
     // - Initialize the graphics manager
     // - - Initialize the graphics driver

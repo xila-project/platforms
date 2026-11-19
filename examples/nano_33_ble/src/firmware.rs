@@ -165,10 +165,6 @@ async fn run(task_manager: &'static task::Manager) {
         )
         .expect("Failed to initialize the virtual file system"),
     ));
-    xila::abi_definitions::initialize(xila::abi_definitions::RuntimeContext {
-        virtual_file_system,
-        time_manager,
-    });
     virtual_file_system
         .mount_file_system(memory_file_system::FileSystem::new(), Path::DEVICES, task)
         .await

@@ -99,7 +99,6 @@ fn controls_schedule_work_and_cancel_without_runner_threads() {
     );
 }
 
-extern crate abi_definitions;
 drivers_std::memory::instantiate_global_allocator!();
 
 #[task::test]

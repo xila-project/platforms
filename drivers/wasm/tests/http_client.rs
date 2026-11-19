@@ -3,7 +3,6 @@
 //! `ReadableStream` and `AbortController`, and need no network.
 #![cfg(target_arch = "wasm32")]
 
-use abi_definitions as _;
 use core::{
     future::poll_fn,
     sync::atomic::{AtomicUsize, Ordering},

@@ -1,7 +1,6 @@
 //! Host file system behaviour through the VFS (moved from Core's VFS tests,
 //! which no longer depend on platform drivers).
 
-extern crate abi_definitions;
 extern crate alloc;
 
 use drivers_native::host_file_system::{HostFileSystem, HostFileSystemOptions};

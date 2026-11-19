@@ -1,8 +1,5 @@
 #![cfg(target_arch = "wasm32")]
 
-// The driver's graphics dependency exports LVGL's platform hooks, which link
-// against the same ABI implementations used by the browser example.
-use abi_definitions as _;
 use drivers_wasm::devices::DriveDevice;
 use file_system::{
     DirectBaseOperations, DirectBlockDevice, Error, MountOperations, Path, Position,

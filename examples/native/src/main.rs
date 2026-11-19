@@ -182,10 +182,6 @@ async fn main(task_manager: &'static xila::task::Manager) {
         virtual_file_system::initialize(task_manager, users_manager, time_manager, file_system)
             .unwrap(),
     ));
-    xila::abi_definitions::initialize(xila::abi_definitions::RuntimeContext {
-        virtual_file_system,
-        time_manager,
-    });
 
     log::information!("Virtual file system initialized.");
 

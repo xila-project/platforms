@@ -20,7 +20,7 @@ pub fn prepare(
     digest: [u8; 32],
     publisher: Option<&PublicKey>,
 ) -> Result<Vec<BundleFile>, &'static str> {
-    if max_abi > abi_declarations::APPLICATION_ABI_VERSION {
+    if max_abi > abi_application::APPLICATION_ABI_VERSION {
         return Err("requested ABI exceeds this runtime version");
     }
     let mut verifier =

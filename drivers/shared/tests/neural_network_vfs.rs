@@ -1,6 +1,5 @@
 #![cfg(all(feature = "neural-network-cmsis-nn", target_os = "linux"))]
 //! Exercise the VFS API with owned heap models and dynamic runtime loaders.
-extern crate abi_definitions;
 extern crate critical_section;
 testing::instantiate_global_allocator!();
 use drivers_neural_network::{COMPUTE, GET_INPUT_INFO, GET_OUTPUT_INFO, LOAD, LoadRequest};
