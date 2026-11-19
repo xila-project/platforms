@@ -104,12 +104,15 @@ jobs:
   browser:
     name: "Build & Test / Browser platform"
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       XILA_MBX: "1"
       XILA_FONT_CATALOG_ROOTS: ${{ github.workspace }}/.application-catalogs
     steps:
       - name: "Setup | Checkout sources"
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: "Setup | Rust toolchain and build cache"
         uses: xila-project/workspace/.github/actions/setup-rust@d4ff44239bcfa0bc662e37f38d00f3d23f8f04db
         with:
@@ -141,6 +144,7 @@ jobs:
     if: always()
     needs: [quality, native, nano-33-ble, browser]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: "Gate | Verify mandatory checks"
         env:

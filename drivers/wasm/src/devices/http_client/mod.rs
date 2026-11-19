@@ -29,7 +29,7 @@ use file_system::{
 };
 use js_sys::Uint8Array;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{AbortController, ReadableStreamDefaultReader};
+use web_sys::{AbortController, ReadableStreamDefaultReader, Url};
 
 /// Native devices wait 15 seconds for each network operation.
 const IO_TIMEOUT_MS: u32 = 15_000;
@@ -346,6 +346,7 @@ impl BaseOperations for HttpClientDevice {
                 .get_private_data_of_type::<HttpClientContext>()
                 .ok_or(Error::InvalidContext)?;
             let prepared = request::prepare(self.scheme, buffer)?;
+            Url::new(&prepared.url).map_err(|_| Error::InvalidParameter)?;
             let head_request = prepared.method.eq_ignore_ascii_case("HEAD");
             let controller = AbortController::new().map_err(|_| Error::InternalError)?;
             let options = fetch::options(&prepared, &controller)?;

@@ -127,8 +127,21 @@ pub(super) async fn receive(
         .await?
         .dyn_into::<Response>()
         .map_err(|_| Error::InputOutput)?;
+    let status_text = Reflect::get(&response, &JsValue::from_str("statusText"))
+        .map_err(|_| Error::InternalError)?
+        .dyn_into::<JsString>()
+        .map_err(|_| Error::InternalError)?;
+    // Check the UTF-16 length before copying from JavaScript so an oversized
+    // reason phrase never enters WebAssembly memory; UTF-8 is at least as long.
+    if (status_text.length() as usize) > response::MAX_HEAD_SIZE {
+        return Err(Error::FileTooLarge);
+    }
+    let reason = String::from(status_text);
+    let mut size = reason.len();
+    if size > response::MAX_HEAD_SIZE {
+        return Err(Error::FileTooLarge);
+    }
     let mut headers = Vec::new();
-    let mut size = 0usize;
     for entry in js_sys::try_iter(&response.headers())
         .ok()
         .flatten()
@@ -164,12 +177,7 @@ pub(super) async fn receive(
             headers.push((name, value));
         }
     }
-    let bytes = response::build_head(
-        response.status(),
-        &response.status_text(),
-        &headers,
-        head_request,
-    )?;
+    let bytes = response::build_head(response.status(), &reason, &headers, head_request)?;
     let body = (!head_request)
         .then(|| response.body())
         .flatten()
