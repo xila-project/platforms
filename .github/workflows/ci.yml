@@ -140,6 +140,35 @@ jobs:
         run: mise run ci:browser-node-tests
       - name: "Test | Browser HTTP client device"
         run: mise run test:browser-http
+  espressif-emulator:
+    # Advisory while the emulator check settles: not in the `required` gate.
+    name: "Test / ESP32-S3 emulator"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: "Setup | Checkout sources"
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: "Setup | Activate mise"
+        uses: jdx/mise-action@v5.2.2
+      - name: "Setup | Native QEMU libraries"
+        run: mise run ci:packages-espressif
+      - name: "Setup | Espressif Rust and GCC toolchain"
+        run: mise run setup:espressif-rust
+      - name: "Setup | Locked npm dependencies"
+        run: mise run ci:deps-npm
+      - name: "Test | ESP32-S3 boot in QEMU"
+        run: mise run test:espressif-emulator
+      - name: "Report | Upload emulator logs and screenshot"
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: esp32s3-emulator
+          path: |
+            target/espressif-emulator/runs/esp32s3.*/uart.log
+            target/espressif-emulator/runs/esp32s3.*/qemu.log
+            target/espressif-emulator/runs/esp32s3.*/screen.png
   required:
     if: always()
     needs: [quality, native, nano-33-ble, browser]
