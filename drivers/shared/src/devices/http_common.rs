@@ -3,7 +3,9 @@ use shared::HttpRequestParser;
 
 pub fn map_network_error(error: network::Error) -> Error {
     match error {
-        network::Error::NotFound => Error::NotFound,
+        // Without an interface name, NotFound means no network stack is available: the
+        // network is down, not a missing file.
+        network::Error::NotFound => Error::InputOutput,
         network::Error::PermissionDenied => Error::PermissionDenied,
         network::Error::ConnectionRefused
         | network::Error::ConnectionReset
@@ -106,7 +108,7 @@ mod tests {
         use network::Error as Net;
 
         for (network, expected) in [
-            (Net::NotFound, Error::NotFound),
+            (Net::NotFound, Error::InputOutput),
             (Net::PermissionDenied, Error::PermissionDenied),
             (Net::NoRoute, Error::InputOutput),
             (Net::HostUnreachable, Error::InputOutput),
