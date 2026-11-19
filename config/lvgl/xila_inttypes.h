@@ -1,11 +1,13 @@
 /* LVGL's LV_INTTYPES_INCLUDE. Wasm and bare-metal ARM may have no C library,
  * so their format macros are defined here from compiler-provided <stdint.h>.
+ * This also covers bare-metal Xtensa (ESP32-S3): bindgen's libclang would
+ * otherwise load the build host's <inttypes.h>, and Xtensa GCC has no hosted libc.
  * LVGL formats with its own sprintf, where a mismatch between `int` and `long`
  * on these ILP32 targets is only a -Wformat warning, never a runtime error. */
 #ifndef XILA_INTTYPES_H
 #define XILA_INTTYPES_H
 
-#if defined(__wasm__) || defined(__wasm32__) || (defined(__arm__) && !defined(__linux__))
+#if defined(__wasm__) || defined(__wasm32__) || (defined(__arm__) && !defined(__linux__)) || defined(__XTENSA__)
 #include <stdint.h>
 
 /* 8- and 16-bit arguments are promoted to int. */
@@ -33,8 +35,8 @@
 #define PRIxPTR __UINTPTR_FMTx__
 #define PRIXPTR __UINTPTR_FMTX__
 #else
-#if defined(__arm__)
-/* arm-none-eabi GCC: int32_t is long int, uintptr_t is unsigned int. */
+#if defined(__arm__) || defined(__XTENSA__)
+/* arm-none-eabi and Xtensa GCC: int32_t is long int, uintptr_t is unsigned int. */
 #define PRId32 "ld"
 #define PRIu32 "lu"
 #define PRIx32 "lx"
