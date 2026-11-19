@@ -2,6 +2,7 @@
 name = "xila-drivers-shared"
 version = "0.1.0"
 edition = "2024"
+rust-version.workspace = true
 
 [dependencies]
 neural_network = { workspace = true, optional = true }

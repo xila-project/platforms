@@ -1,6 +1,6 @@
 # Runtime image for executing Xila applications. The builder is intentionally
 # separate so Rust, Cargo, and native build tools never reach the final stage.
-ARG RUST_VERSION=1.100.0
+ARG RUST_VERSION=1.97.0
 FROM rust:${RUST_VERSION}-bookworm AS builder
 
 ENV CARGO_TERM_COLOR=always

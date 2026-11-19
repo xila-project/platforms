@@ -2,6 +2,7 @@
 name = "xila-drivers-espressif"
 version = "0.1.0"
 edition = "2024"
+rust-version.workspace = true
 
 # Everything is target-gated: on host targets this crate is empty and builds
 # nothing, so the Platforms workspace stays checkable on x86_64.
