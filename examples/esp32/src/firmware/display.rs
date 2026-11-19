@@ -47,7 +47,11 @@ unsafe extern "C" fn flush(display: *mut lv_display_t, area: *const lv_area_t, p
 
 pub(super) fn render() {
     // SAFETY: this is an aligned read inside the S3 SYSCON register range.
-    assert_eq!(unsafe { ptr::read_volatile(QEMU_SIGNATURE) }, 0x5145_4d55);
+    assert_eq!(
+        unsafe { ptr::read_volatile(QEMU_SIGNATURE) },
+        0x5145_4d55,
+        "the qemu-display feature requires Espressif QEMU's virtual RGB panel"
+    );
     write_register(SIZE, (WIDTH << 16) | HEIGHT);
     write_register(BITS_PER_PIXEL, 16);
     let buffer = Box::leak(vec![0u32; BYTES / 4].into_boxed_slice());

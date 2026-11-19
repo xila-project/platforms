@@ -39,7 +39,7 @@ The ESP32 sources and Wokwi board files are retained from Core, but the current 
 
 ## ESP32-S3 in Espressif's QEMU
 
-`examples/esp32` is a minimal bare-metal boot of Xila on an ESP32-S3: it sets up a heap, formats and mounts LittleFS on a flash partition, reads the hardware RNG and renders one LVGL frame. It does not start Xila's task manager, shell or login yet. It runs headless in [Espressif's QEMU fork](https://github.com/espressif/qemu), so no board is needed. On Linux (x86_64 or aarch64), after `mise run ci:packages-espressif` and `npm ci`:
+`examples/esp32` is a minimal bare-metal boot of Xila on an ESP32-S3: it sets up a heap, formats and mounts LittleFS on a flash partition, reads the hardware RNG and renders one LVGL frame. It does not start Xila's task manager, shell or login yet. It runs headless in [Espressif's QEMU fork](https://github.com/espressif/qemu), so no board is needed. On Linux (x86_64 or aarch64), after `MISE_ENV=ci mise run ci:packages-espressif` (apt-based systems; it installs the native packages) and `npm ci`:
 
 ```sh
 mise run setup:espressif-rust     # once: the rustup `esp` toolchain (Rust 1.97, Xtensa GCC, libclang)

@@ -33,8 +33,10 @@ fn main() -> ! {
         peripherals.FLASH,
     ))));
     let options = little_fs::Options::new(256).set_block_cycles(500);
-    // The smoke runner supplies a fresh, erased flash image on every run.
-    let _file_system = little_fs::FileSystem::new_format(flash, options)
+    // Keep existing data: format only when the partition holds no valid file
+    // system (a fresh, erased image in the emulator, or a new board).
+    let _file_system = little_fs::FileSystem::new(flash, options)
+        .or_else(|_| little_fs::FileSystem::new_format(flash, options))
         .expect("Failed to format and mount LittleFS");
     println!("Xila: LittleFS mounted");
 
