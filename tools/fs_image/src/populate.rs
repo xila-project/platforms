@@ -45,7 +45,8 @@ fn attributes(path: &str, kind: Kind) -> Attributes {
         result = result.set_permissions(Permissions::from_octal(0o700).unwrap());
     }
     // Global application state is root-only (Core enforces the same at boot);
-    // applications keep their data under /users/<uid>/applications/.
+    // applications keep their data under <home>/applications/, in the home
+    // recorded in each account (/users/<user name> for new accounts).
     if path == "/data/applications"
         || path.starts_with("/data/applications/")
         || path == "/configuration/applications"

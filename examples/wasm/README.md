@@ -31,7 +31,8 @@ image on every page load. A new saved disk starts with the same image and
 commits it after mounting LittleFS and initializing accounts.
 
 Clock's settings directory is provisioned per user at
-`/users/<user-id>/applications/clock/configuration`. Its saved preferences and
+`<home>/applications/clock/configuration`, in the home recorded in the account
+(`/users/administrator` for the seeded account). Its saved preferences and
 alarm follow the persistence limits of the selected disk. Clock alerts require the application to stay
 open; browser background-tab throttling can delay them.
 

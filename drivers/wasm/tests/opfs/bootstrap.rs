@@ -164,6 +164,14 @@ async fn saved_accounts_fixture(task_manager: &'static xila::task::Manager) -> R
     if loaded != "bob" {
         return Err("Saved non-administrator user was not loaded".into());
     }
+    // The record predates recorded homes, so it keeps its numeric home.
+    let home = users_manager
+        .get_user_home(users::UserIdentifier::new(42))
+        .await
+        .map_err(|e| e.to_string())?;
+    if home != "/users/42" {
+        return Err(format!("Saved user without a recorded home got {home}"));
+    }
     let mut bytes = Vec::new();
     virtual_file_system::File::read_from_path(
         &vfs,
