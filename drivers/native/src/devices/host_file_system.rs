@@ -155,7 +155,12 @@ impl HostFileSystem {
             rustix::fs::Mode::empty(),
             rustix::fs::ResolveFlags::BENEATH | rustix::fs::ResolveFlags::NO_MAGICLINKS,
         )
-        .map_err(|error| map_io_error(error.into()))?;
+        .map_err(|error| match error {
+            // RESOLVE_BENEATH reports a path leaving the mounted root as EXDEV, the same
+            // way cap-std does for the other operations: it is a denied escape.
+            rustix::io::Errno::XDEV => Error::PermissionDenied,
+            error => map_io_error(error.into()),
+        })?;
         let pinned = cap_std::fs::File::from_std(std::fs::File::from(pinned));
         let metadata = pinned.metadata().map_err(map_io_error)?;
         if !metadata.is_file() {
@@ -370,6 +375,7 @@ fn map_io_error(error: std::io::Error) -> Error {
         return match code {
             libc::ELOOP => Error::InvalidSymbolicLink,
             // Core has no cross-device FS error. The operation is unsupported across mounts.
+            // (openat2 with RESOLVE_BENEATH maps its EXDEV to PermissionDenied before this.)
             libc::EXDEV | libc::ENOSYS | libc::ENOTSUP => Error::UnsupportedOperation,
             // Core represents both per-process and system-wide descriptor exhaustion with this variant.
             libc::EMFILE | libc::ENFILE => Error::TooManyOpenFiles,
