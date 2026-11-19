@@ -69,11 +69,46 @@ fn is_token(value: &str) -> bool {
 }
 
 fn is_host(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 255
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b".-_:[]".contains(&byte))
+    if value.is_empty() || value.len() > 255 {
+        return false;
+    }
+    let port = if let Some(rest) = value.strip_prefix('[') {
+        let Some((ipv6, suffix)) = rest.split_once(']') else {
+            return false;
+        };
+        if ipv6.is_empty()
+            || !ipv6
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() || byte == b':' || byte == b'.')
+        {
+            return false;
+        }
+        match suffix {
+            "" => None,
+            _ => match suffix.strip_prefix(':') {
+                Some(port) => Some(port),
+                None => return false,
+            },
+        }
+    } else {
+        let (host, port) = match value.rsplit_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (value, None),
+        };
+        if host.is_empty()
+            || !host
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b".-_".contains(&byte))
+        {
+            return false;
+        }
+        port
+    };
+    port.is_none_or(|port| {
+        !port.is_empty()
+            && port.bytes().all(|byte| byte.is_ascii_digit())
+            && port.parse::<u16>().is_ok()
+    })
 }
 
 /// Length of the request inside the buffer the guest wrote.

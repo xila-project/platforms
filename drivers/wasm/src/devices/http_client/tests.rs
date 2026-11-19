@@ -115,6 +115,11 @@ fn the_device_scheme_decides_the_url_scheme() {
         prepare("http", request).unwrap().url,
         "http://localhost:8080/x"
     );
+    let ipv6_request = b"GET /x HTTP/1.1\r\nHost: [::1]:8080\r\n\r\n";
+    assert_eq!(
+        prepare("https", ipv6_request).unwrap().url,
+        "https://[::1]:8080/x"
+    );
 }
 
 #[wasm_bindgen_test]
@@ -123,6 +128,11 @@ fn malformed_or_unsafe_requests_are_invalid_parameters() {
         &b"GET /x HTTP/1.1\r\nAccept: */*\r\n\r\n"[..], // no Host
         b"GET /x HTTP/1.1\r\nHost: a.example/evil?\r\n\r\n",
         b"GET /x HTTP/1.1\r\nHost: user@a.example\r\n\r\n",
+        b"GET /x HTTP/1.1\r\nHost: example.com:99999\r\n\r\n",
+        b"GET /x HTTP/1.1\r\nHost: example.com:abc\r\n\r\n",
+        b"GET /x HTTP/1.1\r\nHost: example.com:\r\n\r\n",
+        b"GET /x HTTP/1.1\r\nHost: [::1]:99999\r\n\r\n",
+        b"GET /x HTTP/1.1\r\nHost: [::1\r\n\r\n",
         b"GET http://evil.example/ HTTP/1.1\r\nHost: a.example\r\n\r\n",
         b"GET x HTTP/1.1\r\nHost: a.example\r\n\r\n",
         b"CONNECT /x HTTP/1.1\r\nHost: a.example\r\n\r\n",

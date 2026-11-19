@@ -559,3 +559,44 @@ async fn an_oversized_response_header_is_refused_with_file_too_large() {
         Err(Error::FileTooLarge)
     );
 }
+
+#[wasm_bindgen_test]
+async fn an_oversized_reason_phrase_is_refused_before_reading_headers() {
+    let mock = mock();
+    handler(
+        &mock,
+        "() => { const response = new Response('ok', { status: 200, statusText: 'a'.repeat(9000) }); mock.headersRead = false; Object.defineProperty(response, 'headers', { get() { mock.headersRead = true; return new Headers(); } }); return response; }",
+    );
+    let device = HttpClientDevice::HTTPS;
+    let mut context = open(&device);
+    write(&device, &mut context, GET).unwrap();
+    let mut buffer = [0; 64];
+    assert_eq!(
+        read(&device, &mut context, &mut buffer).await,
+        Err(Error::FileTooLarge)
+    );
+    assert_eq!(field(&mock, "headersRead").as_bool(), Some(false));
+}
+
+#[wasm_bindgen_test]
+async fn invalid_host_or_url_fails_at_write_without_calling_fetch() {
+    let mock = mock();
+    handler(&mock, "() => mock.stream([], 200, {})");
+    let device = HttpClientDevice::HTTPS;
+    let mut context = open(&device);
+    for request in [
+        &b"GET / HTTP/1.1\r\nHost: example.com:99999\r\n\r\n"[..],
+        b"GET / HTTP/1.1\r\nHost: example.com:abc\r\n\r\n",
+        b"GET / HTTP/1.1\r\nHost: [::1]:99999\r\n\r\n",
+        b"GET / HTTP/1.1\r\nHost: [::1\r\n\r\n",
+        b"GET / HTTP/1.1\r\nHost: 999.999.999.999\r\n\r\n",
+    ] {
+        assert_eq!(
+            write(&device, &mut context, request),
+            Err(Error::InvalidParameter),
+            "{:?}",
+            String::from_utf8_lossy(request)
+        );
+    }
+    assert_eq!(field(&mock, "calls.length").as_f64(), Some(0.0));
+}
