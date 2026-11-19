@@ -3,6 +3,19 @@
 //! Select the chip with exactly one Cargo feature (`esp32`, `esp32c2`, `esp32c3`,
 //! `esp32c5`, `esp32c6`, `esp32c61`, `esp32h2`, `esp32p4`, `esp32s2`, `esp32s3`
 //! or `esp32s31`). Without one, or on a host target, the crate is empty.
+//!
+//! # Firmware requirements
+//!
+//! - **Critical section**: the drivers and memory manager use `critical-section`,
+//!   so the firmware must link an implementation (for example by enabling
+//!   `esp-hal`'s `rt` feature).
+//! - **Atomic compare-and-swap on ESP32-C2, ESP32-C3 and ESP32-S2**: Xila Core
+//!   uses `portable-atomic` / `portable-atomic-util` without selecting a backend.
+//!   `esp-hal`'s `esp32c2`, `esp32c3` and `esp32s2` chip features already enable
+//!   `portable-atomic/unsafe-assume-single-core`, so firmware using this crate
+//!   gets a working backend automatically and must not also enable
+//!   `portable-atomic/critical-section` (which `portable-atomic` rejects when
+//!   combined with `unsafe-assume-single-core`).
 #![no_std]
 #![cfg(all(
     any(target_arch = "xtensa", target_arch = "riscv32"),
@@ -38,17 +51,10 @@ const _: () = assert!(
     "several Espressif chip features are enabled; enable exactly one"
 );
 
-#[cfg(all(feature = "gpio", not(target_has_atomic = "ptr")))]
-compile_error!(
-    "the `gpio` feature needs Xila Core on a chip with atomic compare-and-swap; ESP32-C2, \
-     ESP32-C3 and ESP32-S2 lack it (https://github.com/xila-project/core/issues/649). \
-     Disable default features and enable `i2c`, `spi` or `uart` instead."
-);
-
 pub mod chips;
 pub mod memory;
 
-#[cfg(all(feature = "gpio", target_has_atomic = "ptr"))]
+#[cfg(feature = "gpio")]
 pub mod shared;
 
 pub mod peripherals;
