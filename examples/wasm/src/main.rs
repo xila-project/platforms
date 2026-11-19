@@ -82,6 +82,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
     drivers_wasm::memory::instantiate_global_allocator!();
 
     use alloc::boxed::Box;
+    use alloc::format;
     use alloc::string::ToString;
     use alloc::vec;
     use core::sync::atomic::{AtomicBool, Ordering};
@@ -258,23 +259,39 @@ async fn main(task_manager: &'static xila::task::Manager) {
         .expect("Failed to mount CPU neural network loader");
     }
 
-    let audio_button = web_sys::window()
+    let document = web_sys::window()
         .and_then(|window| window.document())
-        .and_then(|document| document.get_element_by_id("audio-enable"))
+        .expect("Failed to find the browser document");
+    let audio_button = document
+        .get_element_by_id("audio-enable")
         .and_then(|button| button.dyn_into::<HtmlElement>().ok())
         .expect("Failed to find the browser audio button in the help panel");
+    let audio_status = document
+        .get_element_by_id("audio-status")
+        .and_then(|status| status.dyn_into::<HtmlElement>().ok())
+        .expect("Failed to find the browser audio status in the help panel");
 
     let audio_button_for_callback = audio_button.clone();
     let audio_button_callback = Closure::wrap(Box::new(move |_event: MouseEvent| {
         let button = audio_button_for_callback.clone();
+        let status = audio_status.clone();
+        // A disabled button means a start is running or audio is running: ignore the click.
+        if button.has_attribute("disabled") {
+            return;
+        }
+        button.set_attribute("disabled", "true").unwrap();
+        button.set_text_content(Some("Starting browser audio…"));
+        status.set_hidden(true);
         wasm_bindgen_futures::spawn_local(async move {
-            button.set_text_content(Some("Starting browser audio…"));
             let device =
                 match drivers_wasm::devices::WebAudioDevice::start_from_user_gesture().await {
                     Ok(device) => device,
                     Err(error) => {
-                        log::error!("Failed to start browser audio: {error:?}");
+                        log::error!("Failed to start browser audio: {error}");
                         button.set_text_content(Some("Audio start failed; click to retry"));
+                        status.set_text_content(Some(&error.summary()));
+                        status.set_hidden(false);
+                        button.remove_attribute("disabled").unwrap();
                         return;
                     }
                 };
@@ -284,12 +301,17 @@ async fn main(task_manager: &'static xila::task::Manager) {
                 .await
             {
                 Ok(()) => {
+                    log::information!("Browser audio: mounted at /devices/audio/playback");
                     button.set_text_content(Some("Audio enabled — launch Synth"));
-                    button.set_attribute("disabled", "true").unwrap();
                 }
                 Err(error) => {
                     log::error!("Failed to mount browser audio: {error}");
                     button.set_text_content(Some("Audio mount failed"));
+                    status.set_text_content(Some(&format!(
+                        "Browser audio started but could not be mounted: {error}"
+                    )));
+                    status.set_hidden(false);
+                    button.remove_attribute("disabled").unwrap();
                 }
             }
         });

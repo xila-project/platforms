@@ -1,11 +1,17 @@
 #[cfg(target_feature = "atomics")]
 compile_error!("the browser audio bridge requires single-threaded browser WASM");
 
-use alloc::boxed::Box;
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+};
 use core::{
-    array,
-    pin::Pin,
+    array, fmt,
+    future::{Future, poll_fn},
+    pin::{Pin, pin},
     sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering},
+    task::Poll,
 };
 
 use audio::{
@@ -16,10 +22,11 @@ use file_system::{
     BaseOperations, CharacterDevice, Context, ControlCommand, ControlCommandIdentifier, Error,
     MountOperations, Result, Size,
 };
-use js_sys::{Array, ArrayBuffer, Object, Reflect, Uint8Array};
+use js_sys::{Array, ArrayBuffer, Object, Promise, Reflect, Uint8Array};
 use nanoaudio_web::{Format, Options, Output, Port, Source, Worklet};
 use shared::AnyByLayout;
 use wasm_bindgen::{JsCast, JsValue, prelude::wasm_bindgen};
+use wasm_bindgen_futures::JsFuture;
 
 const STREAMS: usize = 4;
 const STREAM_BYTES: usize = 2048;
@@ -33,7 +40,169 @@ const MAX_CONTROL_BYTES: usize = 256;
 const MAX_CONTROL_MESSAGES: usize = 16;
 const OUTPUT_CONFIGURATION: audio::Configuration = Configuration::new(48_000, 2, SampleFormat::F32);
 
+/// How long loading the audio worklet may take: it fetches the application's JavaScript glue again.
+const OPEN_TIMEOUT_MS: i32 = 30_000;
+/// How long the browser may keep the audio context suspended after the worklet is loaded.
+///
+/// Browsers leave `AudioContext.resume()` pending, without rejecting it, while autoplay is blocked.
+const RESUME_TIMEOUT_MS: i32 = 10_000;
+/// The longest browser error text shown to the user; the console log keeps the whole text.
+const MAX_SUMMARY_CHARACTERS: usize = 160;
+
 static STARTED: AtomicBool = AtomicBool::new(false);
+
+/// Why [`WebAudioDevice::start_from_user_gesture`] failed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StartError {
+    /// Another start is still running, or the browser audio device already exists.
+    Busy,
+    /// Creating the audio context or loading the audio worklet failed, with the browser's error.
+    Open(String),
+    /// Loading the audio worklet did not finish in time.
+    OpenTimedOut,
+    /// Starting the audio context failed, with the browser's error.
+    Resume(String),
+    /// The browser kept the audio context suspended, which happens while it blocks autoplay for the site.
+    ResumeTimedOut,
+}
+
+impl StartError {
+    /// Returns a short sentence for the page, with the browser's error when there is one.
+    pub fn summary(&self) -> String {
+        match self {
+            Self::Busy => "Browser audio is already starting or running.".to_string(),
+            Self::Open(error) => format!(
+                "The browser could not load the audio worklet: {}",
+                shorten(error)
+            ),
+            Self::OpenTimedOut => format!(
+                "Loading the audio worklet took more than {} seconds.",
+                OPEN_TIMEOUT_MS / 1000
+            ),
+            Self::Resume(error) => {
+                format!("The browser refused to start audio: {}", shorten(error))
+            }
+            Self::ResumeTimedOut => format!(
+                "The browser did not start audio within {} seconds. It is probably blocking audio for this site: allow audio and video for this site in the browser's site permissions (Firefox: the autoplay icon or the padlock in the address bar), then retry.",
+                RESUME_TIMEOUT_MS / 1000
+            ),
+        }
+    }
+}
+
+impl fmt::Display for StartError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Busy => formatter.write_str("browser audio is already starting or running"),
+            Self::Open(error) => write!(
+                formatter,
+                "creating the audio context or loading the worklet failed: {error}"
+            ),
+            Self::OpenTimedOut => write!(
+                formatter,
+                "loading the audio worklet did not finish within {OPEN_TIMEOUT_MS} ms"
+            ),
+            Self::Resume(error) => write!(formatter, "starting the audio context failed: {error}"),
+            Self::ResumeTimedOut => write!(
+                formatter,
+                "the audio context was still suspended {RESUME_TIMEOUT_MS} ms after the worklet loaded (autoplay is probably blocked for this site)"
+            ),
+        }
+    }
+}
+
+fn shorten(text: &str) -> String {
+    match text.char_indices().nth(MAX_SUMMARY_CHARACTERS) {
+        Some((end, _)) => format!("{}…", &text[..end]),
+        None => text.to_string(),
+    }
+}
+
+/// Describes a JavaScript exception as `Name: message` instead of the opaque `JsValue(...)`.
+fn describe_value(value: &JsValue) -> String {
+    let text = |key: &str| {
+        Reflect::get(value, &JsValue::from_str(key))
+            .ok()
+            .and_then(|field| field.as_string())
+            .filter(|field| !field.is_empty())
+    };
+    match (text("name"), text("message")) {
+        (Some(name), Some(message)) => format!("{name}: {message}"),
+        (None, Some(message)) => message,
+        (Some(name), None) => name,
+        (None, None) => value.as_string().unwrap_or_else(|| format!("{value:?}")),
+    }
+}
+
+fn describe(error: &nanoaudio_web::Error) -> String {
+    match error {
+        nanoaudio_web::Error::Backend(value) => describe_value(value),
+        error => error.to_string(),
+    }
+}
+
+/// Reports `navigator.userActivation`: whether the click still counts as a gesture, and whether the page was ever activated.
+fn activation() -> String {
+    let flag = |key: &str| {
+        let window = web_sys::window()?;
+        let activation =
+            Reflect::get(window.navigator().as_ref(), &"userActivation".into()).ok()?;
+        Reflect::get(&activation, &key.into()).ok()?.as_bool()
+    };
+    format!(
+        "user activation active={:?} sticky={:?}",
+        flag("isActive"),
+        flag("hasBeenActive")
+    )
+}
+
+/// A `setTimeout` that is cleared when dropped.
+struct Deadline {
+    handle: Option<i32>,
+    expired: JsFuture,
+}
+
+impl Deadline {
+    fn after(milliseconds: i32) -> Self {
+        let window = web_sys::window();
+        let mut handle = None;
+        let promise = Promise::new(&mut |resolve, _| {
+            handle = window.as_ref().and_then(|window| {
+                window
+                    .set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, milliseconds)
+                    .ok()
+            });
+        });
+        Self {
+            handle,
+            expired: JsFuture::from(promise),
+        }
+    }
+}
+
+impl Drop for Deadline {
+    fn drop(&mut self) {
+        if let (Some(handle), Some(window)) = (self.handle, web_sys::window()) {
+            window.clear_timeout_with_handle(handle);
+        }
+    }
+}
+
+/// Polls `future` until it completes or `milliseconds` elapse, and drops it in the second case.
+async fn within<F: Future>(milliseconds: i32, future: F) -> Option<F::Output> {
+    let mut future = pin!(future);
+    let mut deadline = Deadline::after(milliseconds);
+    poll_fn(|context| {
+        if let Poll::Ready(output) = future.as_mut().poll(context) {
+            return Poll::Ready(Some(output));
+        }
+        match Pin::new(&mut deadline.expired).poll(context) {
+            Poll::Ready(_) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
+    })
+    .await
+}
 
 struct StartGuard<'a> {
     started: &'a AtomicBool,
@@ -274,24 +443,64 @@ pub struct WebAudioDevice {
 }
 
 impl WebAudioDevice {
-    pub async fn start_from_user_gesture() -> Result<Self> {
-        let startup = StartGuard::acquire(&STARTED)?;
+    /// Opens the browser audio output.
+    ///
+    /// Call it from a click handler and ignore further clicks until it returns: a second concurrent call fails with [`StartError::Busy`]. Each step is logged, and no step stays pending for more than [`OPEN_TIMEOUT_MS`] or [`RESUME_TIMEOUT_MS`].
+    pub async fn start_from_user_gesture() -> core::result::Result<Self, StartError> {
+        let startup = StartGuard::acquire(&STARTED).map_err(|_| {
+            log::warning!(
+                "Browser audio: start ignored, another start is running or audio is already running"
+            );
+            StartError::Busy
+        })?;
+        log::information!("Browser audio: starting ({})", activation());
 
         let worklet: fn() -> Worklet = xila_audio_worklet;
         let _ = worklet;
         let configuration = nanoaudio_web::Configuration::new(48_000, 2, Format::F32);
-        let output = match Output::open_with(
-            configuration,
-            "xila_audio_worklet",
-            Options::default(),
+        let output = match within(
+            OPEN_TIMEOUT_MS,
+            Output::open_with(configuration, "xila_audio_worklet", Options::default()),
         )
         .await
         {
-            Ok(output) => output,
-            Err(_) => return Err(Error::InputOutput),
+            Some(Ok(output)) => output,
+            Some(Err(error)) => {
+                let error = StartError::Open(describe(&error));
+                log::error!("Browser audio: {error}");
+                return Err(error);
+            }
+            None => {
+                log::error!("Browser audio: {}", StartError::OpenTimedOut);
+                return Err(StartError::OpenTimedOut);
+            }
         };
-        if output.play().await.is_err() {
-            return Err(Error::InputOutput);
+        log::information!(
+            "Browser audio: worklet loaded (context state {:?}, {} Hz, {})",
+            output.context().state(),
+            output.device_sample_rate(),
+            activation()
+        );
+
+        match within(RESUME_TIMEOUT_MS, output.play()).await {
+            Some(Ok(())) => log::information!(
+                "Browser audio: context resumed (state {:?})",
+                output.context().state()
+            ),
+            Some(Err(error)) => {
+                let error = StartError::Resume(describe(&error));
+                log::error!("Browser audio: {error}");
+                return Err(error);
+            }
+            None => {
+                log::error!(
+                    "Browser audio: {} (state {:?}, {})",
+                    StartError::ResumeTimedOut,
+                    output.context().state(),
+                    activation()
+                );
+                return Err(StartError::ResumeTimedOut);
+            }
         }
 
         let bridge = Box::new(Bridge {
@@ -860,8 +1069,34 @@ fn any_bytes(value: &AnyByLayout) -> &[u8] {
 
 #[cfg(test)]
 mod tests {
-    use super::{BridgeSlot, StartGuard};
+    use super::{BridgeSlot, MAX_SUMMARY_CHARACTERS, StartError, StartGuard, shorten};
+    use alloc::string::ToString;
     use core::sync::atomic::{AtomicBool, Ordering};
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    #[wasm_bindgen_test]
+    fn shortens_long_errors_on_a_character_boundary() {
+        let long = "é".repeat(MAX_SUMMARY_CHARACTERS + 10);
+        let short = shorten(&long);
+        assert_eq!(short.chars().count(), MAX_SUMMARY_CHARACTERS + 1);
+        assert!(short.ends_with('…'));
+        assert_eq!(shorten("short"), "short");
+    }
+
+    #[wasm_bindgen_test]
+    fn summaries_carry_the_browser_error_and_the_autoplay_hint() {
+        assert!(
+            StartError::Open("AbortError: The operation was aborted.".to_string())
+                .summary()
+                .contains("AbortError")
+        );
+        assert!(
+            StartError::Resume("NotAllowedError: blocked".to_string())
+                .summary()
+                .contains("NotAllowedError")
+        );
+        assert!(StartError::ResumeTimedOut.summary().contains("allow audio"));
+    }
 
     #[test]
     fn uncommitted_start_guard_resets_reservation() {

@@ -102,7 +102,12 @@ The OS canvas still uses the existing localized LVGL Montserrat Regular subsets 
   starts one `WebAudioDevice` and mounts it at `/devices/audio/playback`; Synth
   then writes ordinary PCM through its file descriptor. If Synth is already
   open, choose **Retry audio** inside its window. Browsers may require this
-  gesture because audio contexts cannot start during page initialization.
+  gesture because audio contexts cannot start during page initialization. The
+  button is disabled while audio starts. If starting fails, the button offers a
+  retry and the sidebar shows the browser's error; the console logs each step
+  (`Browser audio: …`). A start that the browser leaves suspended for 10 seconds
+  is reported as probably blocked: allow audio for the site in the browser's
+  site permissions, then retry.
 - Applications are distributed in a separate seed image. The disk cache still
   occupies 16 MiB; running a guest also needs Wasmi's module and guest memory.
 - Guests run cooperatively in Wasmi on the browser's executor, not as separate

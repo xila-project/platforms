@@ -8,7 +8,7 @@ mod power;
 mod time;
 
 #[cfg(all(feature = "audio", target_os = "unknown"))]
-pub use audio::WebAudioDevice;
+pub use audio::{StartError, WebAudioDevice};
 pub use cpu::*;
 pub use drive::*;
 pub use http_client::*;
