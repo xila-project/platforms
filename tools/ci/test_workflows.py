@@ -89,6 +89,13 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         self.assertIn('USER 10001:10001', dockerfile)
         self.assertIn('ENTRYPOINT ["/usr/bin/xila-runtime"]', dockerfile)
 
+    def test_docker_rust_version_matches_mise(self):
+        # The runtime image pins its own toolchain; keep it equal to the mise
+        # var so the one-version rule can't drift there unnoticed.
+        pinned = tomllib.loads(read('mise.toml'))['vars']['rust_version']
+        dockerfile = read('Dockerfile.runtime')
+        self.assertIn(f'ARG RUST_VERSION={pinned}\n', dockerfile)
+
     def test_browser_demo_profiles_and_images_are_reproducible(self):
         tasks = tomllib.loads(read('mise.ci.toml'))['tasks']
         script = tasks['pages:build']['run']

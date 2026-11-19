@@ -1,5 +1,5 @@
 [vars]
-rust_version = "1.100.0"
+rust_version = "1.97.0"
 node_version = "24.22.0"
 wasm_bindgen_version = "0.2.129"
 taplo_version = "0.10.0"

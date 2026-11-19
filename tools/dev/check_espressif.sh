@@ -4,16 +4,17 @@
 #   tools/dev/check_espressif.sh            # every chip
 #   tools/dev/check_espressif.sh esp32s3 …  # selected chips
 #
-# Xtensa chips need the `esp` rustup toolchain (`espup install`). Its cargo is
-# too old for some Applications manifests, so Cargo comes from
-# RISCV_TOOLCHAIN and only rustc/clippy-driver from the `esp` toolchain.
+# Every chip is checked with the `esp` rustup toolchain (`espup install`). It is
+# based on Rust 1.97, the version Xila declares as its MSRV, so the matrix does
+# not compile with a newer compiler. Xtensa chips take rustc/clippy-driver from
+# ESP_TOOLCHAIN and Cargo from RISCV_TOOLCHAIN; both default to `esp`.
 # Environment: ESP_TOOLCHAIN (default `esp`), RISCV_TOOLCHAIN (default
-# `nightly`), CARGO_CONFIG (an extra `--config` file, e.g. local overrides).
+# ESP_TOOLCHAIN), CARGO_CONFIG (an extra `--config` file, e.g. local overrides).
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ESP_TOOLCHAIN="${ESP_TOOLCHAIN:-esp}"
-RISCV_TOOLCHAIN="${RISCV_TOOLCHAIN:-nightly}"
+RISCV_TOOLCHAIN="${RISCV_TOOLCHAIN:-$ESP_TOOLCHAIN}"
 
 CONFIG_ARGS=()
 if [[ -n "${CARGO_CONFIG:-}" ]]; then

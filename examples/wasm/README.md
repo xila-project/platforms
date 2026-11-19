@@ -11,7 +11,7 @@ mkdir -p target/seed/wasm
 cp target/seed/browser/seed.img target/seed/wasm/seed.img
 mise run check:browser
 cd examples/wasm
-RUSTUP_TOOLCHAIN=stable trunk serve
+trunk serve
 ```
 
 Trunk copies `target/seed/wasm/seed.img` beside the runtime. Building the Rust

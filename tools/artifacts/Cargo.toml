@@ -2,6 +2,7 @@
 name = "xila-prepare-applications"
 version = "0.1.0"
 edition = "2024"
+rust-version.workspace = true
 
 [dependencies]
 xila-package-manifest = { git = "https://github.com/xila-project/package_manager", branch = "main" }

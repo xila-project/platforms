@@ -84,7 +84,7 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", compone
 
 [tasks."pages:demo"]
 dir = "examples/wasm"
-tools.rust = { version = "nightly-2026-10-12", profile = "minimal", components = [
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
   "rustfmt",
 ], targets = [
   "wasm32-unknown-unknown",

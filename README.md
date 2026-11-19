@@ -13,7 +13,7 @@
 
 This workspace assembles Xila runtimes, drivers, the integration harness and seed images. Core and Applications are pinned Git dependencies in `Cargo.toml`; the current branches are part of an unfinished coordinated migration.
 
-For local development install [mise](https://mise.jdx.dev/), run `mise bootstrap packages apply --manager apt`, and run `npm ci` for the graphics font converter. Tasks activate their own Rust toolchains. `mise run build:native` builds the native runtime and `mise run check:browser` checks the browser assembly. `mise run test:seed` runs filesystem-image and package-preparation tests.
+For local development install [mise](https://mise.jdx.dev/), run `mise bootstrap packages apply --manager apt`, and run `npm ci` for the graphics font converter. Development and CI use Rust 1.97.0. The minimum supported Rust version is 1.97. `mise run build:native` builds the native runtime and `mise run check:browser` checks the browser assembly. `mise run test:seed` runs filesystem-image and package-preparation tests.
 
 `mise run image:native` and `mise run image:browser` seed the released, signed application bundles pinned in `tools/fs_image/profiles/bundles.lock.json`. To seed locally built guests instead (for example another locale, since translations are compiled into each guest), bundle them with `tools/bundle_applications.sh <applications-source> <wasm-dir> <output>` and set `XILA_BUNDLES_DIR` to that output. The output paths must not already exist. The image generator validates its output. Select the ABI level from the target runtime rather than assuming one. See [`tools/fs_image`](tools/fs_image/README.md).
 

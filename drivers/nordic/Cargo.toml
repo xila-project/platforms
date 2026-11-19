@@ -2,6 +2,7 @@
 name = "xila-drivers-nordic"
 version = "0.1.0"
 edition = "2024"
+rust-version.workspace = true
 
 [features]
 default = ["nrf52840", "usb-console"]
