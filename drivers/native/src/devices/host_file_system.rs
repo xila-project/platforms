@@ -348,6 +348,15 @@ fn link_count(metadata: &cap_std::fs::Metadata) -> Option<u64> {
     }
 }
 
+/// The modification time as `Entry` expects it: `0` when the host doesn't report one.
+fn modification_time(metadata: &cap_std::fs::Metadata) -> Time {
+    metadata
+        .modified()
+        .ok()
+        .and_then(system_time)
+        .unwrap_or(Time::new(0))
+}
+
 fn system_time(value: SystemTime) -> Option<Time> {
     value
         .duration_since(SystemClock::UNIX_EPOCH)
@@ -765,14 +774,18 @@ impl DirectoryOperations for HostFileSystem {
             } else {
                 continue;
             };
-            let (inode, size) = if kind.is_symlink() {
+            let (inode, size, modification) = if kind.is_symlink() {
                 let metadata = symlink_metadata.ok_or(Error::InternalError)?;
-                (position, metadata.len())
+                (position, metadata.len(), modification_time(&metadata))
             } else {
                 let metadata = entry.metadata().map_err(map_io_error)?;
-                (stable_inode(&metadata).unwrap_or(position), metadata.len())
+                (
+                    stable_inode(&metadata).unwrap_or(position),
+                    metadata.len(),
+                    modification_time(&metadata),
+                )
             };
-            return Ok(Some(Entry::new(inode, name, file_type, size)));
+            return Ok(Some(Entry::new(inode, name, file_type, size, modification)));
         }
     }
 
