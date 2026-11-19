@@ -138,6 +138,13 @@ fn browser_and_native_bundles_contain_their_declared_apps() {
         assert!(contains(b"guest fixture for weather"), "{profile}");
         assert!(contains(b"/applications/executables/activity"));
         assert!(contains(b"/applications/executables/terminal"));
+        // Only the native runtime registers the Debug executable and its
+        // transport, and only on Unix hosts (see `bundle.rs`).
+        assert_eq!(
+            contains(b"/applications/executables/debug"),
+            profile == "native" && cfg!(unix),
+            "{profile}: Debug shortcut"
+        );
         assert!(contains(
             br#""name":"xila","url":"https://registry.xila.dev","root_key":"AJEDFQ2MPtUO0vu/BnC7xX5Ag8sBuq6DF5+ShKfCQgU=""#
         ));
