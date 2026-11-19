@@ -40,7 +40,7 @@ async fn run_request(
         .await
         {
             Either::First(result) => result?,
-            Either::Second(_) => return Err(Error::InputOutput),
+            Either::Second(_) => return Err(Error::TimeError),
         }
         drop(request);
         let result = read_response(

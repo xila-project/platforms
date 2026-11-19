@@ -411,14 +411,39 @@ async fn a_stream_that_fails_midway_is_an_error_after_the_data_received() {
 #[wasm_bindgen_test]
 async fn a_silent_server_times_out_and_the_request_is_aborted() {
     let mock = mock();
-    handler(&mock, "() => new Promise(() => {})");
+    handler(
+        &mock,
+        "(_, init) => new Promise((_, reject) => {
+            init.signal.addEventListener('abort', () => reject(init.signal.reason));
+        })",
+    );
     let device = HttpClientDevice::new("https", 30);
     let mut context = open(&device);
     write(&device, &mut context, GET).unwrap();
     let mut buffer = [0; 64];
     assert_eq!(
         read(&device, &mut context, &mut buffer).await,
-        Err(Error::InputOutput)
+        Err(Error::TimeError)
+    );
+    assert!(aborted(&mock, 0));
+    assert_eq!(read(&device, &mut context, &mut buffer).await, Ok(0));
+}
+
+#[wasm_bindgen_test]
+async fn a_stalled_body_read_times_out_and_aborts_the_request() {
+    let mock = mock();
+    handler(
+        &mock,
+        "() => new Response(new ReadableStream({ pull: () => new Promise(() => {}) }))",
+    );
+    let device = HttpClientDevice::new("https", 30);
+    let mut context = open(&device);
+    write(&device, &mut context, GET).unwrap();
+    let mut buffer = [0; 64];
+    assert!(read(&device, &mut context, &mut buffer).await.unwrap() > 0);
+    assert_eq!(
+        read(&device, &mut context, &mut buffer).await,
+        Err(Error::TimeError)
     );
     assert!(aborted(&mock, 0));
 }

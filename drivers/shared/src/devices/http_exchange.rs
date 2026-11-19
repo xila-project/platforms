@@ -1,5 +1,6 @@
 //! One allocation per opening, reused for response head and body. The worker
 //! waits for readers to drain each publication before receiving more data.
+use super::http_common::map_http_io_error;
 use alloc::{boxed::Box, vec};
 use core::{
     task::{Context, Poll},
@@ -230,8 +231,8 @@ async fn receive<R: embedded_io_async::Read>(io: &mut R, buffer: &mut [u8]) -> R
     )
     .await
     {
-        Either::First(result) => result.map_err(|_| Error::InputOutput),
-        Either::Second(_) => Err(Error::InputOutput),
+        Either::First(result) => result.map_err(map_http_io_error),
+        Either::Second(_) => Err(Error::TimeError),
     }
 }
 pub(super) async fn read_response<R: embedded_io_async::Read>(
