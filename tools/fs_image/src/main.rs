@@ -1,18 +1,13 @@
-mod bundle;
-mod image;
-mod populate;
-mod source;
+//! Platforms' seed image builder: Platforms' profiles, shortcuts and
+//! repositories over the image engine of `xila-project/tools`
+//! (`xila-tools-image`). Cargo.lock pins that library with the firmware's Core,
+//! so the images always match the Core revision that mounts them.
 use std::{env, error::Error, path::PathBuf, process};
+use tools_image::{Profile, ProfileFile};
 
-const DEFAULT_SIZE: u64 = 16 * 1024 * 1024;
+tools_image::instantiate_global_allocator!();
 
 fn main() {
-    drivers_std::memory::instantiate_global_allocator!();
-    // Pull the supported ABI memory exports into the host executable. LittleFS
-    // calls these C ABI symbols from its allocator hooks.
-    std::hint::black_box(abi_definitions::xila_memory_allocate as *const ());
-    std::hint::black_box(abi_definitions::xila_memory_deallocate as *const ());
-    std::hint::black_box(&abi_definitions::XILA_MEMORY_CAPABILITIES_NONE as *const _ as usize);
     if let Err(error) = run() {
         eprintln!("fs_image: {error}");
         process::exit(1);
@@ -31,7 +26,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     {
         arguments.next().unwrap().to_string_lossy().parse::<u64>()?
     } else {
-        DEFAULT_SIZE
+        tools_image::DEFAULT_SIZE
     };
     let mut root = None;
     let mut bundle = None;
@@ -56,20 +51,19 @@ fn run() -> Result<(), Box<dyn Error>> {
             _ => return Err("unknown argument".into()),
         }
     }
-    let staging = match (bundle, bundles) {
-        (Some(profile), Some(directory)) if root.is_none() => Some(bundle::prepare(
-            profile.to_str().ok_or("invalid bundle")?,
-            &directory,
-        )?),
-        (None, None) => None,
+    let output = match (bundle, bundles) {
+        (Some(name), Some(directory)) if root.is_none() => {
+            let name = name.to_str().ok_or("invalid bundle")?;
+            let profile = profile(name)?;
+            let staging = tools_image::stage(&profile, &directory)?;
+            println!("Prepared {name} bundle: {}", profile.applications.join(","));
+            tools_image::build(&output, size, Some(staging.path()))?
+        }
+        (None, None) => tools_image::build(&output, size, root.as_deref())?,
         _ => {
             return Err("use --root or --bundle native|wasm --bundles-dir <directory>".into());
         }
     };
-    let root = staging.as_ref().map(|s| s.0.as_path()).or(root.as_deref());
-    let output = output.canonicalize_parent()?;
-    image::build(&output, size, root)?;
-
     println!(
         "Verified Xila MBR, LittleFS contents and metadata: {} ({} bytes)",
         output.display(),
@@ -78,84 +72,82 @@ fn run() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn create_output_file(path: &std::path::Path, size: u64) -> std::io::Result<()> {
-    if path.to_str().is_none() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "output image path must be valid UTF-8",
-        ));
-    }
-    // Exclusive creation prevents accidental replacement of an existing image.
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)?
-        .set_len(size)
+/// Platforms' seed profile `native` or `wasm` (the browser profile).
+fn profile(name: &str) -> Result<Profile, Box<dyn Error>> {
+    let (applications, shortcuts) = match name {
+        "native" => (
+            include_str!("../profiles/native.txt"),
+            include_str!("../profiles/native-shortcuts.txt"),
+        ),
+        "wasm" => (
+            include_str!("../profiles/browser.txt"),
+            include_str!("../profiles/browser-shortcuts.txt"),
+        ),
+        _ => return Err("bundle must be native or wasm".into()),
+    };
+    // Native applications are linked into the runtime; only their shortcuts
+    // are seeded. The Debug application needs the Unix control transport.
+    let shortcuts = Profile::parse_list(shortcuts)?
+        .into_iter()
+        .filter(|name| cfg!(unix) || name != "debug")
+        .map(|name| {
+            Ok(ProfileFile {
+                content: native_shortcut(&name)
+                    .ok_or("unknown native application")?
+                    .as_bytes()
+                    .to_vec(),
+                name: format!("{name}.json"),
+            })
+        })
+        .collect::<Result<_, Box<dyn Error>>>()?;
+    Ok(Profile {
+        name: name.into(),
+        applications: Profile::parse_list(applications)?,
+        shortcuts,
+        // The official registry, trusted by its root key (fingerprint
+        // f0df 8609 b382 1414 7e39 51c0 b40b c2ea), so `package install` works
+        // without a trust prompt. Versions start at 0 and only increase.
+        repositories: vec![ProfileFile {
+            name: "xila.json".into(),
+            content: include_bytes!("../repositories/xila.json").to_vec(),
+        }],
+    })
 }
 
-trait CanonicalizeParent {
-    fn canonicalize_parent(&self) -> Result<PathBuf, Box<dyn Error>>;
-}
-
-impl CanonicalizeParent for PathBuf {
-    fn canonicalize_parent(&self) -> Result<PathBuf, Box<dyn Error>> {
-        let parent = self
-            .parent()
-            .filter(|path| !path.as_os_str().is_empty())
-            .unwrap_or(std::path::Path::new("."));
-        let parent = parent.canonicalize()?;
-        Ok(parent.join(self.file_name().ok_or("output path must name a file")?))
-    }
+fn native_shortcut(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "activity" => include_str!("../shortcuts/activity.json"),
+        "debug" => include_str!("../shortcuts/debug.json"),
+        "file_manager" => include_str!("../shortcuts/file_manager.json"),
+        "settings" => include_str!("../shortcuts/settings.json"),
+        "terminal" => include_str!("../shortcuts/terminal.json"),
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::create_output_file;
-    use std::{fs, io::Write};
-
-    #[cfg(unix)]
-    #[test]
-    fn rejects_non_utf8_output_before_creating_file() {
-        use std::os::unix::ffi::OsStringExt;
-
-        let mut name = format!(
-            "fs-image-invalid-{}-{}.img",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        )
-        .into_bytes();
-        name.push(0xff);
-        let path = std::env::temp_dir().join(std::ffi::OsString::from_vec(name));
-
-        let result = create_output_file(&path, 16 * 1024 * 1024);
-
-        let error = result.unwrap_err();
-        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
-        assert!(error.to_string().contains("valid UTF-8"));
-        assert!(!path.exists());
-    }
+    use super::*;
 
     #[test]
-    fn refuses_existing_output_without_modifying_it() {
-        let path = std::env::temp_dir().join(format!(
-            "fs-image-existing-{}-{}.img",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+    fn profiles_seed_their_shortcuts_and_the_official_registry() {
+        for name in ["native", "wasm"] {
+            let profile = profile(name).unwrap();
+            assert!(profile.applications.contains(&"digits".to_owned()));
+            assert!(
+                profile
+                    .shortcuts
+                    .iter()
+                    .any(|shortcut| shortcut.name == "terminal.json")
+            );
+            assert_eq!(profile.repositories[0].name, "xila.json");
+        }
+        assert!(
+            profile("native")
                 .unwrap()
-                .as_nanos()
-        ));
-        let mut existing = fs::File::create(&path).unwrap();
-        existing.write_all(b"keep this installation").unwrap();
-        drop(existing);
-
-        let result = create_output_file(&path, 16 * 1024 * 1024);
-
-        assert!(result.is_err());
-        assert_eq!(fs::read(&path).unwrap(), b"keep this installation");
-        fs::remove_file(path).unwrap();
+                .applications
+                .contains(&"weather".to_owned())
+        );
+        assert!(profile("other").is_err());
     }
 }
