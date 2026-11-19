@@ -1,7 +1,9 @@
 #[cfg(test)]
 use super::http_common::compute_request_length;
 use super::{
-    http_common::{TcpSocketAdapter, create_tcp_connection, send_request, split_host_port},
+    http_common::{
+        TcpSocketAdapter, create_tcp_connection, map_http_io_error, send_request, split_host_port,
+    },
     http_exchange::{ClientContext, Exchange, IO_TIMEOUT_SECONDS, read_response},
 };
 use alloc::{boxed::Box, vec, vec::Vec};
@@ -131,8 +133,8 @@ async fn run_request<T: DirectCharacterDevice + 'static>(
         )
         .await
         {
-            Either::First(Ok(())) => {}
-            _ => return Err(Error::InputOutput),
+            Either::First(result) => result.map_err(map_http_io_error)?,
+            Either::Second(_) => return Err(Error::TimeError),
         }
         match select(
             send_request(&mut tls, &request),
@@ -141,7 +143,7 @@ async fn run_request<T: DirectCharacterDevice + 'static>(
         .await
         {
             Either::First(result) => result?,
-            Either::Second(_) => return Err(Error::InputOutput),
+            Either::Second(_) => return Err(Error::TimeError),
         }
         drop(configuration);
         drop(request);

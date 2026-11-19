@@ -6,7 +6,7 @@
 use super::{request::PreparedRequest, response};
 use alloc::{string::String, vec::Vec};
 use file_system::{Error, Result};
-use js_sys::{Array, Function, JsString, Promise, Reflect, Uint8Array};
+use js_sys::{Array, Function, JsString, Object, Promise, Reflect, Uint8Array};
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
@@ -37,22 +37,22 @@ impl Drop for Deadline {
 
 /// Wait for `promise`, giving up after `timeout_ms`.
 ///
-/// The deadline aborts the request as well as failing the wait, so the browser
-/// releases the connection. Every failure, whether network, CORS, abort or
-/// timeout, is reported as [`Error::InputOutput`], like the native devices'
-/// connection and timeout errors: the browser deliberately does not say which.
+/// A local deadline aborts the request and returns [`Error::TimeError`].
+/// Fetch rejections, including opaque network and CORS failures, return
+/// [`Error::InputOutput`].
 async fn within(
     promise: Promise,
     controller: &AbortController,
     timeout_ms: u32,
 ) -> Result<JsValue> {
     let set_timeout = global_function("setTimeout")?;
+    // Only the timer can reject with this object.
+    let timeout = JsValue::from(Object::new());
     let mut deadline = None;
     let expired = Promise::new(&mut |_resolve: Function, reject: Function| {
-        let controller = controller.clone();
+        let timeout = timeout.clone();
         let callback = Closure::once(move || {
-            controller.abort();
-            let _ = reject.call1(&JsValue::NULL, &JsValue::from_str("timeout"));
+            let _ = reject.call1(&JsValue::NULL, &timeout);
         });
         if let Ok(identifier) = set_timeout.call2(
             &JsValue::NULL,
@@ -70,7 +70,16 @@ async fn within(
     }
     let result = JsFuture::from(Promise::race(&Array::of2(&promise, &expired))).await;
     drop(deadline);
-    result.map_err(|_| Error::InputOutput)
+    result.map_err(|rejection| {
+        if rejection == timeout {
+            // The timer has won the race. Aborting now cannot mask the deadline
+            // with the rejection triggered by aborting Fetch.
+            controller.abort();
+            Error::TimeError
+        } else {
+            Error::InputOutput
+        }
+    })
 }
 
 /// The `fetch` options for a request, without its URL.
