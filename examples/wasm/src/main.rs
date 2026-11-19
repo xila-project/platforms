@@ -371,6 +371,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
             virtual_file_system,
             graphics_manager: Some(graphics_manager),
             network_manager: None,
+            formats: &[],
             time_manager,
         }));
 

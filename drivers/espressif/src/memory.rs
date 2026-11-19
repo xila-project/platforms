@@ -208,11 +208,15 @@ impl ManagerTrait for MemoryManager {
 
     unsafe fn reallocate(
         &self,
+        capabilities: CapabilityFlags,
         old_pointer: NonNull<u8>,
         old_layout: Layout,
         new_layout: Layout,
     ) -> Option<NonNull<u8>> {
-        unsafe { self.inner.reallocate(old_pointer, old_layout, new_layout) }
+        unsafe {
+            self.inner
+                .reallocate(capabilities, old_pointer, old_layout, new_layout)
+        }
     }
 
     fn get_used(&self) -> usize {
