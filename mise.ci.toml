@@ -207,6 +207,11 @@ run = "actionlint"
 [bootstrap.packages]
 "apt:clang" = { env = "ci" }
 "apt:libclang-dev" = { env = "ci" }
+"apt:libgcrypt20" = { env = "espressif" }
+"apt:libpixman-1-0" = { env = "espressif" }
+"apt:libsdl2-2.0-0" = { env = "espressif" }
+"apt:libslirp0" = { env = "espressif" }
+"apt:unzip" = { env = "espressif" }
 "apt:pkg-config" = { env = "host" }
 "apt:libasound2-dev" = { env = "host" }
 "apt:libudev-dev" = { env = "host" }
@@ -281,3 +286,7 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets
   "wasm32-wasip1",
 ] }
 run = 'cargo build --manifest-path ../applications/Cargo.toml --config "$RUNNER_TEMP/xila-local.toml" --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth -p xila-digits'
+
+[tasks."ci:packages-espressif"]
+description = "Install the shared libraries required by Espressif QEMU and espflash"
+run = "mise -E ci,espressif bootstrap packages apply --manager apt --update --yes"

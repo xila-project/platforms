@@ -1,0 +1,30 @@
+[package]
+name = "xila-esp32-example"
+version = "0.1.0"
+edition = "2024"
+rust-version.workspace = true
+
+[features]
+esp32s3 = [
+  "drivers_espressif/esp32s3",
+  "esp-bootloader-esp-idf/esp32s3",
+  "esp-println/esp32s3",
+  "esp-storage/esp32s3",
+]
+# Draws through the virtual RGB panel that only Espressif's QEMU provides.
+qemu-display = ["esp32s3", "xila/graphics_rendering_rgb565"]
+
+[target.'cfg(all(target_os = "none", target_arch = "xtensa"))'.dependencies]
+drivers_espressif = { package = "xila-drivers-espressif", path = "../../drivers/espressif", default-features = false }
+xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
+esp-hal = { version = "=1.2.2", features = ["unstable"] }
+esp-bootloader-esp-idf = "0.6"
+esp-println = { version = "0.18", default-features = false, features = [
+  "uart",
+] }
+esp-storage = { version = "0.10", features = ["embedded-storage"] }
+embedded-storage = "0.3"
+
+[[bin]]
+name = "esp32_example"
+path = "src/main.rs"

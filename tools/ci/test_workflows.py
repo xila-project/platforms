@@ -399,6 +399,24 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         self.assertIn('cache-mode: target', ci)
         self.assertIn('cache-mode: objects', read('.github/workflows/demo.yml'))
 
+    def test_espressif_emulator_job_is_advisory_and_uses_pinned_tasks(self):
+        ci = yaml.safe_load(read('.github/workflows/ci.yml'))
+        job = ci['jobs']['espressif-emulator']
+        # Advisory while the emulator check settles: it is not part of the gate.
+        self.assertNotIn('espressif-emulator', ci['jobs']['required']['needs'])
+        self.assertIn('timeout-minutes', job)
+        for step in job['steps']:
+            self.assertRegex(step['name'], r'^(Setup|Test|Report) \| ')
+            self.assertNotIn('apt-get', step.get('run', ''))
+            if 'run' in step:
+                self.assertTrue(step['run'].startswith('mise run '), step['name'])
+        mise = tomllib.loads(read('mise.toml'))
+        for task in ('setup:espressif-rust', 'setup:espressif-emulator',
+                     'build:esp32s3-image', 'test:espressif-emulator'):
+            self.assertIn(task, mise['tasks'])
+        for pin in ('esp_qemu_version', 'espflash_version', 'espup_version'):
+            self.assertNotIn('latest', mise['vars'][pin])
+
     def test_xila_checkouts_use_locked_revisions(self):
         # Checkouts of Core, Applications and package_manager follow Cargo.lock
         # (`ci:locked-revisions`) instead of hard-coding commits that drift.

@@ -130,6 +130,7 @@ members = [
   "drivers/std",
   "drivers/wasm",
   "examples/native",
+  "examples/esp32",
   "examples/nano_33_ble",
   "examples/wasm",
   "tools/fs_image",
