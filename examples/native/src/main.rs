@@ -431,6 +431,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
             virtual_file_system,
             graphics_manager,
             network_manager: (config.networking || config.mock_wifi).then_some(network_manager),
+            formats: &[],
             time_manager,
         }));
 
