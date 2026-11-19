@@ -170,8 +170,6 @@ pub use instantiate_global_allocator;
 
 #[cfg(test)]
 mod tests {
-    use abi_definitions as _;
-
     instantiate_global_allocator!();
 
     use super::*;

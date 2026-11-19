@@ -1,6 +1,5 @@
 #![cfg(target_arch = "wasm32")]
 
-use abi_definitions as _;
 use core::task::{Context, Poll, Waker};
 use drivers_wasm::devices::graphics::{CanvasScreenDevice, KeyboardDevice};
 use file_system::{ControlCommand, DirectBaseOperations};

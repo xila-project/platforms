@@ -350,10 +350,6 @@ async fn run_runtime(
         virtual_file_system::initialize(task_manager, users_manager, time_manager, root)
             .map_err(|error| format!("cannot initialize VFS: {error:?}"))?,
     ));
-    xila::abi_definitions::initialize(xila::abi_definitions::RuntimeContext {
-        virtual_file_system: vfs,
-        time_manager,
-    });
     let task = task_manager.get_current_task_identifier().await;
     vfs.mount_file_system(
         xila::memory_file_system::FileSystem::new(),

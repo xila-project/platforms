@@ -2,7 +2,6 @@
 //! Full HTTPS device test using a local Python/OpenSSL TLS server. The relay
 //! connects Xila's isolated smoltcp loopback to the host's loopback socket;
 //! TLS records pass through unchanged, including the real handshake.
-extern crate abi_definitions;
 extern crate alloc;
 use network::TcpSocket;
 drivers_std::memory::instantiate_global_allocator!();

@@ -1,7 +1,6 @@
 #![cfg(target_os = "linux")]
 #[path = "../src/storage.rs"]
 mod storage;
-use abi_definitions as _;
 use std::{
     fs,
     path::PathBuf,

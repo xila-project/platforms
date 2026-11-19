@@ -1,6 +1,5 @@
 #![cfg(feature = "neural-network")]
 //! The model Digits ships, loaded at runtime through the platform loader node.
-extern crate abi_definitions;
 extern crate critical_section;
 testing::instantiate_global_allocator!();
 

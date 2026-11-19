@@ -1,5 +1,4 @@
 //! Native reference harness. All update/confirmation operations use the real VFS.
-extern crate abi_definitions;
 use file_system::{AccessFlags, MemoryDevice, Permissions};
 use firmware_update::device::*;
 use std::{collections::BTreeMap, fmt::Debug, fs::File as HostFile, io::Read, path::Path};

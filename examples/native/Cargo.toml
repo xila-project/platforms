@@ -10,7 +10,6 @@ xila = { workspace = true, features = [
   "graphics_rendering_xrgb8888",
   "bootsplash",
 ] }
-abi_definitions = { workspace = true }
 c_demo = { workspace = true }
 file_manager = { workspace = true }
 command_line_shell = { workspace = true }

@@ -7,7 +7,6 @@ rust-version.workspace = true
 [dependencies]
 authentication = { workspace = true }
 users = { workspace = true }
-abi_definitions = { workspace = true }
 drivers_std = { workspace = true }
 file_system = { workspace = true }
 little_fs = { workspace = true }

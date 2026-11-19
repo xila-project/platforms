@@ -74,7 +74,6 @@ little_fs = { workspace = true }
 task = { workspace = true, features = ["test_harness"] }
 testing = { workspace = true }
 drivers_std = { workspace = true }
-abi_definitions = { workspace = true }
 time = { workspace = true }
 virtual_file_system = { workspace = true }
 critical-section = { workspace = true, features = ["std"] }

@@ -8,11 +8,6 @@ const DEFAULT_SIZE: u64 = 16 * 1024 * 1024;
 
 fn main() {
     drivers_std::memory::instantiate_global_allocator!();
-    // Pull the supported ABI memory exports into the host executable. LittleFS
-    // calls these C ABI symbols from its allocator hooks.
-    std::hint::black_box(abi_definitions::xila_memory_allocate as *const ());
-    std::hint::black_box(abi_definitions::xila_memory_deallocate as *const ());
-    std::hint::black_box(&abi_definitions::XILA_MEMORY_CAPABILITIES_NONE as *const _ as usize);
     if let Err(error) = run() {
         eprintln!("fs_image: {error}");
         process::exit(1);
