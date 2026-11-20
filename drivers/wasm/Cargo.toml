@@ -81,6 +81,8 @@ web-sys = { version = "0.3.64", features = [
   "DataTransfer",
   "ResizeObserver",
   "ResizeObserverEntry",
+  "AudioContext",
+  "AudioContextState",
 ] }
 js-sys = "0.3"
 

@@ -178,6 +178,14 @@ a:hover {
   opacity: 0.65;
   cursor: default;
 }
+#audio-status {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+  color: #ffb6a9;
+}
+#audio-status[hidden] {
+  display: none;
+}
 #disk-status {
   min-height: 2.8em;
   overflow-wrap: anywhere;
