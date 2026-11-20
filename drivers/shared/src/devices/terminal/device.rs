@@ -12,8 +12,8 @@ use core::cell::RefCell;
 use core::task::{Context as TaskContext, Poll, Waker};
 use critical_section::Mutex;
 use file_system::{
-    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice, Error,
-    MountOperations, Operation, Result, Size,
+    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice,
+    IoErrorKind, MountOperations, Operation, Result, Size,
     character_device::{GET_TERMINAL_ATTRIBUTES, SET_TERMINAL_ATTRIBUTES},
 };
 use shared::AnyByLayout;
@@ -144,14 +144,14 @@ impl<I, O, const N: usize, const Q: usize> TerminalInputDevice<I, O, N, Q> {
         &self.inner_out
     }
 
-    /// Access the editor state within a critical section, returning `Error::RessourceBusy` if contended.
+    /// Access the editor state within a critical section, returning `IoErrorKind::WouldBlock` if contended.
     fn with_state<R>(&self, f: impl FnOnce(&mut TerminalState<N, Q>) -> Result<R>) -> Result<R> {
         critical_section::with(|cs| {
             let mut state = self
                 .state
                 .borrow(cs)
                 .try_borrow_mut()
-                .map_err(|_| Error::RessourceBusy)?;
+                .map_err(|_| IoErrorKind::WouldBlock)?;
             f(&mut state)
         })
     }
@@ -296,7 +296,7 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
         _buffer: &[u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
-        Poll::Ready(Err(Error::UnsupportedOperation))
+        Poll::Ready(Err(IoErrorKind::Unsupported))
     }
 
     fn flush(&self, context: &mut TaskContext<'_>) -> Poll<Result<()>> {
@@ -319,7 +319,7 @@ impl<I: DirectCharacterDevice, O: DirectCharacterDevice, const N: usize, const Q
             SET_TERMINAL_ATTRIBUTES::IDENTIFIER => file_system::ready(|| {
                 let attributes = *SET_TERMINAL_ATTRIBUTES::cast_input(input)?;
                 if !attributes.has_only_known_flags() {
-                    return Err(Error::InvalidParameter);
+                    return Err(IoErrorKind::InvalidArgument);
                 }
                 let reader_waker = self.with_state(|state| {
                     state.editor.set_attributes(attributes);

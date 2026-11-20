@@ -1,8 +1,8 @@
 use alloc::boxed::Box;
 use device::hash::{self, HashAlgorithm, SET_ALGORITHM};
 use file_system::{
-    BaseOperations, CharacterDevice, Context, ControlCommand, ControlCommandIdentifier, Error,
-    MountOperations, Result, Size,
+    BaseOperations, CharacterDevice, Context, ControlCommand, ControlCommandIdentifier,
+    IoErrorKind, MountOperations, Result, Size,
 };
 use sha2::{Digest, Sha224, Sha256, Sha384, Sha512, Sha512_224, Sha512_256, digest::DynDigest};
 use shared::AnyByLayout;
@@ -24,7 +24,7 @@ impl HashDeviceContext {
             HashAlgorithm::Sha512 => Box::new(Sha512::new()),
             HashAlgorithm::Sha512_224 => Box::new(Sha512_224::new()),
             HashAlgorithm::Sha512_256 => Box::new(Sha512_256::new()),
-            _ => return Err(Error::InvalidParameter),
+            _ => return Err(IoErrorKind::InvalidArgument),
         };
 
         Ok(Self { hasher })
@@ -54,10 +54,10 @@ impl BaseOperations for HashDevice {
         file_system::ready(|| {
             let hash_context = context
                 .get_private_data_mutable_of_type::<HashDeviceContext>()
-                .ok_or(file_system::Error::InvalidParameter)?;
+                .ok_or(file_system::IoErrorKind::InvalidArgument)?;
 
             if buffer.len() < hash_context.hasher.output_size() {
-                return Err(Error::InvalidParameter);
+                return Err(IoErrorKind::InvalidArgument);
             }
 
             let result = hash_context.hasher.clone().finalize();
@@ -77,7 +77,7 @@ impl BaseOperations for HashDevice {
         file_system::ready(|| {
             let hash_context = context
                 .get_private_data_mutable_of_type::<HashDeviceContext>()
-                .ok_or(file_system::Error::InvalidParameter)?;
+                .ok_or(file_system::IoErrorKind::InvalidArgument)?;
 
             hash_context.hasher.update(buffer);
             Ok(buffer.len())
@@ -95,7 +95,7 @@ impl BaseOperations for HashDevice {
         file_system::ready(|| {
             let hash_context = context
                 .get_private_data_mutable_of_type::<HashDeviceContext>()
-                .ok_or(file_system::Error::InvalidParameter)?;
+                .ok_or(file_system::IoErrorKind::InvalidArgument)?;
 
             match command {
                 hash::RESET::IDENTIFIER => {
@@ -108,7 +108,7 @@ impl BaseOperations for HashDevice {
                     *hash_context = HashDeviceContext::new(*algorithm)?;
                     Ok(())
                 }
-                _ => Err(file_system::Error::UnsupportedOperation),
+                _ => Err(file_system::IoErrorKind::Unsupported),
             }
         })
     }
@@ -116,7 +116,7 @@ impl BaseOperations for HashDevice {
     fn clone_context(&self, context: &Context) -> Result<Context> {
         let hash_context = context
             .get_private_data_of_type::<HashDeviceContext>()
-            .ok_or(file_system::Error::InvalidParameter)?;
+            .ok_or(file_system::IoErrorKind::InvalidArgument)?;
 
         Ok(Context::new(Some(hash_context.clone())))
     }

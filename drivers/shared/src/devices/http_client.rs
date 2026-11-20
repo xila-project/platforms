@@ -5,7 +5,9 @@ use super::{
 use alloc::{boxed::Box, vec::Vec};
 use core::time::Duration;
 use embassy_futures::select::{Either, select};
-use file_system::{BaseOperations, CharacterDevice, Context, Error, MountOperations, Result, Size};
+use file_system::{
+    BaseOperations, CharacterDevice, Context, IoErrorKind, MountOperations, Result, Size,
+};
 use shared::HttpRequestParser;
 use synchronization::Arc;
 
@@ -24,13 +26,13 @@ async fn run_request(
     };
     let operation = async {
         let parser = HttpRequestParser::from_buffer(&request);
-        let (method, _) = parser.get_request().ok_or(Error::InvalidParameter)?;
+        let (method, _) = parser.get_request().ok_or(IoErrorKind::InvalidArgument)?;
         let head_request = method == "HEAD";
         let host = parser
             .get_headers()
             .find(|(n, _)| n.eq_ignore_ascii_case("Host"))
             .map(|(_, v)| v)
-            .ok_or(Error::InvalidParameter)?;
+            .ok_or(IoErrorKind::InvalidArgument)?;
         let (host, port) = split_host_port(host, 80);
         let mut socket = create_tcp_connection(manager, host, port).await?;
         match select(
@@ -40,7 +42,7 @@ async fn run_request(
         .await
         {
             Either::First(result) => result?,
-            Either::Second(_) => return Err(Error::TimeError),
+            Either::Second(_) => return Err(IoErrorKind::TimedOut),
         }
         drop(request);
         let result = read_response(
@@ -56,7 +58,7 @@ async fn run_request(
     };
     let result = match select(operation, exchange.cancelled.wait()).await {
         Either::First(result) => result,
-        Either::Second(_) => Err(Error::InvalidContext),
+        Either::Second(_) => Err(IoErrorKind::InvalidState),
     };
     exchange.finish(generation, buffer, result).await;
 }
@@ -97,7 +99,7 @@ impl BaseOperations for HttpClientDevice {
     ) -> core::task::Poll<Result<usize>> {
         context
             .get_private_data_mutable_of_type::<ClientContext>()
-            .ok_or(Error::InvalidContext)?
+            .ok_or(IoErrorKind::InvalidState)?
             .poll_read(cx, buffer)
     }
     fn write(
@@ -110,7 +112,7 @@ impl BaseOperations for HttpClientDevice {
         file_system::ready(|| {
             let client = context
                 .get_private_data_mutable_of_type::<ClientContext>()
-                .ok_or(Error::InvalidContext)?;
+                .ok_or(IoErrorKind::InvalidState)?;
             let generation = client.exchange.begin()?;
             let request = buffer.to_vec();
             let exchange = client.exchange.clone();
@@ -126,12 +128,12 @@ impl BaseOperations for HttpClientDevice {
             ))
             .is_err()
             {
-                task::block_on(
-                    client
-                        .exchange
-                        .finish(generation, None, Err(Error::RessourceBusy)),
-                );
-                return Err(Error::RessourceBusy);
+                task::block_on(client.exchange.finish(
+                    generation,
+                    None,
+                    Err(IoErrorKind::ResourceBusy),
+                ));
+                return Err(IoErrorKind::ResourceBusy);
             }
             Ok(buffer.len())
         })
@@ -139,7 +141,7 @@ impl BaseOperations for HttpClientDevice {
     fn clone_context(&self, context: &Context) -> Result<Context> {
         let client = context
             .get_private_data_of_type::<ClientContext>()
-            .ok_or(Error::InvalidContext)?;
+            .ok_or(IoErrorKind::InvalidState)?;
         Ok(Context::new(Some(client.clone_context())))
     }
     fn cancel_operation(&self, context: &mut Context, operation: file_system::Operation) {

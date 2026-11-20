@@ -226,17 +226,14 @@ pub async fn mount_gpio_pins(
     )?;
 
     for entry in BOARD_PINS {
-        let device = GpioPinDevice::new(entry.pin_index, NANO_33_BLE_RESERVED_PINS_MASK)
-            .map_err(virtual_file_system::Error::FileSystem)?;
+        let device = GpioPinDevice::new(entry.pin_index, NANO_33_BLE_RESERVED_PINS_MASK)?;
 
         if let Some(initial_level) = entry.initial_output {
-            device
-                .configure_pin(
-                    Direction::Output,
-                    Pull::Disabled,
-                    Some((DriveMode::PushPull, initial_level)),
-                )
-                .map_err(virtual_file_system::Error::FileSystem)?;
+            device.configure_pin(
+                Direction::Output,
+                Pull::Disabled,
+                Some((DriveMode::PushPull, initial_level)),
+            )?;
         }
 
         virtual_file_system

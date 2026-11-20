@@ -1,5 +1,5 @@
 use file_system::{
-    DirectBaseOperations, DirectCharacterDevice, Error, MountOperations, Result, Size,
+    DirectBaseOperations, DirectCharacterDevice, IoErrorKind, MountOperations, Result, Size,
 };
 
 /// Hardware time character device for nRF52840.
@@ -23,7 +23,7 @@ impl DirectBaseOperations for TimeDevice {
         _: Size,
     ) -> core::task::Poll<Result<usize>> {
         // No hardware real-time epoch is present without external synchronization.
-        file_system::ready(|| Err(Error::TimeError))
+        file_system::ready(|| Err(IoErrorKind::DeviceUnavailable))
     }
 
     fn write(
@@ -32,7 +32,7 @@ impl DirectBaseOperations for TimeDevice {
         _: &[u8],
         _: Size,
     ) -> core::task::Poll<Result<usize>> {
-        file_system::ready(|| Err(Error::UnsupportedOperation))
+        file_system::ready(|| Err(IoErrorKind::Unsupported))
     }
 }
 

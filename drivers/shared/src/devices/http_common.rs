@@ -1,41 +1,25 @@
-use file_system::{Error, Result};
+use file_system::{IoErrorKind, Result};
+use network::{ResolveError, TcpSocket};
 use shared::HttpRequestParser;
 
-pub fn map_network_error(error: network::Error) -> Error {
-    match error {
-        // Without an interface name, NotFound means no network stack is available: the
-        // network is down, not a missing file.
-        network::Error::NotFound => Error::InputOutput,
-        network::Error::PermissionDenied => Error::PermissionDenied,
-        network::Error::ConnectionRefused
-        | network::Error::ConnectionReset
-        | network::Error::ConnectionAborted
-        | network::Error::NotConnected
-        | network::Error::BrokenPipe
-        | network::Error::NoRoute
-        | network::Error::HostUnreachable
-        | network::Error::NetworkUnreachable
-        | network::Error::NetworkDown => Error::InputOutput,
-        // The resolver reports Failed for unsuccessful queries without a more specific cause.
-        network::Error::Failed => Error::InputOutput,
-        network::Error::TimedOut => Error::TimeError,
-        network::Error::InvalidInput
-        | network::Error::InvalidData
-        | network::Error::InvalidPort
-        | network::Error::InvalidEndpoint
-        | network::Error::InvalidName => Error::InvalidParameter,
-        network::Error::NameTooLong => Error::NameTooLong,
-        network::Error::ResourceBusy | network::Error::Pending | network::Error::NoFreeSlot => {
-            Error::RessourceBusy
-        }
-        _ => Error::Other,
-    }
+/// Keep the failure kind of a DNS lookup. An unreachable network or host is a transport failure,
+/// never a missing file: `ResolveError` carries its own typed `Kind`.
+pub fn map_resolve_error(error: ResolveError) -> IoErrorKind {
+    error.kind()
 }
 
-pub(super) fn map_http_io_error(error: impl embedded_io::Error) -> Error {
+/// Map an embedded-io error kind (from the TLS layer or a socket adapter) back to an I/O kind.
+pub(super) fn map_http_io_error(error: impl embedded_io::Error) -> IoErrorKind {
+    use embedded_io::ErrorKind;
     match error.kind() {
-        embedded_io::ErrorKind::TimedOut => Error::TimeError,
-        _ => Error::InputOutput,
+        ErrorKind::TimedOut => IoErrorKind::TimedOut,
+        ErrorKind::ConnectionRefused => IoErrorKind::ConnectionRefused,
+        ErrorKind::ConnectionReset => IoErrorKind::ConnectionReset,
+        ErrorKind::ConnectionAborted => IoErrorKind::ConnectionAborted,
+        ErrorKind::NotConnected => IoErrorKind::NotConnected,
+        ErrorKind::BrokenPipe => IoErrorKind::BrokenPipe,
+        ErrorKind::PermissionDenied => IoErrorKind::PermissionDenied,
+        _ => IoErrorKind::InputOutput,
     }
 }
 
@@ -66,7 +50,7 @@ pub fn split_host_port(host_value: &str, default_port: u16) -> (&str, u16) {
 pub fn compute_request_length(buffer: &[u8], parser: HttpRequestParser<'_>) -> Result<usize> {
     let trimmed_tail = match buffer.iter().rposition(|byte| *byte != 0) {
         Some(position) => position + 1,
-        None => return Err(Error::InvalidParameter),
+        None => return Err(IoErrorKind::InvalidArgument),
     };
 
     let headers_end = buffer
@@ -90,130 +74,36 @@ pub fn compute_request_length(buffer: &[u8], parser: HttpRequestParser<'_>) -> R
 
     let total_length = headers_end
         .checked_add(body_length)
-        .ok_or(Error::InvalidParameter)?;
+        .ok_or(IoErrorKind::InvalidArgument)?;
 
     if total_length == 0 || total_length > buffer.len() {
-        return Err(Error::InvalidParameter);
+        return Err(IoErrorKind::InvalidArgument);
     }
 
     Ok(total_length)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn network_errors_keep_their_closest_file_system_meaning() {
-        use network::Error as Net;
-
-        for (network, expected) in [
-            (Net::NotFound, Error::InputOutput),
-            (Net::PermissionDenied, Error::PermissionDenied),
-            (Net::NoRoute, Error::InputOutput),
-            (Net::HostUnreachable, Error::InputOutput),
-            (Net::NetworkUnreachable, Error::InputOutput),
-            (Net::NetworkDown, Error::InputOutput),
-            (Net::ConnectionRefused, Error::InputOutput),
-            (Net::ConnectionReset, Error::InputOutput),
-            (Net::ConnectionAborted, Error::InputOutput),
-            (Net::TimedOut, Error::TimeError),
-            (Net::Failed, Error::InputOutput),
-            (Net::InvalidName, Error::InvalidParameter),
-            (Net::NameTooLong, Error::NameTooLong),
-            (Net::NoFreeSlot, Error::RessourceBusy),
-            (Net::Pending, Error::RessourceBusy),
-        ] {
-            assert_eq!(map_network_error(network), expected, "{network:?}");
-        }
-    }
-
-    #[test]
-    fn transport_timeout_survives_the_embedded_io_adapter() {
-        let socket_error = IoError::FileSystem(map_network_error(network::Error::TimedOut));
-        assert_eq!(map_http_io_error(socket_error), Error::TimeError);
-        assert_eq!(
-            map_http_io_error(embedded_tls::TlsError::Io(embedded_io::ErrorKind::TimedOut)),
-            Error::TimeError
-        );
-        assert_eq!(
-            map_http_io_error(embedded_tls::TlsError::IoError),
-            Error::InputOutput
-        );
-    }
-
-    #[test]
-    fn lowercase_length_preserves_binary_zero_tail() {
-        let request = b"POST / HTTP/1.1\r\nhost: localhost\r\ncontent-length: 3\r\n\r\na\0\0";
-        assert_eq!(
-            compute_request_length(request, HttpRequestParser::from_buffer(request)),
-            Ok(request.len())
-        );
-    }
-}
-
-use network::TcpSocket;
-#[derive(Debug, Copy, Clone)]
-pub(super) enum IoError {
-    FileSystem(Error),
-}
-
-impl embedded_io::Error for IoError {
-    fn kind(&self) -> embedded_io::ErrorKind {
-        match self {
-            IoError::FileSystem(Error::NotFound) => embedded_io::ErrorKind::NotFound,
-            IoError::FileSystem(Error::TimeError) => embedded_io::ErrorKind::TimedOut,
-            IoError::FileSystem(Error::PermissionDenied) => {
-                embedded_io::ErrorKind::PermissionDenied
-            }
-            _ => embedded_io::ErrorKind::Other,
-        }
-    }
-}
-
-impl core::fmt::Display for IoError {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            IoError::FileSystem(error) => write!(formatter, "filesystem error: {:?}", error),
-        }
-    }
-}
-
-impl core::error::Error for IoError {}
 
 pub(super) struct TcpSocketAdapter {
     pub socket: TcpSocket,
 }
 
 impl embedded_io::ErrorType for TcpSocketAdapter {
-    type Error = IoError;
+    type Error = IoErrorKind;
 }
 
 impl embedded_io_async::Read for TcpSocketAdapter {
-    async fn read(&mut self, buffer: &mut [u8]) -> core::result::Result<usize, Self::Error> {
-        self.socket
-            .read(buffer)
-            .await
-            .map_err(map_network_error)
-            .map_err(IoError::FileSystem)
+    async fn read(&mut self, buffer: &mut [u8]) -> core::result::Result<usize, IoErrorKind> {
+        self.socket.read(buffer).await
     }
 }
 
 impl embedded_io_async::Write for TcpSocketAdapter {
-    async fn write(&mut self, buffer: &[u8]) -> core::result::Result<usize, Self::Error> {
-        self.socket
-            .write(buffer)
-            .await
-            .map_err(map_network_error)
-            .map_err(IoError::FileSystem)
+    async fn write(&mut self, buffer: &[u8]) -> core::result::Result<usize, IoErrorKind> {
+        self.socket.write(buffer).await
     }
 
     async fn flush(&mut self) -> core::result::Result<(), Self::Error> {
-        self.socket
-            .flush()
-            .await
-            .map_err(map_network_error)
-            .map_err(IoError::FileSystem)
+        self.socket.flush().await
     }
 }
 
@@ -230,14 +120,11 @@ pub(super) async fn create_tcp_connection(
             None,
         )
         .await
-        .map_err(map_network_error)?;
+        .map_err(map_resolve_error)?;
     // A DNS response with no usable addresses is a connection failure.
-    let mut last_error = Error::InputOutput;
+    let mut last_error = IoErrorKind::HostUnreachable;
     for address in addresses {
-        let mut socket = manager
-            .new_tcp_socket(4096, 4096, None)
-            .await
-            .map_err(map_network_error)?;
+        let mut socket = manager.new_tcp_socket(4096, 4096, None).await?;
         socket
             .set_timeout(Some(network::Duration::from_seconds(
                 super::http_exchange::IO_TIMEOUT_SECONDS,
@@ -254,8 +141,8 @@ pub(super) async fn create_tcp_connection(
             embassy_futures::select::Either::First(Ok(())) => {
                 return Ok(TcpSocketAdapter { socket });
             }
-            embassy_futures::select::Either::First(Err(e)) => last_error = map_network_error(e),
-            embassy_futures::select::Either::Second(_) => last_error = Error::TimeError,
+            embassy_futures::select::Either::First(Err(e)) => last_error = e,
+            embassy_futures::select::Either::Second(_) => last_error = IoErrorKind::TimedOut,
         }
         socket.close_forced().await;
     }
@@ -291,5 +178,63 @@ impl Drop for TcpSocketAdapter {
         // HTTP does not reuse a connection. Abort on cancellation or after the
         // framed response; the network runner sends RST before reclamation.
         task::block_on(self.socket.close_forced());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolver_failures_keep_their_transport_meaning() {
+        for (error, expected) in [
+            (ResolveError::NoInterface, IoErrorKind::DeviceUnavailable),
+            (ResolveError::NetworkDown, IoErrorKind::NetworkDown),
+            (
+                ResolveError::NetworkUnreachable,
+                IoErrorKind::NetworkUnreachable,
+            ),
+            (ResolveError::TimedOut, IoErrorKind::TimedOut),
+            (ResolveError::NameTooLong, IoErrorKind::NameTooLong),
+            (ResolveError::InvalidName, IoErrorKind::InvalidDnsName),
+            (ResolveError::NoAnswer, IoErrorKind::NameNotResolved),
+        ] {
+            let kind = map_resolve_error(error);
+            assert_eq!(kind, expected, "{error:?}");
+            assert_ne!(kind, IoErrorKind::NotFound, "{error:?}");
+        }
+    }
+
+    #[test]
+    fn transport_kinds_survive_the_embedded_io_adapter() {
+        assert_eq!(
+            map_http_io_error(IoErrorKind::TimedOut),
+            IoErrorKind::TimedOut
+        );
+        assert_eq!(
+            map_http_io_error(IoErrorKind::ConnectionRefused),
+            IoErrorKind::ConnectionRefused
+        );
+        assert_eq!(
+            map_http_io_error(IoErrorKind::ConnectionReset),
+            IoErrorKind::ConnectionReset
+        );
+        assert_eq!(
+            map_http_io_error(embedded_tls::TlsError::Io(embedded_io::ErrorKind::TimedOut)),
+            IoErrorKind::TimedOut
+        );
+        assert_eq!(
+            map_http_io_error(embedded_tls::TlsError::IoError),
+            IoErrorKind::InputOutput
+        );
+    }
+
+    #[test]
+    fn lowercase_length_preserves_binary_zero_tail() {
+        let request = b"POST / HTTP/1.1\r\nhost: localhost\r\ncontent-length: 3\r\n\r\na\0\0";
+        assert_eq!(
+            compute_request_length(request, HttpRequestParser::from_buffer(request)),
+            Ok(request.len())
+        );
     }
 }

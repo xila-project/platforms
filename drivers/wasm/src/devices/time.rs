@@ -1,6 +1,6 @@
 use core::time::Duration;
 use file_system::{
-    DirectBaseOperations, DirectCharacterDevice, Error, MountOperations, Result, Size,
+    DirectBaseOperations, DirectCharacterDevice, IoErrorKind, MountOperations, Result, Size,
 };
 use wasm_bindgen::prelude::*;
 
@@ -41,7 +41,7 @@ impl TimeDevice {
 
         // Validate that we got a valid timestamp
         if !millis.is_finite() || millis < 0.0 {
-            return Err(Error::InternalError);
+            return Err(IoErrorKind::InputOutput);
         }
 
         // Convert to seconds and nanoseconds
@@ -70,7 +70,7 @@ impl DirectBaseOperations for TimeDevice {
             };
 
             if buffer.len() < duration_bytes.len() {
-                return Err(Error::InvalidParameter);
+                return Err(IoErrorKind::InvalidArgument);
             }
 
             buffer[..duration_bytes.len()].copy_from_slice(duration_bytes);
@@ -85,7 +85,7 @@ impl DirectBaseOperations for TimeDevice {
         _: &[u8],
         _: Size,
     ) -> core::task::Poll<Result<usize>> {
-        file_system::ready(|| Err(Error::UnsupportedOperation))
+        file_system::ready(|| Err(IoErrorKind::Unsupported))
     }
 }
 
@@ -113,7 +113,7 @@ mod tests {
         let buffer = [0u8; 8];
 
         let result = device.write_sync(&buffer, 0);
-        assert!(matches!(result, Err(Error::UnsupportedOperation)));
+        assert!(matches!(result, Err(IoErrorKind::Unsupported)));
     }
 }
 
@@ -123,7 +123,7 @@ impl time::RealtimeSource for TimeDevice {
         let millis = date_now();
         // JavaScript Date's specified range, including pre-epoch values.
         if !millis.is_finite() || millis.abs() > 8_640_000_000_000_000.0 {
-            return Err(time::Error::DeviceError(Error::InternalError));
+            return Err(time::Error::DeviceError(IoErrorKind::InputOutput));
         }
         Ok(time::RealtimeSample {
             timestamp: time::Timestamp::from_nanos((millis as i128) * 1_000_000),

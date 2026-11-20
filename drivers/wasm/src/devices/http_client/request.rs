@@ -5,7 +5,7 @@
 //! optional body. Browsers own the connection, so only what `fetch` can express
 //! survives the translation.
 use alloc::{format, string::String, vec::Vec};
-use file_system::{Error, Result};
+use file_system::{IoErrorKind, Result};
 use shared::HttpRequestParser;
 
 pub(super) struct PreparedRequest<'a> {
@@ -120,7 +120,7 @@ pub(super) fn request_length(buffer: &[u8]) -> Result<usize> {
         .iter()
         .rposition(|byte| *byte != 0)
         .map(|position| position + 1)
-        .ok_or(Error::InvalidParameter)?;
+        .ok_or(IoErrorKind::InvalidArgument)?;
     let Some(headers_end) = buffer
         .windows(4)
         .position(|window| window == b"\r\n\r\n")
@@ -135,9 +135,9 @@ pub(super) fn request_length(buffer: &[u8]) -> Result<usize> {
     let body_length = content_length.unwrap_or_else(|| trimmed_tail.saturating_sub(headers_end));
     let total = headers_end
         .checked_add(body_length)
-        .ok_or(Error::InvalidParameter)?;
+        .ok_or(IoErrorKind::InvalidArgument)?;
     if total == 0 || total > buffer.len() {
-        return Err(Error::InvalidParameter);
+        return Err(IoErrorKind::InvalidArgument);
     }
     Ok(total)
 }
@@ -145,13 +145,13 @@ pub(super) fn request_length(buffer: &[u8]) -> Result<usize> {
 pub(super) fn prepare<'a>(scheme: &str, buffer: &'a [u8]) -> Result<PreparedRequest<'a>> {
     let buffer = &buffer[..request_length(buffer)?];
     let parser = HttpRequestParser::from_buffer(buffer);
-    let (method, path) = parser.get_request().ok_or(Error::InvalidParameter)?;
+    let (method, path) = parser.get_request().ok_or(IoErrorKind::InvalidArgument)?;
     if !is_token(method)
         || ["CONNECT", "TRACE", "TRACK"]
             .iter()
             .any(|forbidden| method.eq_ignore_ascii_case(forbidden))
     {
-        return Err(Error::InvalidParameter);
+        return Err(IoErrorKind::InvalidArgument);
     }
     // Origin-form only: the URL's authority comes from the Host header, as on
     // the native devices, and cannot be redirected by an absolute-form target.
@@ -160,14 +160,14 @@ pub(super) fn prepare<'a>(scheme: &str, buffer: &'a [u8]) -> Result<PreparedRequ
             .bytes()
             .any(|byte| byte.is_ascii_control() || byte == b' ')
     {
-        return Err(Error::InvalidParameter);
+        return Err(IoErrorKind::InvalidArgument);
     }
     let host = parser
         .get_headers()
         .find(|(name, _)| name.eq_ignore_ascii_case(HttpRequestParser::HOST_HEADER))
         .map(|(_, value)| value)
         .filter(|host| is_host(host))
-        .ok_or(Error::InvalidParameter)?;
+        .ok_or(IoErrorKind::InvalidArgument)?;
     let headers = parser
         .get_headers()
         .filter(|(name, _)| is_forwardable(name))
@@ -175,7 +175,7 @@ pub(super) fn prepare<'a>(scheme: &str, buffer: &'a [u8]) -> Result<PreparedRequ
     let body = parser.get_body().filter(|body| !body.is_empty());
     if body.is_some() && (method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD"))
     {
-        return Err(Error::InvalidParameter);
+        return Err(IoErrorKind::InvalidArgument);
     }
     Ok(PreparedRequest {
         method,

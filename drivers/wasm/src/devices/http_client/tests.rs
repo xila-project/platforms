@@ -3,7 +3,7 @@ use super::{
     response::{MAX_HEAD_SIZE, build_head},
 };
 use alloc::{string::String, vec, vec::Vec};
-use file_system::Error;
+use file_system::IoErrorKind;
 use shared::HttpResponseParser;
 use wasm_bindgen_test::wasm_bindgen_test;
 
@@ -144,7 +144,7 @@ fn malformed_or_unsafe_requests_are_invalid_parameters() {
     ] {
         assert_eq!(
             prepare("https", request).err(),
-            Some(Error::InvalidParameter),
+            Some(IoErrorKind::InvalidArgument),
             "{:?}",
             String::from_utf8_lossy(request)
         );
@@ -223,6 +223,6 @@ fn head_larger_than_the_native_buffer_is_refused() {
     let value = "x".repeat(MAX_HEAD_SIZE);
     assert_eq!(
         build_head(200, "OK", &pairs(&[("X-Big", &value)]), false),
-        Err(Error::FileTooLarge)
+        Err(IoErrorKind::FileTooLarge)
     );
 }

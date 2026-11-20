@@ -9,7 +9,7 @@ use core::{
     task::{Context as TaskContext, Poll, RawWaker, RawWakerVTable, Waker},
 };
 use drivers_wasm::devices::HttpClientDevice;
-use file_system::{BaseOperations, Context, Error, Operation, Result};
+use file_system::{BaseOperations, Context, IoErrorKind, Operation, Result};
 use js_sys::{Function, Reflect};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
@@ -343,7 +343,10 @@ async fn a_slow_request_leaves_the_read_pending_and_wakes_the_reader() {
         Poll::Pending
     );
     // A second request while one is in flight is refused, not queued.
-    assert_eq!(write(&device, &mut context, GET), Err(Error::RessourceBusy));
+    assert_eq!(
+        write(&device, &mut context, GET),
+        Err(IoErrorKind::ResourceBusy)
+    );
     // The browser starts answering later: let the mocked fetch run first.
     for _ in 0..4 {
         JsFuture::from(js_sys::Promise::resolve(&JsValue::NULL))
@@ -381,7 +384,7 @@ async fn network_and_cors_failures_are_input_output_errors_and_recoverable() {
     let mut buffer = [0; 64];
     assert_eq!(
         read(&device, &mut context, &mut buffer).await,
-        Err(Error::InputOutput)
+        Err(IoErrorKind::InputOutput)
     );
     // The error is reported once; the device is then idle and usable again.
     assert_eq!(read(&device, &mut context, &mut buffer).await, Ok(0));
@@ -403,7 +406,7 @@ async fn a_stream_that_fails_midway_is_an_error_after_the_data_received() {
     assert_eq!(read(&device, &mut context, &mut buffer).await, Ok(4));
     assert_eq!(
         read(&device, &mut context, &mut buffer).await,
-        Err(Error::InputOutput)
+        Err(IoErrorKind::InputOutput)
     );
 }
 
@@ -422,7 +425,7 @@ async fn a_silent_server_times_out_and_the_request_is_aborted() {
     let mut buffer = [0; 64];
     assert_eq!(
         read(&device, &mut context, &mut buffer).await,
-        Err(Error::TimeError)
+        Err(IoErrorKind::TimedOut)
     );
     assert!(aborted(&mock, 0));
     assert_eq!(read(&device, &mut context, &mut buffer).await, Ok(0));
@@ -442,7 +445,7 @@ async fn a_stalled_body_read_times_out_and_aborts_the_request() {
     assert!(read(&device, &mut context, &mut buffer).await.unwrap() > 0);
     assert_eq!(
         read(&device, &mut context, &mut buffer).await,
-        Err(Error::TimeError)
+        Err(IoErrorKind::TimedOut)
     );
     assert!(aborted(&mock, 0));
 }
@@ -455,7 +458,7 @@ async fn invalid_requests_fail_at_write_without_calling_fetch() {
     let mut context = open(&device);
     assert_eq!(
         write(&device, &mut context, b"GET / HTTP/1.1\r\n\r\n"),
-        Err(Error::InvalidParameter)
+        Err(IoErrorKind::InvalidArgument)
     );
     assert_eq!(
         write(
@@ -463,7 +466,7 @@ async fn invalid_requests_fail_at_write_without_calling_fetch() {
             &mut context,
             b"GET / HTTP/1.1\r\nHost: a.example\r\nBad Name: x\r\n\r\n"
         ),
-        Err(Error::InvalidParameter)
+        Err(IoErrorKind::InvalidArgument)
     );
     assert_eq!(field(&mock, "calls.length").as_f64(), Some(0.0));
 }
@@ -580,7 +583,7 @@ async fn an_oversized_response_header_is_refused_with_file_too_large() {
     let mut buffer = [0; 64];
     assert_eq!(
         read(&device, &mut context, &mut buffer).await,
-        Err(Error::FileTooLarge)
+        Err(IoErrorKind::FileTooLarge)
     );
 }
 
@@ -597,7 +600,7 @@ async fn an_oversized_reason_phrase_is_refused_before_reading_headers() {
     let mut buffer = [0; 64];
     assert_eq!(
         read(&device, &mut context, &mut buffer).await,
-        Err(Error::FileTooLarge)
+        Err(IoErrorKind::FileTooLarge)
     );
     assert_eq!(field(&mock, "headersRead").as_bool(), Some(false));
 }
@@ -617,7 +620,7 @@ async fn invalid_host_or_url_fails_at_write_without_calling_fetch() {
     ] {
         assert_eq!(
             write(&device, &mut context, request),
-            Err(Error::InvalidParameter),
+            Err(IoErrorKind::InvalidArgument),
             "{:?}",
             String::from_utf8_lossy(request)
         );

@@ -1,6 +1,6 @@
 //! Nanoglia model ownership and accelerator selection for platform assemblies.
 use drivers_neural_network::{LoaderDevice, MAX_TENSOR_RANK, NeuralNetworkDevice};
-use file_system::{Error, Result};
+use file_system::{IoErrorKind, Result};
 use nanoglia::{Encoding, Graph, GraphExecutionContext, GraphHandle, OwnedGraph};
 use neural_network::{
     Backend, Loader, ModelBuffer as CoreModelBuffer, ModelEncoding, QuantizationEntry, TensorInfo,
@@ -89,7 +89,7 @@ pub fn from_rom(
     target: Target,
 ) -> Result<NeuralNetworkDevice<NanogliaBackend>> {
     if !(model.as_ptr() as usize).is_multiple_of(nanoglia::core::ALIGN) {
-        return Err(Error::InvalidParameter);
+        return Err(IoErrorKind::InvalidArgument);
     }
     let graph = Graph::load(&[model], Encoding::TensorFlowLite, target).map_err(map_error)?;
     Ok(NeuralNetworkDevice::new(NanogliaBackend {
@@ -162,7 +162,7 @@ impl Loader for NanogliaLoader {
     /// consumption during model loading.
     fn load(&self, encoding: ModelEncoding, model: CoreModelBuffer) -> Result<Self::Backend> {
         if encoding != ModelEncoding::TensorFlowLite {
-            return Err(Error::UnsupportedOperation);
+            return Err(IoErrorKind::Unsupported);
         }
         let mut block = NanogliaModelBuffer::new_zeroed(model.len(), Global).map_err(map_error)?;
         block.as_mut_slice().copy_from_slice(&model);
@@ -198,8 +198,11 @@ pub async fn mount_loader(
 
 fn quantization(quant: nanoglia::Quantization<'_>, index: usize) -> Result<QuantizationEntry> {
     Ok(QuantizationEntry {
-        scale: quant.scale.get(index).ok_or(Error::InvalidParameter)?,
-        zero_point: quant.zero_point.get(index).ok_or(Error::InvalidParameter)?,
+        scale: quant.scale.get(index).ok_or(IoErrorKind::InvalidArgument)?,
+        zero_point: quant
+            .zero_point
+            .get(index)
+            .ok_or(IoErrorKind::InvalidArgument)?,
     })
 }
 
@@ -221,17 +224,17 @@ fn tensor_info(desc: nanoglia::TensorDesc<'_>) -> TensorInfo {
     }
 }
 
-fn map_error(error: nanoglia::Error) -> file_system::Error {
+fn map_error(error: nanoglia::Error) -> file_system::IoErrorKind {
     match error.code {
-        nanoglia::ErrorCode::InvalidArgument => file_system::Error::InvalidParameter,
-        nanoglia::ErrorCode::InvalidEncoding => file_system::Error::InvalidFile,
-        nanoglia::ErrorCode::TooLarge => file_system::Error::NoMemory,
-        nanoglia::ErrorCode::NotFound => file_system::Error::NotFound,
-        nanoglia::ErrorCode::UnsupportedOperation => file_system::Error::UnsupportedOperation,
-        nanoglia::ErrorCode::Security => file_system::Error::PermissionDenied,
-        nanoglia::ErrorCode::Timeout => file_system::Error::RessourceBusy,
+        nanoglia::ErrorCode::InvalidArgument => file_system::IoErrorKind::InvalidArgument,
+        nanoglia::ErrorCode::InvalidEncoding => file_system::IoErrorKind::InvalidData,
+        nanoglia::ErrorCode::TooLarge => file_system::IoErrorKind::OutOfMemory,
+        nanoglia::ErrorCode::NotFound => file_system::IoErrorKind::NotFound,
+        nanoglia::ErrorCode::UnsupportedOperation => file_system::IoErrorKind::Unsupported,
+        nanoglia::ErrorCode::Security => file_system::IoErrorKind::PermissionDenied,
+        nanoglia::ErrorCode::Timeout => file_system::IoErrorKind::TimedOut,
         nanoglia::ErrorCode::RuntimeError | nanoglia::ErrorCode::Unknown => {
-            file_system::Error::InputOutput
+            file_system::IoErrorKind::InputOutput
         }
     }
 }

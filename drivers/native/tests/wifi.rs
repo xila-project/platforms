@@ -1,6 +1,6 @@
 use core::time::Duration;
 use drivers_native::wifi::*;
-use file_system::{ControlCommand, DirectBaseOperations, Error};
+use file_system::{ControlCommand, DirectBaseOperations, IoErrorKind};
 use network::*;
 use shared::AnyByLayout;
 
@@ -68,7 +68,7 @@ fn controls_schedule_work_and_cancel_without_runner_threads() {
     .unwrap();
     assert_eq!(
         control(&controller, CONNECT_WIFI_CLIENT, &config),
-        Err(Error::RessourceBusy)
+        Err(IoErrorKind::AlreadyInProgress)
     );
     control(&controller, SET_WIFI_RADIO_STATE, &WifiRadioState::OFF).unwrap();
     assert!(!control(&controller, IS_LINK_UP, &()).unwrap());
@@ -95,7 +95,7 @@ fn controls_schedule_work_and_cancel_without_runner_threads() {
             START_WIFI_SCAN,
             &WifiScanConfiguration::default()
         ),
-        Err(Error::InputOutput)
+        Err(IoErrorKind::InputOutput)
     );
 }
 
@@ -266,7 +266,7 @@ fn malformed_payloads_do_not_start_operations() {
     let (controller, _runner) = mock();
     assert_eq!(
         control(&controller, SET_WIFI_RADIO_STATE, &WifiRadioState(255)),
-        Err(Error::InvalidParameter)
+        Err(IoErrorKind::InvalidArgument)
     );
     assert_eq!(
         control(
@@ -277,7 +277,7 @@ fn malformed_payloads_do_not_start_operations() {
                 ..Default::default()
             }
         ),
-        Err(Error::InvalidParameter)
+        Err(IoErrorKind::InvalidArgument)
     );
     let mut configuration = WifiClientConfiguration::new(
         b"Xila demo",
@@ -288,13 +288,13 @@ fn malformed_payloads_do_not_start_operations() {
     configuration.credential.length = 255;
     assert_eq!(
         control(&controller, CONNECT_WIFI_CLIENT, &configuration),
-        Err(Error::InvalidParameter)
+        Err(IoErrorKind::InvalidArgument)
     );
     configuration.credential.length = 9;
     configuration.authentication = WifiAuthentication(127);
     assert_eq!(
         control(&controller, CONNECT_WIFI_CLIENT, &configuration),
-        Err(Error::UnsupportedOperation)
+        Err(IoErrorKind::Unsupported)
     );
     assert_eq!(
         control(&controller, GET_WIFI_CONNECTION_STATE, &()).unwrap(),

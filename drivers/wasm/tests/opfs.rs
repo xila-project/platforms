@@ -2,7 +2,7 @@
 
 use drivers_wasm::devices::DriveDevice;
 use file_system::{
-    DirectBaseOperations, DirectBlockDevice, Error, MountOperations, Path, Position,
+    DirectBaseOperations, DirectBlockDevice, IoErrorKind, MountOperations, Path, Position,
 };
 use wasm_bindgen::{JsCast, prelude::*};
 use wasm_bindgen_futures::JsFuture;
@@ -69,18 +69,21 @@ async fn bounds_and_seeking_are_checked() {
     assert_eq!(drive.write_sync(b"x", 512), Ok(0));
     assert_eq!(
         drive.read_sync(&mut buffer, u64::MAX),
-        Err(Error::InvalidParameter)
+        Err(IoErrorKind::InvalidArgument)
     );
-    assert_eq!(drive.write_sync(b"x", 513), Err(Error::InvalidParameter));
+    assert_eq!(
+        drive.write_sync(b"x", 513),
+        Err(IoErrorKind::InvalidArgument)
+    );
     assert_eq!(drive.set_position(10, &Position::Current(-5)), Ok(5));
     assert_eq!(drive.set_position(0, &Position::End(-1)), Ok(511));
     assert_eq!(
         drive.set_position(0, &Position::Start(513)),
-        Err(Error::InvalidParameter)
+        Err(IoErrorKind::InvalidArgument)
     );
     assert_eq!(
         drive.set_position(0, &Position::Current(-1)),
-        Err(Error::InvalidParameter)
+        Err(IoErrorKind::InvalidArgument)
     );
     drive.sync().await.unwrap();
     drop(drive);
@@ -92,13 +95,13 @@ async fn invalid_geometry_and_names_are_rejected() {
     for size in [0, 1, 513, usize::MAX] {
         assert!(matches!(
             DriveDevice::new(Path::new("invalid.img"), size).await,
-            Err(Error::InvalidParameter)
+            Err(IoErrorKind::InvalidArgument)
         ));
     }
     for name in ["", ".", "..", "nested/disk.img"] {
         assert!(matches!(
             DriveDevice::new(Path::from_str(name), 512).await,
-            Err(Error::InvalidPath)
+            Err(IoErrorKind::InvalidPath)
         ));
     }
 }
@@ -112,7 +115,7 @@ async fn opening_with_a_different_size_does_not_truncate_the_disk() {
     drop(drive);
     assert!(matches!(
         DriveDevice::new(Path::from_str(&name), 1024).await,
-        Err(Error::InvalidParameter)
+        Err(IoErrorKind::InvalidArgument)
     ));
     let drive = DriveDevice::new(Path::from_str(&name), 512).await.unwrap();
     let mut buffer = [0; 4];
@@ -128,14 +131,17 @@ async fn simultaneous_writers_are_rejected_and_unmount_releases_the_lock() {
     let drive = DriveDevice::new(Path::from_str(&name), 512).await.unwrap();
     assert!(matches!(
         DriveDevice::new(Path::from_str(&name), 512).await,
-        Err(Error::RessourceBusy)
+        Err(IoErrorKind::ResourceBusy)
     ));
     drive.write_sync(b"dirty", 0).unwrap();
-    assert_eq!(drive.unmount(), Err(Error::RessourceBusy));
+    assert_eq!(drive.unmount(), Err(IoErrorKind::ResourceBusy));
     drive.sync().await.unwrap();
     drive.unmount().unwrap();
-    assert_eq!(drive.read_sync(&mut [0; 1], 0), Err(Error::NotMounted));
-    assert_eq!(drive.sync().await, Err(Error::NotMounted));
+    assert_eq!(
+        drive.read_sync(&mut [0; 1], 0),
+        Err(IoErrorKind::DeviceUnavailable)
+    );
+    assert_eq!(drive.sync().await, Err(IoErrorKind::DeviceUnavailable));
     let other = DriveDevice::new(Path::from_str(&name), 512).await.unwrap();
     drop(other);
     remove(&name).await;
@@ -149,7 +155,7 @@ async fn stops_writes_before_sync_and_unmount() {
 
     drive.stop_writes();
 
-    assert_eq!(drive.write_sync(b"lost", 0), Err(Error::RessourceBusy));
+    assert_eq!(drive.write_sync(b"lost", 0), Err(IoErrorKind::ResourceBusy));
     drive.sync().await.unwrap();
     drive.unmount().unwrap();
 
@@ -182,7 +188,7 @@ async fn writes_during_a_save_are_saved_by_the_next_sync() {
     drive.write_sync(b"new", 0).unwrap();
     release.call0(&JsValue::NULL).unwrap();
     save.await.unwrap();
-    assert_eq!(drive.unmount(), Err(Error::RessourceBusy));
+    assert_eq!(drive.unmount(), Err(IoErrorKind::ResourceBusy));
     drive.sync().await.unwrap();
     drive.unmount().unwrap();
     let reopened = DriveDevice::new(Path::from_str(&name), 512).await.unwrap();
@@ -252,8 +258,8 @@ async fn failed_stream_save_preserves_disk_and_retries(stage: &str) {
     drive.sync().await.unwrap();
     drive.write_sync(b"new", 0).unwrap();
     fail_next_save_stage(stage);
-    assert_eq!(drive.sync().await, Err(Error::NoSpaceLeft));
-    assert_eq!(drive.unmount(), Err(Error::RessourceBusy));
+    assert_eq!(drive.sync().await, Err(IoErrorKind::NoSpace));
+    assert_eq!(drive.unmount(), Err(IoErrorKind::ResourceBusy));
     // Exercise the real stream after failure: an aborted stream rejects I/O.
     assert_eq!(
         JsFuture::from(failed_stream_accepts_writes())
@@ -315,8 +321,8 @@ async fn failed_save_keeps_the_committed_disk_and_can_be_retried() {
     drive.sync().await.unwrap();
     drive.write_sync(b"new", 0).unwrap();
     fail_next_save();
-    assert_eq!(drive.sync().await, Err(Error::NoSpaceLeft));
-    assert_eq!(drive.unmount(), Err(Error::RessourceBusy));
+    assert_eq!(drive.sync().await, Err(IoErrorKind::NoSpace));
+    assert_eq!(drive.unmount(), Err(IoErrorKind::ResourceBusy));
     let directory = JsFuture::from(
         web_sys::window()
             .unwrap()
@@ -374,7 +380,7 @@ async fn cancelled_save_waiters_do_not_allow_an_old_snapshot_to_overwrite_new_da
         .unwrap()
         .dyn_into::<js_sys::Function>()
         .unwrap();
-    assert_eq!(drive.unmount(), Err(Error::RessourceBusy));
+    assert_eq!(drive.unmount(), Err(IoErrorKind::ResourceBusy));
     drop(save);
     drive.write_sync(b"new", 0).unwrap();
     release.call0(&JsValue::NULL).unwrap();

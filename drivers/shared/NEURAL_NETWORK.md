@@ -34,8 +34,8 @@ atomics. The backend reports only graphs fitting Core's six-dimension VFS metada
 When a loader device is mounted (for example at `/devices/nn/cpu`), applications dynamically load models:
 
 1. **Open**: opening `/devices/nn/cpu` returns a file descriptor in the *Staging* state.
-2. **Write model bytes**: write the raw TensorFlow Lite FlatBuffer sequentially from position 0. Writes must be contiguous; gaps return `InvalidParameter`. Writes exceeding the configured `maximum_model_size` fail with `FileTooLarge`.
-3. **Load**: send the `LOAD` control command with a `LoadRequest` (`encoding = 0` for TensorFlow Lite). Nanoglia verifies and instantiates the graph; on success the descriptor transitions to the *Ready* state. Attempting inference commands before `LOAD` or sending a second `LOAD` on a ready handle returns `InvalidContext`.
+2. **Write model bytes**: write the raw TensorFlow Lite FlatBuffer sequentially from position 0. Writes must be contiguous; gaps return `InvalidArgument`. Writes exceeding the configured `maximum_model_size` fail with `FileTooLarge`.
+3. **Load**: send the `LOAD` control command with a `LoadRequest` (`encoding = 0` for TensorFlow Lite). Nanoglia verifies and instantiates the graph; on success the descriptor transitions to the *Ready* state. Attempting inference commands before `LOAD` or sending a second `LOAD` on a ready handle returns `InvalidState`.
 4. **Inference**: the descriptor now behaves as a standard neural network device. Seek to 0, write inputs, issue `COMPUTE`, seek to 0, and read output tensors.
 5. **Close**: closing the descriptor deallocates both the model storage and the execution arena.
 

@@ -101,7 +101,7 @@ async fn hostfs_absolute_link_uses_vfs_root_without_escaping_host_capability() {
 
 #[cfg(target_os = "linux")]
 #[test]
-async fn hostfs_symlink_escaping_the_root_is_permission_denied() {
+async fn hostfs_symlink_escaping_the_root_is_path_escapes_root() {
     use std::{
         fs,
         sync::atomic::{AtomicUsize, Ordering},
@@ -130,7 +130,7 @@ async fn hostfs_symlink_escaping_the_root_is_permission_denied() {
                 file_system::Flags::new(file_system::AccessFlags::Read, None, None),
             )
             .err(),
-        Some(file_system::Error::PermissionDenied)
+        Some(file_system::IoErrorKind::PathEscapesRoot)
     );
 
     let _ = fs::remove_dir_all(root);

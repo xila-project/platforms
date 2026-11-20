@@ -165,7 +165,7 @@ impl DirectBaseOperations for CanvasScreenDevice {
         _: &mut [u8],
         _: Size,
     ) -> core::task::Poll<file_system::Result<usize>> {
-        file_system::ready(|| Err(file_system::Error::UnsupportedOperation))
+        file_system::ready(|| Err(file_system::IoErrorKind::Unsupported))
     }
 
     fn write(
@@ -176,13 +176,13 @@ impl DirectBaseOperations for CanvasScreenDevice {
     ) -> core::task::Poll<file_system::Result<usize>> {
         file_system::ready(|| {
             let buffer: &[RenderingColor] =
-                align_slice_to(buffer).ok_or(file_system::Error::InvalidParameter)?;
+                align_slice_to(buffer).ok_or(file_system::IoErrorKind::InvalidArgument)?;
 
             let mut inner = block_on(self.0.write());
 
             inner
                 .draw_buffer(buffer)
-                .map_err(|_| file_system::Error::InputOutput)?;
+                .map_err(|_| file_system::IoErrorKind::InputOutput)?;
 
             Ok(buffer.len())
         })
@@ -210,7 +210,7 @@ impl DirectBaseOperations for CanvasScreenDevice {
 
                     let resolution = inner
                         .get_resolution()
-                        .map_err(|_| file_system::Error::InputOutput)?;
+                        .map_err(|_| file_system::IoErrorKind::InputOutput)?;
 
                     *point = resolution;
                 }
@@ -221,7 +221,7 @@ impl DirectBaseOperations for CanvasScreenDevice {
                     *was_resized = inner.was_resized;
                     inner.was_resized = false;
                 }
-                _ => return Err(file_system::Error::InvalidParameter),
+                _ => return Err(file_system::IoErrorKind::InvalidArgument),
             }
 
             Ok(())

@@ -67,7 +67,7 @@ fn fragmented_stream_and_small_reads() {
 fn premature_eof_and_header_limit() {
     assert_eq!(
         replay(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\na", 10, 8),
-        Err(Error::InputOutput)
+        Err(IoErrorKind::InputOutput)
     );
     let wire = [
         b"HTTP/1.1 200 OK\r\nX: ".as_slice(),
@@ -75,7 +75,7 @@ fn premature_eof_and_header_limit() {
         b"\r\n\r\n",
     ]
     .concat();
-    assert_eq!(replay(&wire, 10, 8), Err(Error::FileTooLarge));
+    assert_eq!(replay(&wire, 10, 8), Err(IoErrorKind::FileTooLarge));
 }
 #[test]
 fn large_redirect_head_fits() {
@@ -98,15 +98,19 @@ fn close_retires_generation_and_wakes_producer() {
     let mut context = ClientContext::new();
     let old = context.exchange.begin().unwrap();
     task::block_on(context.exchange.close());
-    assert_eq!(context.exchange.begin(), Err(Error::RessourceBusy));
+    assert_eq!(context.exchange.begin(), Err(IoErrorKind::ResourceBusy));
     task::block_on(
         context
             .exchange
-            .finish(old, None, Err(Error::InvalidContext)),
+            .finish(old, None, Err(IoErrorKind::InvalidState)),
     );
     let new = context.exchange.begin().unwrap();
     assert_ne!(old, new);
-    task::block_on(context.exchange.finish(old, None, Err(Error::InputOutput)));
+    task::block_on(
+        context
+            .exchange
+            .finish(old, None, Err(IoErrorKind::InputOutput)),
+    );
     let mut cx = Context::from_waker(Waker::noop());
     assert!(context.poll_read(&mut cx, &mut [0; 8]).is_pending());
     task::block_on(context.exchange.close());
@@ -133,12 +137,12 @@ fn producer_is_woken_by_drain_and_pending_reader_by_completion() {
     task::block_on(
         client
             .exchange
-            .finish(generation, None, Err(Error::RessourceBusy)),
+            .finish(generation, None, Err(IoErrorKind::ResourceBusy)),
     );
     assert!(wakes.0.load(Ordering::Relaxed) > 0);
     assert_eq!(
         client.poll_read(&mut cx, &mut [0; 8]),
-        Poll::Ready(Err(Error::RessourceBusy))
+        Poll::Ready(Err(IoErrorKind::ResourceBusy))
     );
 }
 
@@ -254,11 +258,11 @@ fn ready_result_does_not_require_a_waiter_slot() {
     task::block_on(
         client
             .exchange
-            .finish(generation, None, Err(Error::InputOutput)),
+            .finish(generation, None, Err(IoErrorKind::InputOutput)),
     );
     assert_eq!(
         client.poll_read(&mut cx, &mut [0; 8]),
-        Poll::Ready(Err(Error::InputOutput))
+        Poll::Ready(Err(IoErrorKind::InputOutput))
     );
     for clone in &mut clones {
         clone.cancel_read();
@@ -293,7 +297,7 @@ fn cancelling_receive_or_publication_returns_the_same_buffer() {
             .await
             {
                 Either::First(result) => result,
-                Either::Second(()) => Err(Error::InvalidContext),
+                Either::Second(()) => Err(IoErrorKind::InvalidState),
             };
             client.exchange.finish(generation, buffer, result).await;
         };
