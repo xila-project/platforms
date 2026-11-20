@@ -1,13 +1,13 @@
 #![cfg(target_arch = "wasm32")]
 
 use core::task::{Context, Poll, Waker};
-use drivers_wasm::devices::graphics::{CanvasScreenDevice, KeyboardDevice};
+use drivers_wasm::devices::graphics::{CanvasScreenDevice, KeyboardDevice, MouseDevice};
 use file_system::{ControlCommand, DirectBaseOperations};
 use graphics::{Area, ColorARGB8888, InputData, Key, Point, SET_DRAWING_AREA, State, WAS_RESIZED};
 use shared::AnyByLayout;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_test::*;
-use web_sys::{HtmlCanvasElement, KeyboardEvent, KeyboardEventInit};
+use web_sys::{HtmlCanvasElement, KeyboardEvent, KeyboardEventInit, MouseEvent, MouseEventInit};
 
 wasm_bindgen_test_configure!(run_in_browser);
 drivers_wasm::memory::instantiate_global_allocator!();
@@ -315,5 +315,82 @@ async fn dirty_rectangle_with_unaligned_width_preserves_canvas_color_order() {
             "pixel {index} in {WIDTH}x{HEIGHT} dirty rectangle",
         );
     }
+    canvas.remove();
+}
+
+fn mouse(canvas: &web_sys::EventTarget, kind: &str, x: i32, y: i32, buttons: u16) {
+    let options = MouseEventInit::new();
+    options.set_client_x(x);
+    options.set_client_y(y);
+    options.set_buttons(buttons);
+    options.set_bubbles(true);
+    let event = MouseEvent::new_with_mouse_event_init_dict(kind, &options).unwrap();
+    canvas.dispatch_event(&event).unwrap();
+}
+
+fn read_mouse(device: &MouseDevice) -> InputData {
+    let mut data = InputData::default();
+    device.read_sync(data.as_mut(), 0).unwrap();
+    data
+}
+
+#[wasm_bindgen_test]
+fn a_click_between_two_reads_delivers_the_press_and_the_release() {
+    let canvas = canvas();
+    let device = MouseDevice::new(&canvas).unwrap();
+
+    // Mouse flood, then press and release, all before LVGL reads once.
+    for x in 0..1000 {
+        mouse(&canvas, "mousemove", x % 200, 40, 0);
+    }
+    mouse(&canvas, "mousemove", 120, 45, 0);
+    mouse(&canvas, "mousedown", 120, 45, 1);
+    mouse(&canvas, "mouseup", 120, 45, 0);
+
+    let moved = read_mouse(&device);
+    assert_eq!(
+        (moved.state, moved.point),
+        (State::Released, Point::new(120, 45))
+    );
+    assert!(moved.get_continue());
+    let press = read_mouse(&device);
+    assert_eq!(
+        (press.state, press.point),
+        (State::Pressed, Point::new(120, 45))
+    );
+    assert!(press.get_continue());
+    let release = read_mouse(&device);
+    assert_eq!(release.state, State::Released);
+    assert!(!release.get_continue());
+    // Idle reads keep reporting the last state without `continue`.
+    let idle = read_mouse(&device);
+    assert_eq!(
+        (idle.state, idle.point),
+        (State::Released, Point::new(120, 45))
+    );
+    assert!(!idle.get_continue());
+    canvas.remove();
+}
+
+#[wasm_bindgen_test]
+fn a_held_press_stays_pressed_across_reads() {
+    let canvas = canvas();
+    let device = MouseDevice::new(&canvas).unwrap();
+
+    mouse(&canvas, "mousedown", 10, 20, 1);
+    for _ in 0..3 {
+        let data = read_mouse(&device);
+        assert_eq!(
+            (data.state, data.point),
+            (State::Pressed, Point::new(10, 20))
+        );
+        assert!(!data.get_continue());
+    }
+    mouse(&canvas, "mouseleave", 11, 21, 0);
+    let data = read_mouse(&device);
+    assert_eq!(
+        (data.state, data.point),
+        (State::Released, Point::new(11, 21))
+    );
     canvas.remove();
 }
