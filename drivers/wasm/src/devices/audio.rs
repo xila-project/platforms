@@ -29,7 +29,8 @@ use wasm_bindgen::{JsCast, JsValue, prelude::wasm_bindgen};
 use wasm_bindgen_futures::JsFuture;
 
 const STREAMS: usize = 4;
-const STREAM_BYTES: usize = 2048;
+// Bridge credit and worklet PCM storage per stream: about 21 ms at 48 kHz stereo F32.
+const STREAM_BYTES: usize = 8192;
 const MIX_FRAMES: usize = 128;
 const OUTPUTS: usize = 1;
 const SINK_BYTES: usize = MIX_FRAMES * 2 * size_of::<f32>() * 3;
@@ -1179,12 +1180,12 @@ mod tests {
             .ready
             .store(true, core::sync::atomic::Ordering::Release);
 
-        assert_eq!(credit.writable(), 2048);
-        assert_eq!(credit.reserve(1536), 1536);
+        assert_eq!(credit.writable(), 8192);
+        assert_eq!(credit.reserve(STREAM_BYTES - 512), STREAM_BYTES - 512);
         assert_eq!(credit.writable(), 512);
         credit.report_consumed(512);
         assert_eq!(credit.writable(), 1024);
-        assert_eq!(credit.reserve(2048), 1024);
+        assert_eq!(credit.reserve(STREAM_BYTES), 1024);
         assert_eq!(credit.writable(), 0);
     }
 
@@ -1199,7 +1200,7 @@ mod tests {
         credit.report_consumed(512);
         credit.report_consumed(256);
 
-        assert_eq!(credit.writable(), 1536);
+        assert_eq!(credit.writable(), STREAM_BYTES - 512);
     }
 
     /// A worklet source with one open stream in slot 0, driven through the same `run_control` path as a control message from the page.

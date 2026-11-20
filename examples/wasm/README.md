@@ -108,6 +108,8 @@ The OS canvas still uses the existing localized LVGL Montserrat Regular subsets 
   (`Browser audio: …`). A start that the browser leaves suspended for 10 seconds
   is reported as probably blocked: allow audio for the site in the browser's
   site permissions, then retry.
+  The worklet reserves 8 KiB of PCM storage per stream slot (32 KiB across four
+  slots). A full stream holds about 21 ms of 48 kHz stereo F32 audio.
 - Applications are distributed in a separate seed image. The disk cache still
   occupies 16 MiB; running a guest also needs Wasmi's module and guest memory.
 - Guests run cooperatively in Wasmi on the browser's executor, not as separate
