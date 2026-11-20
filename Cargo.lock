@@ -4856,7 +4856,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.5",
  "windows-sys 0.61.2",
@@ -6191,7 +6191,7 @@ dependencies = [
 [[package]]
 name = "xila-activity"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#21890bf670c7b8a1a5d33ca641206665081ab38d"
+source = "git+https://github.com/xila-project/applications?branch=main#f398f05e97c582600bdbedb32b44eeed9b996577"
 dependencies = [
  "embassy-futures",
  "embedded-i18n",
@@ -6237,7 +6237,7 @@ dependencies = [
 [[package]]
 name = "xila-c-demo"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#21890bf670c7b8a1a5d33ca641206665081ab38d"
+source = "git+https://github.com/xila-project/applications?branch=main#f398f05e97c582600bdbedb32b44eeed9b996577"
 dependencies = [
  "cc",
  "xila-abi-application",
@@ -6258,7 +6258,7 @@ dependencies = [
 [[package]]
 name = "xila-command-line-shell"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#21890bf670c7b8a1a5d33ca641206665081ab38d"
+source = "git+https://github.com/xila-project/applications?branch=main#f398f05e97c582600bdbedb32b44eeed9b996577"
 dependencies = [
  "embassy-futures",
  "embedded-i18n",
@@ -6270,7 +6270,7 @@ dependencies = [
 [[package]]
 name = "xila-debug-application"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#21890bf670c7b8a1a5d33ca641206665081ab38d"
+source = "git+https://github.com/xila-project/applications?branch=main#f398f05e97c582600bdbedb32b44eeed9b996577"
 dependencies = [
  "portable-atomic",
  "serde_json",
@@ -6298,7 +6298,7 @@ dependencies = [
 [[package]]
 name = "xila-digits"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#21890bf670c7b8a1a5d33ca641206665081ab38d"
+source = "git+https://github.com/xila-project/applications?branch=main#f398f05e97c582600bdbedb32b44eeed9b996577"
 dependencies = [
  "embedded-i18n",
  "xila-device",
@@ -6558,7 +6558,7 @@ dependencies = [
 [[package]]
 name = "xila-file-manager"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#21890bf670c7b8a1a5d33ca641206665081ab38d"
+source = "git+https://github.com/xila-project/applications?branch=main#f398f05e97c582600bdbedb32b44eeed9b996577"
 dependencies = [
  "embedded-i18n",
  "xila",
@@ -6624,7 +6624,7 @@ dependencies = [
 [[package]]
 name = "xila-graphical-shell"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#21890bf670c7b8a1a5d33ca641206665081ab38d"
+source = "git+https://github.com/xila-project/applications?branch=main#f398f05e97c582600bdbedb32b44eeed9b996577"
 dependencies = [
  "embedded-i18n",
  "getargs",
@@ -6812,7 +6812,7 @@ dependencies = [
 [[package]]
 name = "xila-package-application"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#21890bf670c7b8a1a5d33ca641206665081ab38d"
+source = "git+https://github.com/xila-project/applications?branch=main#f398f05e97c582600bdbedb32b44eeed9b996577"
 dependencies = [
  "getargs",
  "getargs-derive",
@@ -6898,7 +6898,7 @@ dependencies = [
 [[package]]
 name = "xila-pixel-painter"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#21890bf670c7b8a1a5d33ca641206665081ab38d"
+source = "git+https://github.com/xila-project/applications?branch=main#f398f05e97c582600bdbedb32b44eeed9b996577"
 dependencies = [
  "embedded-i18n",
  "xila-wasm",
@@ -6921,7 +6921,7 @@ dependencies = [
 [[package]]
 name = "xila-settings"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#21890bf670c7b8a1a5d33ca641206665081ab38d"
+source = "git+https://github.com/xila-project/applications?branch=main#f398f05e97c582600bdbedb32b44eeed9b996577"
 dependencies = [
  "const_format",
  "embassy-futures",
@@ -6992,7 +6992,7 @@ dependencies = [
 [[package]]
 name = "xila-terminal"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#21890bf670c7b8a1a5d33ca641206665081ab38d"
+source = "git+https://github.com/xila-project/applications?branch=main#f398f05e97c582600bdbedb32b44eeed9b996577"
 dependencies = [
  "embedded-i18n",
  "portable-atomic",
@@ -7076,16 +7076,14 @@ dependencies = [
 [[package]]
 name = "xila-wasm"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#21890bf670c7b8a1a5d33ca641206665081ab38d"
+source = "git+https://github.com/xila-project/applications?branch=main#f398f05e97c582600bdbedb32b44eeed9b996577"
 dependencies = [
  "embassy-time",
  "getargs",
  "getargs-derive",
  "lvgl-rust-sys",
  "portable-atomic",
- "proc-macro2",
  "quote",
- "syn 3.0.9",
  "wasmi",
  "xila",
  "xila-graphics-bindgen",
