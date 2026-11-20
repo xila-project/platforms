@@ -37,7 +37,7 @@ For CJK builds, set `XILA_FONT_CATALOG_ROOTS` to the Applications checkout (or a
 
 The ESP32 sources and Wokwi board files are retained from Core, but the current Espressif driver is gated out on host targets and still contains legacy API references. The Wokwi files have not been built or run.
 
-## ESP32-S3 in Espressif's QEMU
+## ESP32-S3 and ESP32-C6 in Espressif's QEMU
 
 `examples/esp32` is a minimal bare-metal boot of Xila on an ESP32-S3: it sets up a heap, formats and mounts LittleFS on a flash partition, reads the hardware RNG and renders one LVGL frame. It does not start Xila's task manager, shell or login yet. It runs headless in [Espressif's QEMU fork](https://github.com/espressif/qemu), so no board is needed. On Linux (x86_64 or aarch64), after `MISE_ENV=ci mise run ci:packages-espressif` (apt-based systems; it installs the native packages) and `npm ci`:
 
@@ -46,7 +46,13 @@ mise run setup:espressif-rust     # once: the rustup `esp` toolchain (Rust 1.97,
 mise run test:espressif-emulator  # QEMU + espflash, build, merge a 4 MiB image, boot, check
 ```
 
-The task fails unless the log shows, in order, the startup line, the RNG, the LittleFS mount, a flushed LVGL frame, the heap statistics and `Xila: boot smoke ready`, and unless QEMU's virtual RGB panel holds a non-blank 160x120 frame. Each run keeps `uart.log`, `qemu.log` and `screen.png` in `target/espressif-emulator/runs/esp32s3.*`. `mise run build:esp32s3-image` stops after the flash image; to watch the panel in a window, run `target/espressif-emulator/tools/qemu-*/qemu/bin/qemu-system-xtensa -M esp32s3 -display sdl -nic none -drive file=target/espressif-emulator/esp32s3-flash.bin,if=mtd,format=raw -serial stdio`. Versions and SHA-256 digests of QEMU and espflash are pinned in `mise.toml` and `tools/dev/install_espressif_emulator.sh`. The panel is an emulator-only device (the `qemu-display` feature); real boards need their own display driver.
+The S3 task requires the startup line, RNG, LittleFS mount, LVGL flush, heap statistics and `Xila: boot smoke ready` in order, plus a non-blank 160x120 frame on QEMU's virtual RGB panel. Each run keeps `uart.log`, `qemu.log` and `screen.png` in `target/espressif-emulator/runs/esp32s3.*`. `mise run build:esp32s3-image` stops after the flash image. To watch the panel in a window, run `target/espressif-emulator/tools/qemu-*/qemu/bin/qemu-system-xtensa -M esp32s3 -display sdl -nic none -drive file=target/espressif-emulator/esp32s3-flash.bin,if=mtd,format=raw -serial stdio`. The panel is an emulator-only device (the `qemu-display` feature).
+
+After installing the native packages, run `mise run test:esp32c6-emulator` to check startup, the LittleFS mount, heap statistics and the ready marker. The task provisions stable Rust 1.97 and its `riscv32imac-unknown-none-elf` target, and keeps `uart.log` and `qemu.log` in `target/espressif-emulator/runs/esp32c6.*`. The C6 machine lacks RNG emulation and the virtual RGB panel.
+
+`mise run build:esp32c6-image` builds the C6 flash image in QIO mode to work around the DIO flash-read bug. [Platforms #130](https://github.com/xila-project/platforms/issues/130)
+
+Versions and SHA-256 digests of QEMU and espflash are pinned in `mise.toml` and `tools/dev/install_espressif_emulator.sh`.
 
 ## Package installation (native runtime)
 

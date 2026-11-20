@@ -1,25 +1,28 @@
 #!/usr/bin/env bash
-# Installs the pinned Espressif QEMU (Xtensa) and espflash under
+# Installs the pinned Espressif QEMU and espflash under
 # target/espressif-emulator/tools. Every download is verified against the
 # SHA-256 digest recorded here; the versions come from `[vars]` in mise.toml.
 #
-#   tools/dev/install_espressif_emulator.sh QEMU_VERSION ESPFLASH_VERSION
+#   tools/dev/install_espressif_emulator.sh QEMU_VERSION ESPFLASH_VERSION [xtensa|riscv32]
 set -euo pipefail
 
 qemu_version=$1
 espflash_version=$2
+architecture=${3:-xtensa}
 root="$PWD/target/espressif-emulator/tools"
 mkdir -p "$root"
 
 case "$(uname -s)/$(uname -m)" in
     Linux/x86_64)
         host=x86_64
-        qemu_sha=fbc3bffa9fa71192847969a627a584aabe2e86d85bed4902a096ff06c2b8a815
+        xtensa_sha=fbc3bffa9fa71192847969a627a584aabe2e86d85bed4902a096ff06c2b8a815
+        riscv32_sha=afa59465495295b8aa4f804768983fa30b0bbf33d0f68a047f9caa436b9164c0
         espflash_sha=a9bf20c76ab42d0d4330bbc33707c4424d5541f5129149d889dbfa8dab476910
         ;;
     Linux/aarch64)
         host=aarch64
-        qemu_sha=dad4a8f44b5649b1f110963d479a77edb0ad2484cde79403e3a19c50efdd5281
+        xtensa_sha=dad4a8f44b5649b1f110963d479a77edb0ad2484cde79403e3a19c50efdd5281
+        riscv32_sha=4038e03d6e312b2372106516855a2c72eda02b49f6480917c55e56e04d958781
         espflash_sha=a2081c002f6050a287007a93ba01cdd4c9d111181b69d5ddf7bdb71d33841c65
         ;;
     *) echo "The Espressif emulator tasks require Linux x86_64 or aarch64." >&2; exit 2 ;;
@@ -31,18 +34,24 @@ download() {
     printf '%s  %s\n' "$sha" "$file" | sha256sum --check --quiet
 }
 
+case "$architecture" in
+    xtensa) qemu="$root/qemu-$qemu_version"; qemu_sha=$xtensa_sha ;;
+    riscv32) qemu="$root/qemu-riscv32-$qemu_version"; qemu_sha=$riscv32_sha ;;
+    *) echo "Unsupported QEMU architecture: $architecture" >&2; exit 2 ;;
+esac
+
 # `esp_develop_9.2.2_20261109` is released as tag `esp-develop-9.2.2-20261109`.
 qemu_tag="esp-develop-${qemu_version%_*}-${qemu_version##*_}"
-qemu="$root/qemu-$qemu_version"
-if [[ ! -x $qemu/qemu/bin/qemu-system-xtensa ]]; then
-    archive="qemu-xtensa-softmmu-esp_develop_$qemu_version-$host-linux-gnu.tar.xz"
+qemu_bin="$qemu/qemu/bin/qemu-system-$architecture"
+if [[ ! -x $qemu_bin ]]; then
+    archive="qemu-$architecture-softmmu-esp_develop_$qemu_version-$host-linux-gnu.tar.xz"
     stage=$(mktemp -d "$root/qemu-download.XXXXXXXX")
     download "https://github.com/espressif/qemu/releases/download/$qemu_tag/$archive" \
         "$stage/$archive" "$qemu_sha"
     tar -xJf "$stage/$archive" -C "$stage"
     mv "$stage" "$qemu"
 fi
-"$qemu/qemu/bin/qemu-system-xtensa" --version | head -n 1
+"$qemu_bin" --version | head -n 1
 
 espflash="$root/espflash-$espflash_version"
 if [[ ! -x $espflash/espflash ]]; then

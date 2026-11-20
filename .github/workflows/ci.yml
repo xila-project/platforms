@@ -144,9 +144,19 @@ jobs:
         run: mise run test:browser-drivers
   espressif-emulator:
     # Advisory while the emulator check settles: not in the `required` gate.
-    name: "Test / ESP32-S3 emulator"
+    name: "Test / ${{ matrix.name }} emulator"
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - chip: esp32s3
+            name: ESP32-S3
+            task: test:espressif-emulator
+          - chip: esp32c6
+            name: ESP32-C6
+            task: test:esp32c6-emulator
     steps:
       - name: "Setup | Checkout sources"
         uses: actions/checkout@v7
@@ -157,20 +167,22 @@ jobs:
       - name: "Setup | Native QEMU libraries"
         run: mise run ci:packages-espressif
       - name: "Setup | Espressif Rust and GCC toolchain"
+        if: matrix.chip == 'esp32s3'
         run: mise run setup:espressif-rust
       - name: "Setup | Locked npm dependencies"
+        if: matrix.chip == 'esp32s3'
         run: mise run ci:deps-npm
-      - name: "Test | ESP32-S3 boot in QEMU"
-        run: mise run test:espressif-emulator
+      - name: "Test | Boot in QEMU"
+        run: mise run ${{ matrix.task }}
       - name: "Report | Upload emulator logs and screenshot"
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: esp32s3-emulator
+          name: ${{ matrix.chip }}-emulator
           path: |
-            target/espressif-emulator/runs/esp32s3.*/uart.log
-            target/espressif-emulator/runs/esp32s3.*/qemu.log
-            target/espressif-emulator/runs/esp32s3.*/screen.png
+            target/espressif-emulator/runs/${{ matrix.chip }}.*/uart.log
+            target/espressif-emulator/runs/${{ matrix.chip }}.*/qemu.log
+            target/espressif-emulator/runs/${{ matrix.chip }}.*/screen.png
   required:
     if: always()
     needs: [quality, native, nano-33-ble, browser]

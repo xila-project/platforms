@@ -24,10 +24,14 @@ fn main() -> ! {
     // SAFETY: startup hands this static SRAM exclusively to the allocator.
     assert!(unsafe { heap.init_internal(addr_of_mut!(HEAP).cast(), HEAP_SIZE) });
     println!("Xila ESP32 startup");
-    let rng = esp_hal::rng::Rng::new();
-    let (first, second) = (rng.random(), rng.random());
-    println!("Xila: RNG {first:08x} {second:08x}");
-    assert_ne!(first, second, "RNG returned a constant value");
+    // The pinned C6 QEMU machine does not implement the LP_PERI RNG register.
+    #[cfg(feature = "esp32s3")]
+    {
+        let rng = esp_hal::rng::Rng::new();
+        let (first, second) = (rng.random(), rng.random());
+        println!("Xila: RNG {first:08x} {second:08x}");
+        assert_ne!(first, second, "RNG returned a constant value");
+    }
 
     let flash = Box::leak(Box::new(flash::LittleFsPartition::new(FlashStorage::new(
         peripherals.FLASH,

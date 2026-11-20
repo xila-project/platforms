@@ -1878,6 +1878,7 @@ dependencies = [
  "esp-metadata-generated",
  "esp-rom-sys",
  "esp-sync",
+ "esp32c6",
  "esp32s3",
 ]
 
