@@ -42,6 +42,9 @@ extends = "dev:browser"
 [tasks."test:browser-http"]
 extends = "dev:browser"
 
+[tasks."test:browser-drivers"]
+extends = "dev:browser"
+
 [tasks."test:seed"]
 extends = "dev:rust"
 
