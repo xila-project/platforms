@@ -95,7 +95,13 @@ xila_http = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies.web-sys]
 version = "0.3.64"
-features = ["KeyboardEventInit", "ClipboardEventInit", "MouseEventInit"]
+features = [
+  "KeyboardEventInit",
+  "ClipboardEventInit",
+  "MouseEventInit",
+  "TouchInit",
+  "TouchEventInit",
+]
 
 [lib]
 name = "drivers_wasm"

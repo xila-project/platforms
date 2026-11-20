@@ -59,7 +59,6 @@ impl DirectBaseOperations for PointerDevice {
                 1 => self.0.set_pressed(state == State::Pressed),
                 _ => return Err(file_system::IoErrorKind::InvalidArgument),
             }
-            .map_err(|_| file_system::IoErrorKind::WouldBlock)?;
             Ok(buffer.len())
         })
     }
@@ -84,8 +83,8 @@ mod tests {
         static QUEUE: SharedPointerQueue = SharedPointerQueue::new();
         let device = PointerDevice::new(&QUEUE);
 
-        QUEUE.update(40, 50, true).unwrap();
-        QUEUE.update(40, 50, false).unwrap();
+        QUEUE.update(40, 50, true);
+        QUEUE.update(40, 50, false);
 
         let press = read(&device);
         assert_eq!(press.state, State::Pressed);
@@ -102,7 +101,7 @@ mod tests {
         static QUEUE: SharedPointerQueue = SharedPointerQueue::new();
         let device = PointerDevice::new(&QUEUE);
 
-        QUEUE.update(7, 9, true).unwrap();
+        QUEUE.update(7, 9, true);
         for _ in 0..3 {
             let data = read(&device);
             assert_eq!(data.state, State::Pressed);

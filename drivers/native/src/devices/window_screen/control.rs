@@ -46,15 +46,13 @@ impl<'a> ControlOperations<'a> {
     pub fn pointer_move(&self, x: u32, y: u32) -> Result<(), ControlError> {
         let resolution = self.resolution()?;
         validate_coordinates(x, y, resolution)?;
-        self.pointer
-            .move_to(x as i16, y as i16)
-            .map_err(|_| ControlError::QueueFull { queued_events: 0 })
+        self.pointer.move_to(x as i16, y as i16);
+        Ok(())
     }
 
     pub fn pointer_button(&self, state: State) -> Result<(), ControlError> {
-        self.pointer
-            .set_pressed(state == State::Pressed)
-            .map_err(|_| ControlError::QueueFull { queued_events: 0 })
+        self.pointer.set_pressed(state == State::Pressed);
+        Ok(())
     }
 
     pub fn key(&self, key: Key, state: State) -> Result<(), ControlError> {

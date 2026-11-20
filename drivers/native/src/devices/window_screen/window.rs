@@ -175,7 +175,7 @@ impl<'a> ApplicationHandler for Window<'a> {
                 position,
             } => {
                 // Moves coalesce in the queue and are never dropped for lock contention.
-                let _ = self.pointer.move_to(position.x as i16, position.y as i16);
+                self.pointer.move_to(position.x as i16, position.y as i16);
             }
             WindowEvent::MouseInput {
                 device_id: _,
@@ -183,9 +183,7 @@ impl<'a> ApplicationHandler for Window<'a> {
                 button: _,
             } => {
                 let pressed = matches!(state, ElementState::Pressed);
-                if self.pointer.set_pressed(pressed).is_err() {
-                    log::error!("Failed to queue pointer button event");
-                }
+                self.pointer.set_pressed(pressed);
             }
             _ => {}
         }

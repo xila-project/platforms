@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, string::String};
+use alloc::{boxed::Box, format, string::String};
 use drivers_shared::devices::SharedPointerQueue;
 use file_system::{DirectBaseOperations, DirectCharacterDevice, MountOperations, Size};
 use graphics::{InputData, Point, State};
@@ -20,66 +20,79 @@ impl MouseDevice {
 
         let queue_clone = queue.clone();
         let closure = Closure::wrap(Box::new(move |event: MouseEvent| {
-            if queue_clone
-                .update(
-                    clamp_coordinate(event.client_x()),
-                    clamp_coordinate(event.client_y()),
-                    event.buttons() != 0,
-                )
-                .is_err()
-            {
-                log::warning!("Pointer queue full, dropping {} event", event.type_());
-            }
+            queue_clone.update(
+                clamp_coordinate(event.client_x()),
+                clamp_coordinate(event.client_y()),
+                event.buttons() != 0,
+            );
         }) as Box<dyn FnMut(MouseEvent)>);
 
-        canvas
-            .add_event_listener_with_callback("mousedown", closure.as_ref().unchecked_ref())
-            .map_err(|_| "Failed to add mousedown event listener")?;
-        canvas
+        for event in ["mousedown", "mousemove", "mouseleave"] {
+            canvas
+                .add_event_listener_with_callback(event, closure.as_ref().unchecked_ref())
+                .map_err(|_| format!("Failed to add {event} event listener"))?;
+        }
+        // The release is listened for on the window: a button released after the pointer left the
+        // canvas is never delivered to the canvas and would leave the press stuck.
+        web_sys::window()
+            .ok_or("No window available")?
             .add_event_listener_with_callback("mouseup", closure.as_ref().unchecked_ref())
             .map_err(|_| "Failed to add mouseup event listener")?;
-        canvas
-            .add_event_listener_with_callback("mousemove", closure.as_ref().unchecked_ref())
-            .map_err(|_| "Failed to add mousemove event listener")?;
-        canvas
-            .add_event_listener_with_callback("mouseleave", closure.as_ref().unchecked_ref())
-            .map_err(|_| "Failed to add mouseleave event listener")?;
         closure.forget(); // Prevent memory leak by keeping the closure alive
 
-        // Add touch event support
+        // Add touch event support. Only the first finger drives the pointer: other fingers are
+        // ignored, and lifting one of them must not release the pointer.
         let queue_clone = queue.clone();
+        let mut primary_touch: Option<i32> = None;
         let touch_closure = Closure::wrap(Box::new(move |event: TouchEvent| {
             event.prevent_default(); // Prevent default touch behavior
 
-            // Get the first touch point
-            let result = if let Some(touch) = event.touches().get(0) {
-                // Determine state based on event type
-                queue_clone.update(
+            let find = |list: web_sys::TouchList, identifier: i32| {
+                (0..list.length())
+                    .filter_map(|index| list.get(index))
+                    .find(|touch| touch.identifier() == identifier)
+            };
+            let position = |touch: &web_sys::Touch| {
+                (
                     clamp_coordinate(touch.client_x()),
                     clamp_coordinate(touch.client_y()),
-                    matches!(event.type_().as_str(), "touchstart" | "touchmove"),
                 )
-            } else {
-                // No touches remaining (touchend, touchcancel): release where the finger was.
-                queue_clone.set_pressed(false)
             };
-            if result.is_err() {
-                log::warning!("Pointer queue full, dropping {} event", event.type_());
+
+            match event.type_().as_str() {
+                "touchstart" => {
+                    if primary_touch.is_none()
+                        && let Some(touch) = event.changed_touches().get(0)
+                    {
+                        primary_touch = Some(touch.identifier());
+                        let (x, y) = position(&touch);
+                        queue_clone.update(x, y, true);
+                    }
+                }
+                "touchmove" => {
+                    if let Some(touch) = primary_touch.and_then(|id| find(event.touches(), id)) {
+                        let (x, y) = position(&touch);
+                        queue_clone.update(x, y, true);
+                    }
+                }
+                // touchend, touchcancel: release where the primary finger was lifted.
+                _ => {
+                    if let Some(touch) =
+                        primary_touch.and_then(|id| find(event.changed_touches(), id))
+                    {
+                        let (x, y) = position(&touch);
+                        queue_clone.update(x, y, false);
+                        primary_touch = None;
+                    }
+                }
             }
         }) as Box<dyn FnMut(TouchEvent)>);
 
-        canvas
-            .add_event_listener_with_callback("touchstart", touch_closure.as_ref().unchecked_ref())
-            .map_err(|_| "Failed to add touchstart event listener")?;
-        canvas
-            .add_event_listener_with_callback("touchend", touch_closure.as_ref().unchecked_ref())
-            .map_err(|_| "Failed to add touchend event listener")?;
-        canvas
-            .add_event_listener_with_callback("touchmove", touch_closure.as_ref().unchecked_ref())
-            .map_err(|_| "Failed to add touchmove event listener")?;
-        canvas
-            .add_event_listener_with_callback("touchcancel", touch_closure.as_ref().unchecked_ref())
-            .map_err(|_| "Failed to add touchcancel event listener")?;
+        for event in ["touchstart", "touchend", "touchmove", "touchcancel"] {
+            canvas
+                .add_event_listener_with_callback(event, touch_closure.as_ref().unchecked_ref())
+                .map_err(|_| format!("Failed to add {event} event listener"))?;
+        }
         touch_closure.forget(); // Prevent memory leak by keeping the closure alive
 
         Ok(Self(queue))
