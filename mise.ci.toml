@@ -241,6 +241,9 @@ run = "node --test drivers/wasm/tests/seed.test.mjs && node --test examples/wasm
 [tasks."test:browser-http"]
 extends = "ci:browser"
 
+[tasks."test:browser-drivers"]
+extends = "ci:browser"
+
 [tasks."ci:quality-extra"]
 description = "Validate platform-specific CI workflow and source policies"
 tools.uv = "{{ vars.uv_version }}"

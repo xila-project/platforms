@@ -310,6 +310,7 @@ struct Bridge {
     slots: [BridgeSlot; STREAMS],
     next_id: AtomicU32,
     pending_controls: AtomicUsize,
+    rejected_controls: AtomicU32,
     output: Output,
 }
 
@@ -413,6 +414,18 @@ impl Bridge {
                     .try_update(Ordering::AcqRel, Ordering::Acquire, |count| {
                         Some(count.saturating_sub(1))
                     });
+            if let Some(rejection) = control_rejection(&value) {
+                // Controls are fire-and-forget: the caller already got `Ok`. A rejection is logged, with growing gaps so that a command repeated in a loop cannot flood the console.
+                let count = self
+                    .rejected_controls
+                    .fetch_add(1, Ordering::Relaxed)
+                    .saturating_add(1);
+                if count.is_power_of_two() {
+                    log::error!(
+                        "Browser audio: the worklet rejected {rejection} ({count} rejected control(s) so far)"
+                    );
+                }
+            }
             return;
         }
         let Ok(id) = number_field(&value, "id") else {
@@ -507,6 +520,7 @@ impl WebAudioDevice {
             slots: array::from_fn(|_| BridgeSlot::new()),
             next_id: AtomicU32::new(0),
             pending_controls: AtomicUsize::new(0),
+            rejected_controls: AtomicU32::new(0),
             output,
         });
         let bridge_ptr = (&*bridge) as *const Bridge;
@@ -871,73 +885,94 @@ impl WorkletSource {
         let Ok(bytes) = bounded_bytes(bytes_value, MAX_CONTROL_BYTES) else {
             return;
         };
+        let mut input = [0; MAX_CONTROL_BYTES];
         let input_size = bytes.length() as usize;
-        let output_size = output_size as usize;
-        if output_size > MAX_CONTROL_BYTES {
-            return;
+        bytes.copy_to(&mut input[..input_size]);
+        let result = self.run_control(
+            index,
+            ControlCommandIdentifier::from_raw(command_raw),
+            &input[..input_size],
+            output_size as usize,
+        );
+        let packet = packet("control_ack", id);
+        let _ = set(&packet, "ok", &JsValue::from_bool(result.is_ok()));
+        let _ = set(&packet, "command", &JsValue::from_f64(command_raw as f64));
+        if let Err(error) = result {
+            let _ = set(&packet, "error", &JsValue::from_str(&format!("{error:?}")));
         }
-        bytes.copy_to(&mut self.control_input.0[..input_size]);
+        let _ = port.post(&packet.into());
+    }
+
+    /// Runs one control command on the stream in slot `index`, with `input` as the command's input bytes and `output_size` zeroed bytes of output left in `control_output`.
+    ///
+    /// Each command casts only the buffers it uses: the cast of a zero-sized input or output fails by design, and most commands have one.
+    fn run_control(
+        &mut self,
+        index: usize,
+        command: ControlCommandIdentifier,
+        input: &[u8],
+        output_size: usize,
+    ) -> Result<()> {
+        if input.len() > MAX_CONTROL_BYTES || output_size > MAX_CONTROL_BYTES {
+            return Err(Error::InvalidParameter);
+        }
+        self.control_input.0[..input.len()].copy_from_slice(input);
         self.control_output.0[..output_size].fill(0);
-        let command = ControlCommandIdentifier::from_raw(command_raw);
+        let input_size = input.len();
         let input =
             unsafe { AnyByLayout::from_raw_parts(self.control_input.0.as_mut_ptr(), input_size) };
         let output =
             unsafe { AnyByLayout::from_raw_parts(self.control_output.0.as_mut_ptr(), output_size) };
-        let result = match command {
-            SET_CONFIGURATION::IDENTIFIER => apply::<SET_CONFIGURATION>(
-                &self.streams[index],
-                input,
-                output,
-                |stream, config, _| {
+        let stream = &self.streams[index];
+        match command {
+            SET_CONFIGURATION::IDENTIFIER => {
+                apply::<SET_CONFIGURATION>(stream, input, output, |stream, input, _| {
+                    let config = SET_CONFIGURATION::cast_input(input)?;
                     config.validate()?;
                     if *config != OUTPUT_CONFIGURATION {
                         return Err(Error::UnsupportedOperation);
                     }
                     let _ = stream.configuration();
                     Ok(())
-                },
-            ),
-            GET_CONFIGURATION::IDENTIFIER => apply::<GET_CONFIGURATION>(
-                &self.streams[index],
-                input,
-                output,
-                |stream, _, result| {
-                    *result = stream.configuration();
+                })
+            }
+            GET_CONFIGURATION::IDENTIFIER => {
+                apply::<GET_CONFIGURATION>(stream, input, output, |stream, _, output| {
+                    *GET_CONFIGURATION::cast_output(output)? = stream.configuration();
                     Ok(())
-                },
-            ),
+                })
+            }
             GET_WRITABLE::IDENTIFIER => {
-                apply::<GET_WRITABLE>(&self.streams[index], input, output, |stream, _, result| {
-                    *result = stream.writable().min(u32::MAX as usize) as u32;
+                apply::<GET_WRITABLE>(stream, input, output, |stream, _, output| {
+                    *GET_WRITABLE::cast_output(output)? =
+                        stream.writable().min(u32::MAX as usize) as u32;
                     Ok(())
                 })
             }
             SET_VOLUME::IDENTIFIER => {
-                apply::<SET_VOLUME>(&self.streams[index], input, output, |stream, volume, _| {
-                    stream.set_volume(*volume)
+                apply::<SET_VOLUME>(stream, input, output, |stream, input, _| {
+                    stream.set_volume(*SET_VOLUME::cast_input(input)?)
                 })
             }
             GET_VOLUME::IDENTIFIER => {
-                apply::<GET_VOLUME>(&self.streams[index], input, output, |stream, _, result| {
-                    *result = stream.volume()?;
+                apply::<GET_VOLUME>(stream, input, output, |stream, _, output| {
+                    *GET_VOLUME::cast_output(output)? = stream.volume()?;
                     Ok(())
                 })
             }
             START::IDENTIFIER => {
-                apply::<START>(&self.streams[index], input, output, |stream, _, _| {
-                    stream.start()
-                })
+                apply::<START>(stream, input, output, |stream, _, _| stream.start())
             }
-            STOP::IDENTIFIER => {
-                apply::<STOP>(&self.streams[index], input, output, |stream, _, _| {
-                    stream.stop()
-                })
-            }
+            STOP::IDENTIFIER => apply::<STOP>(stream, input, output, |stream, _, _| stream.stop()),
             _ => Err(Error::UnsupportedOperation),
-        };
-        let packet = packet("control_ack", id);
-        let _ = set(&packet, "ok", &JsValue::from_bool(result.is_ok()));
-        let _ = port.post(&packet.into());
+        }
+    }
+
+    /// Mixes the next block and moves up to `free` bytes of it into `scratch`; returns the byte count.
+    fn render(&mut self, free: usize) -> usize {
+        let _ = self.system.as_ref().mix_next_block();
+        self.output
+            .with_consumer(|consumer| consumer.read(&mut self.scratch[..free.min(MIX_BLOCK_BYTES)]))
     }
 
     fn report_consumed(&mut self, port: &Port) {
@@ -963,10 +998,7 @@ impl Source for WorkletSource {
         producer: &mut nanoaudio_web::Producer<'_, { nanoaudio_web::CAPACITY }>,
         port: &Port,
     ) {
-        let _ = self.system.as_ref().mix_next_block();
-        let count = self.output.with_consumer(|consumer| {
-            consumer.read(&mut self.scratch[..producer.free().min(MIX_BLOCK_BYTES)])
-        });
+        let count = self.render(producer.free());
         producer.write(&self.scratch[..count]);
         self.report_consumed(port);
     }
@@ -987,13 +1019,13 @@ fn apply<C: ControlCommand>(
     output: &mut AnyByLayout,
     operation: impl FnOnce(
         &StreamHandle<'static, STREAMS, STREAM_BYTES, MIX_FRAMES, OUTPUTS, SINK_BYTES>,
-        &C::Input,
-        &mut C::Output,
+        &AnyByLayout,
+        &mut AnyByLayout,
     ) -> Result<()>,
 ) -> Result<()> {
     validate::<C>(input, output)?;
     let stream = stream.as_ref().ok_or(Error::InvalidContext)?;
-    operation(stream, C::cast_input(input)?, C::cast_output(output)?)
+    operation(stream, input, output)
 }
 
 fn validate<C: ControlCommand>(input: &AnyByLayout, output: &AnyByLayout) -> Result<()> {
@@ -1007,6 +1039,22 @@ fn validate<C: ControlCommand>(input: &AnyByLayout, output: &AnyByLayout) -> Res
         return Err(Error::InvalidParameter);
     }
     Ok(())
+}
+
+/// Describes a `control_ack` that reports a failure, or returns `None` for a successful or unrelated message.
+fn control_rejection(value: &JsValue) -> Option<String> {
+    if field(value, "op").ok()?.as_string().as_deref() != Some("control_ack")
+        || field(value, "ok").ok()?.as_bool() != Some(false)
+    {
+        return None;
+    }
+    let text = |key: &str| field(value, key).ok().and_then(|field| field.as_string());
+    let command = number_field(value, "command").ok();
+    let stream = number_field(value, "id").ok();
+    Some(format!(
+        "control command {command:?} on stream {stream:?}: {}",
+        text("error").unwrap_or_else(|| "no error reported".to_string())
+    ))
 }
 
 fn set(object: &Object, key: &str, value: &JsValue) -> Result<()> {
@@ -1069,9 +1117,19 @@ fn any_bytes(value: &AnyByLayout) -> &[u8] {
 
 #[cfg(test)]
 mod tests {
-    use super::{BridgeSlot, MAX_SUMMARY_CHARACTERS, StartError, StartGuard, shorten};
+    use super::{
+        BridgeSlot, ControlCommand, Error, FRAME_BYTES, MAX_SUMMARY_CHARACTERS,
+        OUTPUT_CONFIGURATION, STREAM_BYTES, StartError, StartGuard, WorkletSource,
+        control_rejection, set, shorten,
+    };
     use alloc::string::ToString;
+    use audio::{
+        Configuration, GET_CONFIGURATION, GET_VOLUME, GET_WRITABLE, SET_CONFIGURATION, SET_VOLUME,
+        START, STOP, SampleFormat,
+    };
     use core::sync::atomic::{AtomicBool, Ordering};
+    use js_sys::Object;
+    use wasm_bindgen::JsValue;
     use wasm_bindgen_test::wasm_bindgen_test;
 
     #[wasm_bindgen_test]
@@ -1098,7 +1156,7 @@ mod tests {
         assert!(StartError::ResumeTimedOut.summary().contains("allow audio"));
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn uncommitted_start_guard_resets_reservation() {
         let started = AtomicBool::new(false);
         let guard = StartGuard::acquire(&started).unwrap();
@@ -1107,14 +1165,14 @@ mod tests {
         assert!(!started.load(Ordering::Acquire));
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn committed_start_guard_keeps_reservation() {
         let started = AtomicBool::new(false);
         StartGuard::acquire(&started).unwrap().commit();
         assert!(started.load(Ordering::Acquire));
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn bounds_outstanding_pcm_and_restores_only_consumed_credit() {
         let credit = BridgeSlot::new();
         credit
@@ -1130,7 +1188,7 @@ mod tests {
         assert_eq!(credit.writable(), 0);
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn ignores_old_consumption_reports() {
         let credit = BridgeSlot::new();
         credit
@@ -1142,5 +1200,167 @@ mod tests {
         credit.report_consumed(256);
 
         assert_eq!(credit.writable(), 1536);
+    }
+
+    /// A worklet source with one open stream in slot 0, driven through the same `run_control` path as a control message from the page.
+    fn source_with_stream() -> WorkletSource {
+        let mut source = WorkletSource::new();
+        let stream = source
+            .system
+            .get_ref()
+            .open_stream()
+            .expect("a free stream");
+        source.streams[0] = Some(stream);
+        source.ids[0] = 1;
+        source
+    }
+
+    fn bytes_of<T>(value: &T) -> &[u8] {
+        unsafe { core::slice::from_raw_parts((value as *const T).cast(), size_of::<T>()) }
+    }
+
+    /// Dispatches `C` as the page does: its input bytes and the output size of its output type.
+    fn dispatch<C: ControlCommand>(
+        source: &mut WorkletSource,
+        input: &[u8],
+    ) -> Result<C::Output, Error> {
+        dispatch_sized::<C>(source, input, size_of::<C::Output>())
+    }
+
+    fn dispatch_sized<C: ControlCommand>(
+        source: &mut WorkletSource,
+        input: &[u8],
+        output_size: usize,
+    ) -> Result<C::Output, Error> {
+        source.run_control(0, C::IDENTIFIER, input, output_size)?;
+        Ok(unsafe {
+            core::ptr::read_unaligned(source.control_output.0.as_ptr().cast::<C::Output>())
+        })
+    }
+
+    /// One block of constant stereo F32 frames, 0.25 on both channels.
+    fn one_block() -> alloc::vec::Vec<u8> {
+        let frame = [0.25f32, 0.25f32];
+        (0..super::MIX_FRAMES)
+            .flat_map(|_| bytes_of(&frame).to_vec())
+            .collect()
+    }
+
+    // Every audio command has `()` as its input or its output, and casting a zero-sized buffer fails: the commands must succeed all the same.
+    #[wasm_bindgen_test]
+    fn commands_without_input_or_output_succeed() {
+        let mut source = source_with_stream();
+        dispatch::<START>(&mut source, &[]).expect("START");
+        dispatch::<STOP>(&mut source, &[]).expect("STOP");
+        dispatch::<SET_VOLUME>(&mut source, &[40]).expect("SET_VOLUME");
+        dispatch::<SET_CONFIGURATION>(&mut source, bytes_of(&OUTPUT_CONFIGURATION))
+            .expect("SET_CONFIGURATION");
+    }
+
+    #[wasm_bindgen_test]
+    fn commands_return_their_output() {
+        let mut source = source_with_stream();
+        dispatch::<SET_VOLUME>(&mut source, &[40]).unwrap();
+        assert_eq!(dispatch::<GET_VOLUME>(&mut source, &[]).unwrap(), 40);
+        assert_eq!(
+            dispatch::<GET_WRITABLE>(&mut source, &[]).unwrap(),
+            STREAM_BYTES as u32
+        );
+        let configuration = dispatch::<GET_CONFIGURATION>(&mut source, &[]).unwrap();
+        assert_eq!(configuration, OUTPUT_CONFIGURATION);
+    }
+
+    #[wasm_bindgen_test]
+    fn rejects_bad_requests_with_the_matching_error() {
+        let mut source = source_with_stream();
+        let other = Configuration::new(44_100, 2, SampleFormat::F32);
+        assert_eq!(
+            dispatch::<SET_CONFIGURATION>(&mut source, bytes_of(&other)).unwrap_err(),
+            Error::UnsupportedOperation
+        );
+        assert_eq!(
+            dispatch::<SET_VOLUME>(&mut source, &[101]).unwrap_err(),
+            Error::InvalidParameter
+        );
+        assert_eq!(
+            dispatch::<START>(&mut source, &[1]).unwrap_err(),
+            Error::InvalidParameter
+        );
+        assert_eq!(
+            dispatch_sized::<GET_VOLUME>(&mut source, &[], 0).unwrap_err(),
+            Error::InvalidParameter
+        );
+        assert_eq!(
+            source
+                .run_control(0, super::ControlCommandIdentifier::from_raw(0), &[], 0)
+                .unwrap_err(),
+            Error::UnsupportedOperation
+        );
+        assert_eq!(
+            source
+                .run_control(1, START::IDENTIFIER, &[], 0)
+                .unwrap_err(),
+            Error::InvalidContext
+        );
+    }
+
+    // The stream only plays after START: this is what made the browser silent.
+    #[wasm_bindgen_test]
+    fn start_makes_the_worklet_mix_the_stream_and_stop_halts_it() {
+        let mut source = source_with_stream();
+        let block = one_block();
+        let stream = source.streams[0].as_ref().unwrap();
+        assert_eq!(stream.write(&block).unwrap(), block.len());
+        assert_eq!(stream.writable(), STREAM_BYTES - block.len());
+
+        let count = source.render(usize::MAX);
+        assert!(source.scratch[..count].iter().all(|byte| *byte == 0));
+        assert_eq!(
+            dispatch::<GET_WRITABLE>(&mut source, &[]).unwrap() as usize,
+            STREAM_BYTES - block.len(),
+            "a stream that was never started keeps its queue"
+        );
+
+        dispatch::<START>(&mut source, &[]).unwrap();
+        let count = source.render(usize::MAX);
+        assert_eq!(count, block.len());
+        let sample = f32::from_ne_bytes(source.scratch[..4].try_into().unwrap());
+        assert!(sample > 0.0, "the started stream is mixed, got {sample}");
+        assert_eq!(
+            dispatch::<GET_WRITABLE>(&mut source, &[]).unwrap(),
+            STREAM_BYTES as u32,
+            "the mixer drained the stream"
+        );
+
+        dispatch::<STOP>(&mut source, &[]).unwrap();
+        source.streams[0].as_ref().unwrap().write(&block).unwrap();
+        let count = source.render(usize::MAX);
+        assert!(source.scratch[..count].iter().all(|byte| *byte == 0));
+        assert_eq!(FRAME_BYTES * super::MIX_FRAMES, block.len());
+    }
+
+    fn ack(ok: bool, error: Option<&str>) -> JsValue {
+        let packet = Object::new();
+        set(&packet, "op", &JsValue::from_str("control_ack")).unwrap();
+        set(&packet, "id", &JsValue::from_f64(3.0)).unwrap();
+        set(&packet, "ok", &JsValue::from_bool(ok)).unwrap();
+        set(&packet, "command", &JsValue::from_f64(1_074_282_754.0)).unwrap();
+        if let Some(error) = error {
+            set(&packet, "error", &JsValue::from_str(error)).unwrap();
+        }
+        packet.into()
+    }
+
+    #[wasm_bindgen_test]
+    fn only_a_failed_control_ack_is_reported() {
+        assert_eq!(control_rejection(&ack(true, None)), None);
+        let rejection = control_rejection(&ack(false, Some("InvalidParameter"))).unwrap();
+        assert!(rejection.contains("1074282754"), "{rejection}");
+        assert!(rejection.contains("stream Some(3)"), "{rejection}");
+        assert!(rejection.contains("InvalidParameter"), "{rejection}");
+        let other = Object::new();
+        set(&other, "op", &JsValue::from_str("consumed")).unwrap();
+        set(&other, "ok", &JsValue::from_bool(false)).unwrap();
+        assert_eq!(control_rejection(&other.into()), None);
     }
 }

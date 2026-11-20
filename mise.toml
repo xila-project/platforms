@@ -43,6 +43,19 @@ tools.node = "{{ vars.node_version }}"
 tools."github:wasm-bindgen/wasm-bindgen" = "{{ vars.wasm_bindgen_version }}"
 run = "cargo test --locked -p xila-drivers-wasm --target wasm32-unknown-unknown --test http_client"
 
+[tasks."test:browser-drivers"]
+description = "Run the browser driver library tests (audio worklet controls, HTTP and canvas helpers) in headless Chrome"
+env.CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER = "wasm-bindgen-test-runner"
+tools."github:wasm-bindgen/wasm-bindgen" = "{{ vars.wasm_bindgen_version }}"
+# GitHub-hosted runners ship Chrome and a matching chromedriver in $CHROMEWEBDRIVER. Elsewhere, put a chromedriver that matches your Chrome on PATH or set CHROMEDRIVER.
+run = """
+set -eu
+if [ -z "${CHROMEDRIVER:-}" ] && [ -n "${CHROMEWEBDRIVER:-}" ]; then
+  export CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver"
+fi
+cargo test --locked -p xila-drivers-wasm --features audio --target wasm32-unknown-unknown --lib
+"""
+
 [tasks."test:seed"]
 description = "Test filesystem images and package verification"
 run = "cargo test --locked -p xila-fs-image -p xila-prepare-applications"
