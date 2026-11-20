@@ -92,7 +92,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
     use xila::bootsplash::Bootsplash;
     use xila::executable::{self, Standard, mount_executables};
     use xila::file_system::mbr::Mbr;
-    use xila::file_system::{Error, Path};
+    use xila::file_system::{IoErrorKind, Path};
     use xila::log;
     use xila::task;
     use xila::time::{self, Duration};
@@ -138,7 +138,11 @@ async fn main(task_manager: &'static xila::task::Manager) {
             disk_manager_startup_failed(
                 &selected_disk,
                 &alloc::format!("Could not open {disk_label}: {error}"),
-                persistent && matches!(error, Error::InvalidParameter | Error::InvalidFile),
+                persistent
+                    && matches!(
+                        error,
+                        IoErrorKind::InvalidArgument | IoErrorKind::CorruptData
+                    ),
             );
             return;
         }

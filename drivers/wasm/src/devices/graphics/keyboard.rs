@@ -143,7 +143,7 @@ impl DirectBaseOperations for KeyboardDevice {
         file_system::ready(|| {
             let data: &mut InputData = buffer
                 .try_into()
-                .map_err(|_| file_system::Error::InvalidParameter)?;
+                .map_err(|_| file_system::IoErrorKind::InvalidArgument)?;
 
             if let Ok((key, state)) = self.0.receiver().try_receive() {
                 data.set_key(key);
@@ -162,7 +162,7 @@ impl DirectBaseOperations for KeyboardDevice {
         _: &[u8],
         _: Size,
     ) -> core::task::Poll<file_system::Result<usize>> {
-        file_system::ready(|| Err(file_system::Error::UnsupportedOperation))
+        file_system::ready(|| Err(file_system::IoErrorKind::Unsupported))
     }
 }
 

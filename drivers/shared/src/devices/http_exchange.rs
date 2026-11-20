@@ -7,7 +7,7 @@ use core::{
     time::Duration,
 };
 use embassy_futures::select::{Either, select};
-use file_system::{Error, Result};
+use file_system::{IoErrorKind, Result};
 use synchronization::{
     Arc, blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex, signal::Signal,
 };
@@ -27,7 +27,7 @@ enum State {
     Pending,
     Ready,
     Complete,
-    Failed(Error),
+    Failed(IoErrorKind),
 }
 struct Inner {
     generation: u64,
@@ -106,7 +106,7 @@ impl ClientContext {
                 .exchange
                 .inner
                 .try_lock()
-                .map_err(|_| Error::RessourceBusy)?;
+                .map_err(|_| IoErrorKind::WouldBlock)?;
             match inner.state {
                 State::Idle => Poll::Ready(Ok(0)),
                 State::Pending => Poll::Pending,
@@ -136,12 +136,12 @@ impl ClientContext {
 }
 impl Exchange {
     pub fn begin(&self) -> Result<u64> {
-        let mut inner = self.inner.try_lock().map_err(|_| Error::RessourceBusy)?;
+        let mut inner = self.inner.try_lock().map_err(|_| IoErrorKind::WouldBlock)?;
         if inner.active.is_some()
             || !matches!(inner.state, State::Idle | State::Failed(_))
             || inner.buffer.is_none()
         {
-            return Err(Error::RessourceBusy);
+            return Err(IoErrorKind::ResourceBusy);
         }
         inner.generation = inner.generation.wrapping_add(1);
         inner.state = State::Pending;
@@ -164,7 +164,7 @@ impl Exchange {
     pub async fn take_buffer(&self, generation: u64) -> Result<Option<Buffer>> {
         let mut inner = self.inner.lock().await;
         if inner.generation != generation {
-            return Err(Error::InvalidContext);
+            return Err(IoErrorKind::InvalidState);
         }
         Ok(inner.buffer.take())
     }
@@ -196,7 +196,7 @@ impl Exchange {
         {
             let mut inner = self.inner.lock().await;
             if inner.generation != generation {
-                return Err(Error::InvalidContext);
+                return Err(IoErrorKind::InvalidState);
             }
             inner.buffer = buffer.take();
             inner.cursor = start;
@@ -208,7 +208,7 @@ impl Exchange {
             self.consumed.wait().await;
             let mut inner = self.inner.lock().await;
             if inner.generation != generation {
-                return Err(Error::InvalidContext);
+                return Err(IoErrorKind::InvalidState);
             }
             if inner.cursor == inner.end {
                 *buffer = inner.buffer.take();
@@ -218,10 +218,10 @@ impl Exchange {
     }
 }
 
-fn framing_error(error: xila_http::Error) -> Error {
+fn framing_error(error: xila_http::Error) -> IoErrorKind {
     match error {
-        xila_http::Error::HeadersTooLarge => Error::FileTooLarge,
-        _ => Error::InputOutput,
+        xila_http::Error::HeadersTooLarge => IoErrorKind::FileTooLarge,
+        _ => IoErrorKind::InputOutput,
     }
 }
 async fn receive<R: embedded_io_async::Read>(io: &mut R, buffer: &mut [u8]) -> Result<usize> {
@@ -232,7 +232,7 @@ async fn receive<R: embedded_io_async::Read>(io: &mut R, buffer: &mut [u8]) -> R
     .await
     {
         Either::First(result) => result.map_err(map_http_io_error),
-        Either::Second(_) => Err(Error::TimeError),
+        Either::Second(_) => Err(IoErrorKind::TimedOut),
     }
 }
 pub(super) async fn read_response<R: embedded_io_async::Read>(
@@ -244,7 +244,7 @@ pub(super) async fn read_response<R: embedded_io_async::Read>(
 ) -> Result<()> {
     let mut filled = 0;
     let (head, prefix) = loop {
-        let buffer = storage.as_mut().ok_or(Error::InvalidContext)?;
+        let buffer = storage.as_mut().ok_or(IoErrorKind::InvalidState)?;
         if let Some(head) = parse_response_head::<MAX_HEADERS>(&buffer[..filled], head_request)
             .map_err(framing_error)?
         {
@@ -256,11 +256,11 @@ pub(super) async fn read_response<R: embedded_io_async::Read>(
             break (head, filled);
         }
         if filled == buffer.len() {
-            return Err(Error::FileTooLarge);
+            return Err(IoErrorKind::FileTooLarge);
         }
         let n = receive(io, &mut buffer[filled..]).await?;
         if n == 0 {
-            return Err(Error::InputOutput);
+            return Err(IoErrorKind::InputOutput);
         }
         filled += n;
     };
@@ -271,7 +271,7 @@ pub(super) async fn read_response<R: embedded_io_async::Read>(
     let mut start = head.length;
     let mut end = prefix;
     while !decoder.is_complete() {
-        let buffer = storage.as_mut().ok_or(Error::InvalidContext)?;
+        let buffer = storage.as_mut().ok_or(IoErrorKind::InvalidState)?;
         if start == end {
             start = 0;
             end = receive(io, buffer.as_mut()).await?;

@@ -28,7 +28,7 @@ impl<'a> DirectBaseOperations for ScreenDevice<'a> {
         _: &mut [u8],
         _: Size,
     ) -> core::task::Poll<file_system::Result<usize>> {
-        file_system::ready(|| Err(file_system::Error::UnsupportedOperation))
+        file_system::ready(|| Err(file_system::IoErrorKind::Unsupported))
     }
 
     fn write(
@@ -39,7 +39,7 @@ impl<'a> DirectBaseOperations for ScreenDevice<'a> {
     ) -> core::task::Poll<file_system::Result<usize>> {
         file_system::ready(|| {
             let data: &[RenderingColor] =
-                align_slice_to(buffer).ok_or(file_system::Error::InvalidParameter)?;
+                align_slice_to(buffer).ok_or(file_system::IoErrorKind::InvalidArgument)?;
 
             task::block_on(self.0.draw(data)).unwrap();
 
@@ -73,13 +73,15 @@ impl<'a> DirectBaseOperations for ScreenDevice<'a> {
                 }
                 WRITE_SCREENSHOT_TO_PATH::IDENTIFIER => {
                     let request = WRITE_SCREENSHOT_TO_PATH::cast_input(input)?;
-                    let path = request.path().ok_or(file_system::Error::InvalidParameter)?;
+                    let path = request
+                        .path()
+                        .ok_or(file_system::IoErrorKind::InvalidArgument)?;
                     let dimensions =
                         task::block_on(super::screenshot::write_png(std::path::Path::new(path)))
-                            .map_err(|_| file_system::Error::InputOutput)?;
+                            .map_err(|_| file_system::IoErrorKind::InputOutput)?;
                     *WRITE_SCREENSHOT_TO_PATH::cast_output(output)? = dimensions;
                 }
-                _ => return Err(file_system::Error::UnsupportedOperation),
+                _ => return Err(file_system::IoErrorKind::Unsupported),
             }
 
             Ok(())

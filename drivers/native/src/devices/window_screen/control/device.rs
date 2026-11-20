@@ -24,24 +24,24 @@ impl ResponseAccumulator {
     fn push(&mut self, bytes: &[u8]) -> file_system::Result<bool> {
         let max_response = debug_protocol::MAX_RESPONSE_BYTES
             .checked_add(debug_protocol::MAX_SCREENSHOT_BYTES)
-            .ok_or(file_system::Error::InvalidParameter)?;
+            .ok_or(file_system::IoErrorKind::InvalidArgument)?;
         if self.bytes.len().saturating_add(bytes.len()) > max_response {
-            return Err(file_system::Error::InvalidParameter);
+            return Err(file_system::IoErrorKind::InvalidArgument);
         }
         self.bytes.extend_from_slice(bytes);
 
         if self.expected_len.is_none() {
             let Some(header_end) = self.bytes.iter().position(|byte| *byte == b'\n') else {
                 if self.bytes.len() >= debug_protocol::MAX_RESPONSE_BYTES {
-                    return Err(file_system::Error::InvalidParameter);
+                    return Err(file_system::IoErrorKind::InvalidArgument);
                 }
                 return Ok(false);
             };
             if header_end + 1 > debug_protocol::MAX_RESPONSE_BYTES {
-                return Err(file_system::Error::InvalidParameter);
+                return Err(file_system::IoErrorKind::InvalidArgument);
             }
             let header: serde_json::Value = serde_json::from_slice(&self.bytes[..header_end])
-                .map_err(|_| file_system::Error::InvalidParameter)?;
+                .map_err(|_| file_system::IoErrorKind::InvalidArgument)?;
             let screenshot = header
                 .get("result")
                 .and_then(serde_json::Value::as_object)
@@ -51,11 +51,11 @@ impl ResponseAccumulator {
                     header
                         .get("result")
                         .cloned()
-                        .ok_or(file_system::Error::InvalidParameter)?,
+                        .ok_or(file_system::IoErrorKind::InvalidArgument)?,
                 )
-                .map_err(|_| file_system::Error::InvalidParameter)?;
+                .map_err(|_| file_system::IoErrorKind::InvalidArgument)?;
                 debug_protocol::validate_screenshot_metadata(metadata)
-                    .map_err(|_| file_system::Error::InvalidParameter)?;
+                    .map_err(|_| file_system::IoErrorKind::InvalidArgument)?;
                 metadata.payload_bytes
             } else {
                 0
@@ -64,13 +64,13 @@ impl ResponseAccumulator {
                 header_end
                     .checked_add(1)
                     .and_then(|length| length.checked_add(payload_bytes))
-                    .ok_or(file_system::Error::InvalidParameter)?,
+                    .ok_or(file_system::IoErrorKind::InvalidArgument)?,
             );
         }
 
         let expected = self.expected_len.unwrap();
         if self.bytes.len() > expected {
-            return Err(file_system::Error::InvalidParameter);
+            return Err(file_system::IoErrorKind::InvalidArgument);
         }
         Ok(self.bytes.len() == expected)
     }
@@ -98,14 +98,15 @@ impl DebugTransportDevice {
         let state_slot = DEVICE_STATE.get_or_init(|| Mutex::new(None));
         let mut state_guard = state_slot
             .lock()
-            .map_err(|_| file_system::Error::InputOutput)?;
+            .map_err(|_| file_system::IoErrorKind::InputOutput)?;
         if state_guard.is_some() {
-            return Err(file_system::Error::RessourceBusy);
+            return Err(file_system::IoErrorKind::ResourceBusy);
         }
-        let server = ControlServer::start(sender).map_err(|_| file_system::Error::InputOutput)?;
+        let server =
+            ControlServer::start(sender).map_err(|_| file_system::IoErrorKind::InputOutput)?;
         *CONTROL_SERVER
             .lock()
-            .map_err(|_| file_system::Error::InputOutput)? = Some(server);
+            .map_err(|_| file_system::IoErrorKind::InputOutput)? = Some(server);
         *state_guard = Some(state);
         Ok(())
     }
@@ -113,11 +114,11 @@ impl DebugTransportDevice {
     fn state() -> file_system::Result<Arc<DeviceState>> {
         DEVICE_STATE
             .get()
-            .ok_or(file_system::Error::NotInitialized)?
+            .ok_or(file_system::IoErrorKind::DeviceUnavailable)?
             .lock()
-            .map_err(|_| file_system::Error::InputOutput)?
+            .map_err(|_| file_system::IoErrorKind::InputOutput)?
             .clone()
-            .ok_or(file_system::Error::NotInitialized)
+            .ok_or(file_system::IoErrorKind::DeviceUnavailable)
     }
 }
 
@@ -129,12 +130,12 @@ impl DirectBaseOperations for DebugTransportDevice {
     fn close(&self) -> file_system::Result<()> {
         *DEVICE_STATE
             .get()
-            .ok_or(file_system::Error::NotInitialized)?
+            .ok_or(file_system::IoErrorKind::DeviceUnavailable)?
             .lock()
-            .map_err(|_| file_system::Error::InputOutput)? = None;
+            .map_err(|_| file_system::IoErrorKind::InputOutput)? = None;
         *CONTROL_SERVER
             .lock()
-            .map_err(|_| file_system::Error::InputOutput)? = None;
+            .map_err(|_| file_system::IoErrorKind::InputOutput)? = None;
         Ok(())
     }
 
@@ -152,13 +153,13 @@ impl DirectBaseOperations for DebugTransportDevice {
             let mut active = state
                 .active
                 .try_lock()
-                .map_err(|_| file_system::Error::RessourceBusy)?;
+                .map_err(|_| file_system::IoErrorKind::WouldBlock)?;
 
             if active.is_none() {
                 let requests = state
                     .requests
                     .try_lock()
-                    .map_err(|_| file_system::Error::RessourceBusy)?;
+                    .map_err(|_| file_system::IoErrorKind::WouldBlock)?;
                 match requests.try_recv() {
                     Ok(request) => {
                         *active = Some(ActiveRequest {
@@ -168,16 +169,16 @@ impl DirectBaseOperations for DebugTransportDevice {
                             response_frame: ResponseAccumulator::default(),
                         });
                     }
-                    Err(TryRecvError::Empty) => return Err(file_system::Error::RessourceBusy),
+                    Err(TryRecvError::Empty) => return Err(file_system::IoErrorKind::WouldBlock),
                     Err(TryRecvError::Disconnected) => {
-                        return Err(file_system::Error::InputOutput);
+                        return Err(file_system::IoErrorKind::InputOutput);
                     }
                 }
             }
 
             let request = active.as_mut().unwrap();
             if request.offset == request.bytes.len() {
-                return Err(file_system::Error::RessourceBusy);
+                return Err(file_system::IoErrorKind::WouldBlock);
             }
             let length = buffer.len().min(request.bytes.len() - request.offset);
             buffer[..length]
@@ -198,15 +199,17 @@ impl DirectBaseOperations for DebugTransportDevice {
             let mut active = state
                 .active
                 .try_lock()
-                .map_err(|_| file_system::Error::RessourceBusy)?;
-            let request = active.as_mut().ok_or(file_system::Error::RessourceBusy)?;
+                .map_err(|_| file_system::IoErrorKind::WouldBlock)?;
+            let request = active
+                .as_mut()
+                .ok_or(file_system::IoErrorKind::WouldBlock)?;
             let length = buffer.len();
             if request.response_frame.push(buffer)? {
                 let active = active.take().unwrap();
                 active
                     .response
                     .send(active.response_frame.bytes)
-                    .map_err(|_| file_system::Error::InputOutput)?;
+                    .map_err(|_| file_system::IoErrorKind::InputOutput)?;
             }
             Ok(length)
         })
@@ -235,12 +238,79 @@ mod tests {
         bytes
     }
 
+    /// The Debug application retries only `WouldBlock`; `ResourceBusy` is reserved for the
+    /// exclusive-open conflict. The device state is process-global, so one test covers both.
+    #[test]
+    fn idle_polls_report_would_block_and_a_second_open_reports_resource_busy() {
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let state = Arc::new(DeviceState {
+            requests: Mutex::new(receiver),
+            active: Mutex::new(None),
+        });
+        *DEVICE_STATE
+            .get_or_init(|| Mutex::new(None))
+            .lock()
+            .unwrap() = Some(state.clone());
+        let device = DebugTransportDevice;
+        let mut buffer = [0u8; 16];
+
+        // No request is pending.
+        assert_eq!(
+            device.read_sync(&mut buffer, 0),
+            Err(file_system::IoErrorKind::WouldBlock)
+        );
+        // A response with no request in flight has nothing to answer yet.
+        assert_eq!(
+            device.write_sync(b"{}\n", 0),
+            Err(file_system::IoErrorKind::WouldBlock)
+        );
+        // A contended try-lock is also a readiness condition.
+        {
+            let _held = state.active.lock().unwrap();
+            assert_eq!(
+                device.read_sync(&mut buffer, 0),
+                Err(file_system::IoErrorKind::WouldBlock)
+            );
+            assert_eq!(
+                device.write_sync(b"{}\n", 0),
+                Err(file_system::IoErrorKind::WouldBlock)
+            );
+        }
+        {
+            let _held = state.requests.lock().unwrap();
+            assert_eq!(
+                device.read_sync(&mut buffer, 0),
+                Err(file_system::IoErrorKind::WouldBlock)
+            );
+        }
+        // A request that has been fully handed out waits for its response.
+        let (response, _receiver) = std::sync::mpsc::channel();
+        sender
+            .send(PendingRequest {
+                bytes: b"ping\n".to_vec(),
+                response,
+            })
+            .unwrap();
+        assert_eq!(device.read_sync(&mut buffer, 0), Ok(5));
+        assert_eq!(
+            device.read_sync(&mut buffer, 0),
+            Err(file_system::IoErrorKind::WouldBlock)
+        );
+        // Opening the exclusive transport twice is an administrative conflict.
+        assert_eq!(
+            DebugTransportDevice::initialize(),
+            Err(file_system::IoErrorKind::ResourceBusy)
+        );
+
+        *DEVICE_STATE.get().unwrap().lock().unwrap() = None;
+    }
+
     #[test]
     fn screenshot_frame_rejects_payload_length_mismatch() {
         let mut frame = ResponseAccumulator::default();
         assert_eq!(
             frame.push(&screenshot_header(3)),
-            Err(file_system::Error::InvalidParameter)
+            Err(file_system::IoErrorKind::InvalidArgument)
         );
     }
 

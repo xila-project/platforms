@@ -116,7 +116,7 @@ pub struct StandardInDevice;
 
 impl DirectBaseOperations for StandardInDevice {
     /// Returns `Pending` (registering the waker) until host input arrives;
-    /// synchronous adapters therefore see `RessourceBusy` instead of blocking.
+    /// synchronous adapters therefore see `WouldBlock` instead of blocking.
     fn read(
         &self,
         cx: &mut core::task::Context<'_>,
@@ -132,7 +132,7 @@ impl DirectBaseOperations for StandardInDevice {
         _: &[u8],
         _: Size,
     ) -> core::task::Poll<file_system::Result<usize>> {
-        file_system::ready(|| Err(file_system::Error::UnsupportedOperation))
+        file_system::ready(|| Err(file_system::IoErrorKind::Unsupported))
     }
 
     fn flush(
@@ -166,7 +166,7 @@ impl DirectBaseOperations for StandardOutDevice {
         _: &mut [u8],
         _: Size,
     ) -> core::task::Poll<file_system::Result<usize>> {
-        file_system::ready(|| Err(file_system::Error::UnsupportedOperation))
+        file_system::ready(|| Err(file_system::IoErrorKind::Unsupported))
     }
 
     fn write(
@@ -209,7 +209,7 @@ impl DirectBaseOperations for StandardErrorDevice {
         _: &mut [u8],
         _: Size,
     ) -> core::task::Poll<file_system::Result<usize>> {
-        file_system::ready(|| Err(file_system::Error::UnsupportedOperation))
+        file_system::ready(|| Err(file_system::IoErrorKind::Unsupported))
     }
 
     fn write(
@@ -255,6 +255,6 @@ fn control(
 
             Ok(())
         }
-        _ => Err(file_system::Error::UnsupportedOperation),
+        _ => Err(file_system::IoErrorKind::Unsupported),
     }
 }

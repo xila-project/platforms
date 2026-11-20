@@ -5,7 +5,7 @@
 //! returns a future the device resolves from the executor.
 use super::{request::PreparedRequest, response};
 use alloc::{string::String, vec::Vec};
-use file_system::{Error, Result};
+use file_system::{IoErrorKind, Result};
 use js_sys::{Array, Function, JsString, Object, Promise, Reflect, Uint8Array};
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use wasm_bindgen_futures::JsFuture;
@@ -18,7 +18,7 @@ fn global_function(name: &str) -> Result<Function> {
     Reflect::get(&js_sys::global(), &JsValue::from_str(name))
         .ok()
         .and_then(|value| value.dyn_into::<Function>().ok())
-        .ok_or(Error::UnsupportedOperation)
+        .ok_or(IoErrorKind::Unsupported)
 }
 
 /// A pending `setTimeout` cleared when dropped.
@@ -37,9 +37,9 @@ impl Drop for Deadline {
 
 /// Wait for `promise`, giving up after `timeout_ms`.
 ///
-/// A local deadline aborts the request and returns [`Error::TimeError`].
+/// A local deadline aborts the request and returns [`IoErrorKind::TimedOut`].
 /// Fetch rejections, including opaque network and CORS failures, return
-/// [`Error::InputOutput`].
+/// [`IoErrorKind::InputOutput`].
 async fn within(
     promise: Promise,
     controller: &AbortController,
@@ -66,7 +66,7 @@ async fn within(
         }
     });
     if deadline.is_none() {
-        return Err(Error::InputOutput);
+        return Err(IoErrorKind::InputOutput);
     }
     let result = JsFuture::from(Promise::race(&Array::of2(&promise, &expired))).await;
     drop(deadline);
@@ -75,9 +75,9 @@ async fn within(
             // The timer has won the race. Aborting now cannot mask the deadline
             // with the rejection triggered by aborting Fetch.
             controller.abort();
-            Error::TimeError
+            IoErrorKind::TimedOut
         } else {
-            Error::InputOutput
+            IoErrorKind::InputOutput
         }
     })
 }
@@ -87,12 +87,12 @@ pub(super) fn options(
     request: &PreparedRequest<'_>,
     controller: &AbortController,
 ) -> Result<RequestInit> {
-    let headers = Headers::new().map_err(|_| Error::InternalError)?;
+    let headers = Headers::new().map_err(|_| IoErrorKind::InputOutput)?;
     for (name, value) in &request.headers {
         // Invalid names or values are the guest's mistake, not the network's.
         headers
             .append(name, value)
-            .map_err(|_| Error::InvalidParameter)?;
+            .map_err(|_| IoErrorKind::InvalidArgument)?;
     }
     let options = RequestInit::new();
     options.set_method(request.method);
@@ -120,9 +120,9 @@ pub(super) struct Head {
 pub(super) fn send(url: &str, options: &RequestInit) -> Result<Promise> {
     global_function("fetch")?
         .call2(&JsValue::NULL, &JsValue::from_str(url), options)
-        .map_err(|_| Error::InputOutput)?
+        .map_err(|_| IoErrorKind::InputOutput)?
         .dyn_into::<Promise>()
-        .map_err(|_| Error::InputOutput)
+        .map_err(|_| IoErrorKind::InputOutput)
 }
 
 /// Wait for the response and frame its head. The body stays in the browser.
@@ -135,20 +135,20 @@ pub(super) async fn receive(
     let response = within(promise, controller, timeout_ms)
         .await?
         .dyn_into::<Response>()
-        .map_err(|_| Error::InputOutput)?;
+        .map_err(|_| IoErrorKind::InputOutput)?;
     let status_text = Reflect::get(&response, &JsValue::from_str("statusText"))
-        .map_err(|_| Error::InternalError)?
+        .map_err(|_| IoErrorKind::InputOutput)?
         .dyn_into::<JsString>()
-        .map_err(|_| Error::InternalError)?;
+        .map_err(|_| IoErrorKind::InputOutput)?;
     // Check the UTF-16 length before copying from JavaScript so an oversized
     // reason phrase never enters WebAssembly memory; UTF-8 is at least as long.
     if (status_text.length() as usize) > response::MAX_HEAD_SIZE {
-        return Err(Error::FileTooLarge);
+        return Err(IoErrorKind::FileTooLarge);
     }
     let reason = String::from(status_text);
     let mut size = reason.len();
     if size > response::MAX_HEAD_SIZE {
-        return Err(Error::FileTooLarge);
+        return Err(IoErrorKind::FileTooLarge);
     }
     let mut headers = Vec::new();
     for entry in js_sys::try_iter(&response.headers())
@@ -158,7 +158,7 @@ pub(super) async fn receive(
         .flatten()
     {
         let entry = entry
-            .map_err(|_| Error::InternalError)?
+            .map_err(|_| IoErrorKind::InputOutput)?
             .unchecked_into::<Array>();
         if let (Ok(name), Ok(value)) = (
             entry.get(0).dyn_into::<JsString>(),
@@ -172,7 +172,7 @@ pub(super) async fn receive(
                 .saturating_add(4)
                 > response::MAX_HEAD_SIZE
             {
-                return Err(Error::FileTooLarge);
+                return Err(IoErrorKind::FileTooLarge);
             }
             let name = String::from(name);
             let value = String::from(value);
@@ -181,7 +181,7 @@ pub(super) async fn receive(
                 .saturating_add(value.len())
                 .saturating_add(4);
             if size > response::MAX_HEAD_SIZE {
-                return Err(Error::FileTooLarge);
+                return Err(IoErrorKind::FileTooLarge);
             }
             headers.push((name, value));
         }
@@ -202,7 +202,7 @@ pub(super) async fn read_chunk(
 ) -> Result<Option<Uint8Array>> {
     let result = within(reader.read(), controller, timeout_ms).await?;
     let done = Reflect::get(&result, &JsValue::from_str("done"))
-        .map_err(|_| Error::InputOutput)?
+        .map_err(|_| IoErrorKind::InputOutput)?
         .as_bool()
         .unwrap_or(false);
     if done {
@@ -212,5 +212,5 @@ pub(super) async fn read_chunk(
         .ok()
         .and_then(|value| value.dyn_into::<Uint8Array>().ok())
         .map(Some)
-        .ok_or(Error::InputOutput)
+        .ok_or(IoErrorKind::InputOutput)
 }

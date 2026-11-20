@@ -21,7 +21,7 @@ impl DirectBaseOperations for PointerDevice {
             // - Cast the pointer data to the buffer.
             let data: &mut InputData = buffer
                 .try_into()
-                .map_err(|_| file_system::Error::InvalidParameter)?;
+                .map_err(|_| file_system::IoErrorKind::InvalidArgument)?;
 
             // Copy the pointer data.
 
@@ -41,20 +41,20 @@ impl DirectBaseOperations for PointerDevice {
     ) -> core::task::Poll<file_system::Result<usize>> {
         file_system::ready(|| {
             if buffer.len() != 6 {
-                return Err(file_system::Error::InvalidParameter);
+                return Err(file_system::IoErrorKind::InvalidArgument);
             }
             let x = i16::from_le_bytes([buffer[1], buffer[2]]);
             let y = i16::from_le_bytes([buffer[3], buffer[4]]);
-            let state =
-                State::try_from(buffer[5]).map_err(|_| file_system::Error::InvalidParameter)?;
+            let state = State::try_from(buffer[5])
+                .map_err(|_| file_system::IoErrorKind::InvalidArgument)?;
             let mut pointer = self
                 .0
                 .try_write()
-                .map_err(|_| file_system::Error::RessourceBusy)?;
+                .map_err(|_| file_system::IoErrorKind::WouldBlock)?;
             match buffer[0] {
                 0 => pointer.set_point(graphics::Point::new(x, y)),
                 1 => pointer.set_state(state),
-                _ => return Err(file_system::Error::InvalidParameter),
+                _ => return Err(file_system::IoErrorKind::InvalidArgument),
             }
             Ok(buffer.len())
         })

@@ -7,16 +7,16 @@ pub fn validate_partition_range(
     start_address: usize,
     length: usize,
     flash_size: usize,
-) -> Result<(), file_system::Error> {
+) -> Result<(), file_system::IoErrorKind> {
     if length == 0 || !start_address.is_multiple_of(PAGE_SIZE) || !length.is_multiple_of(PAGE_SIZE)
     {
-        return Err(file_system::Error::InvalidParameter);
+        return Err(file_system::IoErrorKind::InvalidArgument);
     }
     let end = start_address
         .checked_add(length)
-        .ok_or(file_system::Error::InvalidParameter)?;
+        .ok_or(file_system::IoErrorKind::InvalidArgument)?;
     if end > flash_size {
-        return Err(file_system::Error::InvalidParameter);
+        return Err(file_system::IoErrorKind::InvalidArgument);
     }
     Ok(())
 }
@@ -26,12 +26,12 @@ pub fn validate_access_range(
     position: u64,
     length: usize,
     partition_length: usize,
-) -> Result<(), file_system::Error> {
+) -> Result<(), file_system::IoErrorKind> {
     let end = position
         .checked_add(length as u64)
-        .ok_or(file_system::Error::InvalidParameter)?;
+        .ok_or(file_system::IoErrorKind::InvalidArgument)?;
     if end > partition_length as u64 {
-        return Err(file_system::Error::InvalidParameter);
+        return Err(file_system::IoErrorKind::InvalidArgument);
     }
     Ok(())
 }
@@ -154,31 +154,31 @@ mod tests {
         // Zero length
         assert_eq!(
             validate_partition_range(0x10000, 0, FLASH_SIZE),
-            Err(file_system::Error::InvalidParameter)
+            Err(file_system::IoErrorKind::InvalidArgument)
         );
 
         // Unaligned start address
         assert_eq!(
             validate_partition_range(0x10001, 0x1000, FLASH_SIZE),
-            Err(file_system::Error::InvalidParameter)
+            Err(file_system::IoErrorKind::InvalidArgument)
         );
 
         // Unaligned length
         assert_eq!(
             validate_partition_range(0x10000, 0x1001, FLASH_SIZE),
-            Err(file_system::Error::InvalidParameter)
+            Err(file_system::IoErrorKind::InvalidArgument)
         );
 
         // Beyond flash size
         assert_eq!(
             validate_partition_range(FLASH_SIZE - 0x1000, 0x2000, FLASH_SIZE),
-            Err(file_system::Error::InvalidParameter)
+            Err(file_system::IoErrorKind::InvalidArgument)
         );
 
         // Arithmetic overflow
         assert_eq!(
             validate_partition_range(usize::MAX - 0x1000 + 1, 0x1000, FLASH_SIZE),
-            Err(file_system::Error::InvalidParameter)
+            Err(file_system::IoErrorKind::InvalidArgument)
         );
     }
 
@@ -192,17 +192,17 @@ mod tests {
         // Out of bounds
         assert_eq!(
             validate_access_range(0, partition_len + 1, partition_len),
-            Err(file_system::Error::InvalidParameter)
+            Err(file_system::IoErrorKind::InvalidArgument)
         );
         assert_eq!(
             validate_access_range(partition_len as u64, 1, partition_len),
-            Err(file_system::Error::InvalidParameter)
+            Err(file_system::IoErrorKind::InvalidArgument)
         );
 
         // Overflow
         assert_eq!(
             validate_access_range(u64::MAX, 1, partition_len),
-            Err(file_system::Error::InvalidParameter)
+            Err(file_system::IoErrorKind::InvalidArgument)
         );
     }
 

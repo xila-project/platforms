@@ -15,8 +15,8 @@ use embassy_usb::class::cdc_acm::{CdcAcmClass, ControlChanged, Receiver, Sender,
 use embassy_usb::{Builder, UsbDevice};
 use file_system::character_device::IS_A_TERMINAL;
 use file_system::{
-    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice, Error,
-    MountOperations, Operation, Result, Size,
+    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice,
+    IoErrorKind, MountOperations, Operation, Result, Size,
 };
 use shared::AnyByLayout;
 
@@ -148,7 +148,7 @@ impl DirectBaseOperations for StandardInDevice {
         _buffer: &[u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
-        Poll::Ready(Err(Error::UnsupportedOperation))
+        Poll::Ready(Err(IoErrorKind::Unsupported))
     }
 
     fn flush(&self, _cx: &mut core::task::Context<'_>) -> Poll<Result<()>> {
@@ -168,7 +168,7 @@ impl DirectBaseOperations for StandardInDevice {
                 *output = true;
                 Poll::Ready(Ok(()))
             }
-            _ => Poll::Ready(Err(Error::UnsupportedOperation)),
+            _ => Poll::Ready(Err(IoErrorKind::Unsupported)),
         }
     }
 
@@ -198,7 +198,7 @@ impl DirectBaseOperations for StandardOutDevice {
         _buffer: &mut [u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
-        Poll::Ready(Err(Error::UnsupportedOperation))
+        Poll::Ready(Err(IoErrorKind::Unsupported))
     }
 
     fn write(
@@ -259,7 +259,7 @@ impl DirectBaseOperations for StandardOutDevice {
                 *output = true;
                 Poll::Ready(Ok(()))
             }
-            _ => Poll::Ready(Err(Error::UnsupportedOperation)),
+            _ => Poll::Ready(Err(IoErrorKind::Unsupported)),
         }
     }
 
@@ -486,7 +486,7 @@ impl UsbConsole {
     /// failing to enumerate or clock packets properly on the host.
     pub fn new(usbd: Peri<'static, USBD>, config: UsbConsoleConfig) -> Result<Self> {
         if INITIALIZED.swap(true, Ordering::SeqCst) {
-            return Err(Error::RessourceBusy);
+            return Err(IoErrorKind::ResourceBusy);
         }
 
         let vbus = HardwareVbusDetect::new(Irqs);

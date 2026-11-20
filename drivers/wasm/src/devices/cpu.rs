@@ -1,6 +1,6 @@
 use alloc::string::{String, ToString};
 use file_system::{
-    DirectBaseOperations, DirectCharacterDevice, Error, MountOperations, Result, Size,
+    DirectBaseOperations, DirectCharacterDevice, IoErrorKind, MountOperations, Result, Size,
 };
 
 pub struct CpuInformationsDevice;
@@ -74,7 +74,7 @@ impl DirectBaseOperations for CpuInformationsDevice {
         _: &[u8],
         _: Size,
     ) -> core::task::Poll<Result<usize>> {
-        file_system::ready(|| Err(Error::UnsupportedOperation))
+        file_system::ready(|| Err(IoErrorKind::Unsupported))
     }
 }
 
@@ -117,6 +117,6 @@ mod tests {
     fn write_is_not_supported() {
         let device = CpuInformationsDevice;
         let result = device.write_sync(b"ignored", 0);
-        assert!(matches!(result, Err(Error::UnsupportedOperation)));
+        assert!(matches!(result, Err(IoErrorKind::Unsupported)));
     }
 }

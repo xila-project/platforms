@@ -8,7 +8,7 @@ use esp_storage::FlashStorage;
 use xila::{
     file_system::{
         self, ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectBlockDevice,
-        Error, MountOperations, Result, Size,
+        IoErrorKind, MountOperations, Result, Size,
         block_device::{ERASE, GET_BLOCK_COUNT, GET_BLOCK_SIZE},
     },
     shared::AnyByLayout,
@@ -30,7 +30,7 @@ impl LittleFsPartition {
 
 fn address(position: Size, length: Size) -> Result<u32> {
     if position > LENGTH.into() || length > Size::from(LENGTH) - position {
-        return Err(Error::InvalidParameter);
+        return Err(IoErrorKind::InvalidArgument);
     }
     Ok(START + position as u32)
 }
@@ -41,7 +41,7 @@ impl DirectBaseOperations for LittleFsPartition {
             let address = address(position, buffer.len() as Size)?;
             self.0
                 .lock(|flash| ReadNorFlash::read(&mut *flash.borrow_mut(), address, buffer))
-                .map_err(|_| Error::InputOutput)?;
+                .map_err(|_| IoErrorKind::InputOutput)?;
             Ok(buffer.len())
         })
     }
@@ -51,7 +51,7 @@ impl DirectBaseOperations for LittleFsPartition {
             let address = address(position, buffer.len() as Size)?;
             self.0
                 .lock(|flash| NorFlash::write(&mut *flash.borrow_mut(), address, buffer))
-                .map_err(|_| Error::InputOutput)?;
+                .map_err(|_| IoErrorKind::InputOutput)?;
             Ok(buffer.len())
         })
     }
@@ -78,9 +78,9 @@ impl DirectBaseOperations for LittleFsPartition {
                 let end = start + range.size as u32;
                 self.0
                     .lock(|flash| NorFlash::erase(&mut *flash.borrow_mut(), start, end))
-                    .map_err(|_| Error::InputOutput)
+                    .map_err(|_| IoErrorKind::InputOutput)
             }
-            _ => Err(Error::UnsupportedOperation),
+            _ => Err(IoErrorKind::Unsupported),
         })
     }
 }

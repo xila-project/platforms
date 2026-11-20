@@ -90,11 +90,11 @@ impl Pacer {
 /// next wakeup rather than skipped.
 fn mix_block<const S: usize, const B: usize, const F: usize, const O: usize, const Q: usize>(
     system: Pin<&AudioSystem<S, B, F, O, Q>>,
-) -> Result<bool, file_system::Error> {
+) -> Result<bool, file_system::IoErrorKind> {
     for _ in 0..BUSY_RETRIES {
         match system.mix_next_block() {
             Ok(()) => return Ok(true),
-            Err(file_system::Error::RessourceBusy) => thread::yield_now(),
+            Err(file_system::IoErrorKind::WouldBlock) => thread::yield_now(),
             Err(error) => return Err(error),
         }
     }
@@ -121,7 +121,7 @@ fn output_configuration(
 #[derive(Debug)]
 pub enum Error {
     InvalidOutputCount,
-    System(file_system::Error),
+    System(file_system::IoErrorKind),
     Open(nanoaudio_cpal::Error),
     Play(nanoaudio_cpal::Error),
     MixFailed,
@@ -453,7 +453,7 @@ mod tests {
         let second = system.open_output().unwrap();
         assert!(matches!(
             system.open_output(),
-            Err(file_system::Error::RessourceBusy)
+            Err(file_system::IoErrorKind::ResourceBusy)
         ));
         drop(sink);
         let third = system.open_output().unwrap();

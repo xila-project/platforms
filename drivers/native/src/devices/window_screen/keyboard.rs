@@ -36,7 +36,7 @@ impl<const N: usize> DirectBaseOperations for KeyboardDevice<CriticalSectionRawM
             // - Cast
             let data: &mut InputData = buffer
                 .try_into()
-                .map_err(|_| file_system::Error::InvalidParameter)?;
+                .map_err(|_| file_system::IoErrorKind::InvalidArgument)?;
 
             let size = if let Ok((key, state)) = self.receiver.try_receive() {
                 data.set_key(key);
@@ -60,20 +60,20 @@ impl<const N: usize> DirectBaseOperations for KeyboardDevice<CriticalSectionRawM
     ) -> core::task::Poll<file_system::Result<usize>> {
         file_system::ready(|| {
             if buffer.len() != 5 {
-                return Err(file_system::Error::InvalidParameter);
+                return Err(file_system::IoErrorKind::InvalidArgument);
             }
             let key_code = u32::from_le_bytes(buffer[..4].try_into().unwrap());
             let key = Key::from(key_code);
             if u32::from(key) != key_code
                 || matches!(key, Key::Character(character) if !(b' '..=b'~').contains(&character))
             {
-                return Err(file_system::Error::InvalidParameter);
+                return Err(file_system::IoErrorKind::InvalidArgument);
             }
-            let state =
-                State::try_from(buffer[4]).map_err(|_| file_system::Error::InvalidParameter)?;
+            let state = State::try_from(buffer[4])
+                .map_err(|_| file_system::IoErrorKind::InvalidArgument)?;
             self.sender
                 .try_send((key, state))
-                .map_err(|_| file_system::Error::RessourceBusy)?;
+                .map_err(|_| file_system::IoErrorKind::WouldBlock)?;
             Ok(buffer.len())
         })
     }

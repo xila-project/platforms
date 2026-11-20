@@ -10,7 +10,7 @@ impl DirectBaseOperations for RandomDevice {
         _: Size,
     ) -> core::task::Poll<file_system::Result<usize>> {
         file_system::ready(|| {
-            getrandom::fill(buffer).map_err(|_| file_system::Error::Other)?;
+            getrandom::fill(buffer).map_err(|_| file_system::IoErrorKind::InputOutput)?;
 
             Ok(buffer.len())
         })
@@ -22,7 +22,7 @@ impl DirectBaseOperations for RandomDevice {
         _: &[u8],
         _: Size,
     ) -> core::task::Poll<file_system::Result<usize>> {
-        file_system::ready(|| Err(file_system::Error::UnsupportedOperation))
+        file_system::ready(|| Err(file_system::IoErrorKind::Unsupported))
     }
 
     fn set_position(
@@ -30,7 +30,7 @@ impl DirectBaseOperations for RandomDevice {
         _: Size,
         _position: &file_system::Position,
     ) -> file_system::Result<file_system::Size> {
-        Err(file_system::Error::UnsupportedOperation)
+        Err(file_system::IoErrorKind::Unsupported)
     }
 }
 

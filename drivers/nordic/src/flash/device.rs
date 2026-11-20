@@ -5,7 +5,7 @@ use embassy_nrf::nvmc::Nvmc;
 use embassy_nrf::peripherals::NVMC;
 use embedded_storage::nor_flash::{NorFlash, ReadNorFlash};
 use file_system::{
-    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectBlockDevice, Error,
+    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectBlockDevice, IoErrorKind,
     MountOperations, Result, Size,
     block_device::{ERASE, GET_BLOCK_COUNT, GET_BLOCK_SIZE},
     mount::MutexMountWrapper,
@@ -28,20 +28,20 @@ fn write_nvmc_word_aligned(nvmc: &mut Nvmc<'static>, address: usize, data: &[u8]
     match plan_word_aligned_write(address, data) {
         WordAlignedWrite::SingleWord { address, data } => {
             nvmc.write(address as u32, &data)
-                .map_err(|_| Error::InputOutput)?;
+                .map_err(|_| IoErrorKind::InputOutput)?;
         }
         WordAlignedWrite::MultiWord { head, middle, tail } => {
             if let Some((addr, data)) = head {
                 nvmc.write(addr as u32, &data)
-                    .map_err(|_| Error::InputOutput)?;
+                    .map_err(|_| IoErrorKind::InputOutput)?;
             }
             if let Some((addr, data)) = middle {
                 nvmc.write(addr as u32, data)
-                    .map_err(|_| Error::InputOutput)?;
+                    .map_err(|_| IoErrorKind::InputOutput)?;
             }
             if let Some((addr, data)) = tail {
                 nvmc.write(addr as u32, &data)
-                    .map_err(|_| Error::InputOutput)?;
+                    .map_err(|_| IoErrorKind::InputOutput)?;
             }
         }
     }
@@ -92,7 +92,7 @@ impl DirectBaseOperations for InternalFlashDevice {
             inner
                 .nvmc
                 .read(flash_addr, buffer)
-                .map_err(|_| Error::InputOutput)?;
+                .map_err(|_| IoErrorKind::InputOutput)?;
             Ok(buffer.len())
         })
     }
@@ -125,24 +125,24 @@ impl DirectBaseOperations for InternalFlashDevice {
 
                 if offset_in_page == 0 && page_len == PAGE_SIZE {
                     nvmc.read(page_flash_addr as u32, page_buffer)
-                        .map_err(|_| Error::InputOutput)?;
+                        .map_err(|_| IoErrorKind::InputOutput)?;
 
                     if page_buffer == slice {
                         // Already identical; no-op.
                     } else if can_program_without_erase(page_buffer, slice) {
                         nvmc.write(page_flash_addr as u32, slice)
-                            .map_err(|_| Error::InputOutput)?;
+                            .map_err(|_| IoErrorKind::InputOutput)?;
                     } else {
                         nvmc.erase(page_flash_addr as u32, (page_flash_addr + PAGE_SIZE) as u32)
-                            .map_err(|_| Error::InputOutput)?;
+                            .map_err(|_| IoErrorKind::InputOutput)?;
                         if !is_all_byte(slice, 0xFF) {
                             nvmc.write(page_flash_addr as u32, slice)
-                                .map_err(|_| Error::InputOutput)?;
+                                .map_err(|_| IoErrorKind::InputOutput)?;
                         }
                     }
                 } else {
                     nvmc.read(page_flash_addr as u32, page_buffer)
-                        .map_err(|_| Error::InputOutput)?;
+                        .map_err(|_| IoErrorKind::InputOutput)?;
 
                     let existing_target = &page_buffer[offset_in_page..offset_in_page + page_len];
                     if existing_target == slice {
@@ -152,9 +152,9 @@ impl DirectBaseOperations for InternalFlashDevice {
                     } else {
                         merge_page(page_buffer, offset_in_page, slice);
                         nvmc.erase(page_flash_addr as u32, (page_flash_addr + PAGE_SIZE) as u32)
-                            .map_err(|_| Error::InputOutput)?;
+                            .map_err(|_| IoErrorKind::InputOutput)?;
                         nvmc.write(page_flash_addr as u32, page_buffer)
-                            .map_err(|_| Error::InputOutput)?;
+                            .map_err(|_| IoErrorKind::InputOutput)?;
                     }
                 }
 
@@ -178,7 +178,7 @@ impl DirectBaseOperations for InternalFlashDevice {
             let total_bytes = pattern
                 .len()
                 .checked_mul(count)
-                .ok_or(Error::InvalidParameter)?;
+                .ok_or(IoErrorKind::InvalidArgument)?;
             validate_access_range(absolute_position, total_bytes, self.length)?;
             if total_bytes == 0 {
                 return Ok(0);
@@ -201,18 +201,18 @@ impl DirectBaseOperations for InternalFlashDevice {
                 if offset_in_page == 0 && page_len == PAGE_SIZE {
                     if is_all_byte(pattern, 0xFF) {
                         nvmc.read(page_flash_addr as u32, page_buffer)
-                            .map_err(|_| Error::InputOutput)?;
+                            .map_err(|_| IoErrorKind::InputOutput)?;
                         if !is_all_byte(page_buffer, 0xFF) {
                             nvmc.erase(
                                 page_flash_addr as u32,
                                 (page_flash_addr + PAGE_SIZE) as u32,
                             )
-                            .map_err(|_| Error::InputOutput)?;
+                            .map_err(|_| IoErrorKind::InputOutput)?;
                         }
                     } else if is_all_byte(pattern, 0x00) {
                         page_buffer.fill(0x00);
                         nvmc.write(page_flash_addr as u32, page_buffer)
-                            .map_err(|_| Error::InputOutput)?;
+                            .map_err(|_| IoErrorKind::InputOutput)?;
                     } else {
                         fill_with_pattern(page_buffer, pattern, pattern_offset);
                         let can_program = {
@@ -224,23 +224,23 @@ impl DirectBaseOperations for InternalFlashDevice {
 
                         if can_program {
                             nvmc.write(page_flash_addr as u32, page_buffer)
-                                .map_err(|_| Error::InputOutput)?;
+                                .map_err(|_| IoErrorKind::InputOutput)?;
                         } else {
                             nvmc.erase(
                                 page_flash_addr as u32,
                                 (page_flash_addr + PAGE_SIZE) as u32,
                             )
-                            .map_err(|_| Error::InputOutput)?;
+                            .map_err(|_| IoErrorKind::InputOutput)?;
                             if !is_all_byte(page_buffer, 0xFF) {
                                 nvmc.write(page_flash_addr as u32, page_buffer)
-                                    .map_err(|_| Error::InputOutput)?;
+                                    .map_err(|_| IoErrorKind::InputOutput)?;
                             }
                         }
                     }
                 } else {
                     // Partial page write_pattern
                     nvmc.read(page_flash_addr as u32, page_buffer)
-                        .map_err(|_| Error::InputOutput)?;
+                        .map_err(|_| IoErrorKind::InputOutput)?;
 
                     let can_program = (0..page_len).all(|i| {
                         let new_byte = pattern[(pattern_offset + i) % pattern.len()];
@@ -263,7 +263,7 @@ impl DirectBaseOperations for InternalFlashDevice {
                                 }
                             }
                             nvmc.write(w_addr as u32, &word)
-                                .map_err(|_| Error::InputOutput)?;
+                                .map_err(|_| IoErrorKind::InputOutput)?;
                         }
                     } else {
                         fill_with_pattern(
@@ -272,9 +272,9 @@ impl DirectBaseOperations for InternalFlashDevice {
                             pattern_offset,
                         );
                         nvmc.erase(page_flash_addr as u32, (page_flash_addr + PAGE_SIZE) as u32)
-                            .map_err(|_| Error::InputOutput)?;
+                            .map_err(|_| IoErrorKind::InputOutput)?;
                         nvmc.write(page_flash_addr as u32, page_buffer)
-                            .map_err(|_| Error::InputOutput)?;
+                            .map_err(|_| IoErrorKind::InputOutput)?;
                     }
                 }
 
@@ -308,14 +308,14 @@ impl DirectBaseOperations for InternalFlashDevice {
                 validate_access_range(range.position, size, self.length)?;
                 // Erasing part of a page would destroy the rest of it.
                 if !position.is_multiple_of(PAGE_SIZE) || !size.is_multiple_of(PAGE_SIZE) {
-                    return Err(Error::InvalidParameter);
+                    return Err(IoErrorKind::InvalidArgument);
                 }
                 let start = (self.start_address + position) as u32;
                 self.inner
                     .try_get()?
                     .nvmc
                     .erase(start, start + size as u32)
-                    .map_err(|_| Error::InputOutput)
+                    .map_err(|_| IoErrorKind::InputOutput)
             }
             GET_BLOCK_SIZE::IDENTIFIER => {
                 *GET_BLOCK_SIZE::cast_output(output)? = PAGE_SIZE as u32;
@@ -325,7 +325,7 @@ impl DirectBaseOperations for InternalFlashDevice {
                 *GET_BLOCK_COUNT::cast_output(output)? = (self.length / PAGE_SIZE) as u32;
                 Ok(())
             }
-            _ => Err(Error::UnsupportedOperation),
+            _ => Err(IoErrorKind::Unsupported),
         })
     }
 }

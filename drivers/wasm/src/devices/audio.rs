@@ -19,8 +19,8 @@ use audio::{
     SET_CONFIGURATION, SET_VOLUME, START, STOP, SampleFormat, StreamHandle,
 };
 use file_system::{
-    BaseOperations, CharacterDevice, Context, ControlCommand, ControlCommandIdentifier, Error,
-    MountOperations, Result, Size,
+    BaseOperations, CharacterDevice, Context, ControlCommand, ControlCommandIdentifier,
+    IoErrorKind, MountOperations, Result, Size,
 };
 use js_sys::{Array, ArrayBuffer, Object, Promise, Reflect, Uint8Array};
 use nanoaudio_web::{Format, Options, Output, Port, Source, Worklet};
@@ -213,7 +213,7 @@ impl<'a> StartGuard<'a> {
     fn acquire(started: &'a AtomicBool) -> Result<Self> {
         started
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| Error::RessourceBusy)?;
+            .map_err(|_| IoErrorKind::ResourceBusy)?;
         Ok(Self {
             started,
             committed: false,
@@ -334,7 +334,7 @@ impl Bridge {
                     .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
                     .is_ok()
             })
-            .ok_or(Error::RessourceBusy)?;
+            .ok_or(IoErrorKind::ResourceBusy)?;
         let id = self
             .next_id
             .fetch_add(1, Ordering::Relaxed)
@@ -373,7 +373,7 @@ impl Bridge {
         let value: JsValue = packet.clone().into();
         self.output
             .post_with_transfer(&value, &transfers)
-            .map_err(|_| Error::InputOutput)
+            .map_err(|_| IoErrorKind::InputOutput)
     }
 
     fn send_control(
@@ -396,7 +396,7 @@ impl Bridge {
             .try_update(Ordering::AcqRel, Ordering::Acquire, |count| {
                 (count < MAX_CONTROL_MESSAGES).then_some(count + 1)
             })
-            .map_err(|_| Error::RessourceBusy)?;
+            .map_err(|_| IoErrorKind::WouldBlock)?;
         if let Err(error) = self.send(&packet, &[buffer]) {
             self.pending_controls.fetch_sub(1, Ordering::AcqRel);
             return Err(error);
@@ -536,7 +536,7 @@ impl WebAudioDevice {
     fn stream<'a>(&self, context: &'a Context) -> Result<&'a StreamProxy> {
         context
             .get_private_data_of_type::<StreamProxy>()
-            .ok_or(Error::InvalidContext)
+            .ok_or(IoErrorKind::InvalidState)
     }
 
     fn post_open(&self, id: u32) -> Result<()> {
@@ -573,7 +573,7 @@ struct StreamProxy {
 impl BaseOperations for WebAudioDevice {
     fn open(&self, context: &mut Context) -> Result<()> {
         if context.get_private_data().is_some() {
-            return Err(Error::InvalidContext);
+            return Err(IoErrorKind::InvalidState);
         }
         let (slot, id) = self.bridge.allocate()?;
         if let Err(error) = self.post_open(id) {
@@ -592,7 +592,7 @@ impl BaseOperations for WebAudioDevice {
     fn close(&self, context: &mut Context) -> Result<()> {
         let proxy = context
             .take_private_data_of_type::<StreamProxy>()
-            .ok_or(Error::InvalidContext)?;
+            .ok_or(IoErrorKind::InvalidState)?;
         self.post_close(proxy.slot, proxy.id)
     }
 
@@ -603,7 +603,7 @@ impl BaseOperations for WebAudioDevice {
         _buffer: &mut [u8],
         _position: Size,
     ) -> core::task::Poll<Result<usize>> {
-        file_system::ready(|| Err(Error::UnsupportedOperation))
+        file_system::ready(|| Err(IoErrorKind::Unsupported))
     }
 
     fn write(
@@ -616,7 +616,7 @@ impl BaseOperations for WebAudioDevice {
         file_system::ready(|| {
             let proxy = self.stream(context)?;
             if !bytes.len().is_multiple_of(FRAME_BYTES) {
-                return Err(Error::InvalidParameter);
+                return Err(IoErrorKind::InvalidArgument);
             }
             if bytes.is_empty() {
                 return Ok(0);
@@ -625,7 +625,7 @@ impl BaseOperations for WebAudioDevice {
             let count =
                 slot.reserve(bytes.len().min(MAX_TRANSFER_BYTES) / FRAME_BYTES * FRAME_BYTES);
             if count == 0 {
-                return Err(Error::RessourceBusy);
+                return Err(IoErrorKind::WouldBlock);
             }
             let (data, buffer) = make_bytes(&bytes[..count]);
             let packet = packet("write", proxy.id);
@@ -633,7 +633,7 @@ impl BaseOperations for WebAudioDevice {
                 || self.bridge.send(&packet, &[buffer]).is_err()
             {
                 slot.undo_reservation(count);
-                return Err(Error::InputOutput);
+                return Err(IoErrorKind::InputOutput);
             }
             Ok(count)
         })
@@ -650,7 +650,7 @@ impl BaseOperations for WebAudioDevice {
             if slot.writable() == STREAM_BYTES {
                 Ok(())
             } else {
-                Err(Error::RessourceBusy)
+                Err(IoErrorKind::WouldBlock)
             }
         })
     }
@@ -666,9 +666,9 @@ impl BaseOperations for WebAudioDevice {
         file_system::ready(|| {
             let proxy = context
                 .get_private_data_mutable_of_type::<StreamProxy>()
-                .ok_or(Error::InvalidContext)?;
+                .ok_or(IoErrorKind::InvalidState)?;
             if input.get_size() > MAX_CONTROL_BYTES || output.get_size() > MAX_CONTROL_BYTES {
-                return Err(Error::InvalidParameter);
+                return Err(IoErrorKind::InvalidArgument);
             }
             let slot = &self.bridge.slots[proxy.slot];
             match command {
@@ -677,7 +677,7 @@ impl BaseOperations for WebAudioDevice {
                     let value = *SET_CONFIGURATION::cast_input(input)?;
                     value.validate()?;
                     if value != OUTPUT_CONFIGURATION {
-                        return Err(Error::UnsupportedOperation);
+                        return Err(IoErrorKind::Unsupported);
                     }
                     self.bridge.send_control(
                         proxy.id,
@@ -712,7 +712,7 @@ impl BaseOperations for WebAudioDevice {
                     validate::<SET_VOLUME>(input, output)?;
                     let value = *SET_VOLUME::cast_input(input)?;
                     if value > 100 {
-                        return Err(Error::InvalidParameter);
+                        return Err(IoErrorKind::InvalidArgument);
                     }
                     self.bridge.send_control(
                         proxy.id,
@@ -750,14 +750,14 @@ impl BaseOperations for WebAudioDevice {
                         output.get_size(),
                     )?;
                 }
-                _ => return Err(Error::UnsupportedOperation),
+                _ => return Err(IoErrorKind::Unsupported),
             }
             Ok(())
         })
     }
 
     fn clone_context(&self, _context: &Context) -> Result<Context> {
-        Err(Error::UnsupportedOperation)
+        Err(IoErrorKind::Unsupported)
     }
 }
 
@@ -914,7 +914,7 @@ impl WorkletSource {
         output_size: usize,
     ) -> Result<()> {
         if input.len() > MAX_CONTROL_BYTES || output_size > MAX_CONTROL_BYTES {
-            return Err(Error::InvalidParameter);
+            return Err(IoErrorKind::InvalidArgument);
         }
         self.control_input.0[..input.len()].copy_from_slice(input);
         self.control_output.0[..output_size].fill(0);
@@ -930,7 +930,7 @@ impl WorkletSource {
                     let config = SET_CONFIGURATION::cast_input(input)?;
                     config.validate()?;
                     if *config != OUTPUT_CONFIGURATION {
-                        return Err(Error::UnsupportedOperation);
+                        return Err(IoErrorKind::Unsupported);
                     }
                     let _ = stream.configuration();
                     Ok(())
@@ -964,7 +964,7 @@ impl WorkletSource {
                 apply::<START>(stream, input, output, |stream, _, _| stream.start())
             }
             STOP::IDENTIFIER => apply::<STOP>(stream, input, output, |stream, _, _| stream.stop()),
-            _ => Err(Error::UnsupportedOperation),
+            _ => Err(IoErrorKind::Unsupported),
         }
     }
 
@@ -1024,7 +1024,7 @@ fn apply<C: ControlCommand>(
     ) -> Result<()>,
 ) -> Result<()> {
     validate::<C>(input, output)?;
-    let stream = stream.as_ref().ok_or(Error::InvalidContext)?;
+    let stream = stream.as_ref().ok_or(IoErrorKind::InvalidState)?;
     operation(stream, input, output)
 }
 
@@ -1036,7 +1036,7 @@ fn validate<C: ControlCommand>(input: &AnyByLayout, output: &AnyByLayout) -> Res
         || !(core::ptr::from_ref(output).cast::<u8>() as usize)
             .is_multiple_of(core::mem::align_of::<C::Output>())
     {
-        return Err(Error::InvalidParameter);
+        return Err(IoErrorKind::InvalidArgument);
     }
     Ok(())
 }
@@ -1060,7 +1060,7 @@ fn control_rejection(value: &JsValue) -> Option<String> {
 fn set(object: &Object, key: &str, value: &JsValue) -> Result<()> {
     Reflect::set(object, &JsValue::from_str(key), value)
         .map(|_| ())
-        .map_err(|_| Error::InputOutput)
+        .map_err(|_| IoErrorKind::InputOutput)
 }
 
 fn field(value: &JsValue, key: &str) -> core::result::Result<JsValue, JsValue> {
@@ -1118,7 +1118,7 @@ fn any_bytes(value: &AnyByLayout) -> &[u8] {
 #[cfg(test)]
 mod tests {
     use super::{
-        BridgeSlot, ControlCommand, Error, FRAME_BYTES, MAX_SUMMARY_CHARACTERS,
+        BridgeSlot, ControlCommand, FRAME_BYTES, IoErrorKind, MAX_SUMMARY_CHARACTERS,
         OUTPUT_CONFIGURATION, STREAM_BYTES, StartError, StartGuard, WorkletSource,
         control_rejection, set, shorten,
     };
@@ -1223,7 +1223,7 @@ mod tests {
     fn dispatch<C: ControlCommand>(
         source: &mut WorkletSource,
         input: &[u8],
-    ) -> Result<C::Output, Error> {
+    ) -> Result<C::Output, IoErrorKind> {
         dispatch_sized::<C>(source, input, size_of::<C::Output>())
     }
 
@@ -1231,7 +1231,7 @@ mod tests {
         source: &mut WorkletSource,
         input: &[u8],
         output_size: usize,
-    ) -> Result<C::Output, Error> {
+    ) -> Result<C::Output, IoErrorKind> {
         source.run_control(0, C::IDENTIFIER, input, output_size)?;
         Ok(unsafe {
             core::ptr::read_unaligned(source.control_output.0.as_ptr().cast::<C::Output>())
@@ -1276,31 +1276,31 @@ mod tests {
         let other = Configuration::new(44_100, 2, SampleFormat::F32);
         assert_eq!(
             dispatch::<SET_CONFIGURATION>(&mut source, bytes_of(&other)).unwrap_err(),
-            Error::UnsupportedOperation
+            IoErrorKind::Unsupported
         );
         assert_eq!(
             dispatch::<SET_VOLUME>(&mut source, &[101]).unwrap_err(),
-            Error::InvalidParameter
+            IoErrorKind::InvalidArgument
         );
         assert_eq!(
             dispatch::<START>(&mut source, &[1]).unwrap_err(),
-            Error::InvalidParameter
+            IoErrorKind::InvalidArgument
         );
         assert_eq!(
             dispatch_sized::<GET_VOLUME>(&mut source, &[], 0).unwrap_err(),
-            Error::InvalidParameter
+            IoErrorKind::InvalidArgument
         );
         assert_eq!(
             source
                 .run_control(0, super::ControlCommandIdentifier::from_raw(0), &[], 0)
                 .unwrap_err(),
-            Error::UnsupportedOperation
+            IoErrorKind::Unsupported
         );
         assert_eq!(
             source
                 .run_control(1, START::IDENTIFIER, &[], 0)
                 .unwrap_err(),
-            Error::InvalidContext
+            IoErrorKind::InvalidState
         );
     }
 

@@ -24,8 +24,8 @@ use ::alloc::boxed::Box;
 use alloc::{rc::Rc, vec::Vec};
 use core::cell::RefCell;
 use file_system::{
-    BaseOperations, CharacterDevice, Context, Error, MountOperations, Result, Size, WaitQueue,
-    Waiter,
+    BaseOperations, CharacterDevice, Context, IoErrorKind, MountOperations, Result, Size,
+    WaitQueue, Waiter,
 };
 use js_sys::Uint8Array;
 use wasm_bindgen_futures::spawn_local;
@@ -40,7 +40,7 @@ enum Phase {
     Connecting,
     /// The head, then the body, are being delivered.
     Streaming,
-    Failed(Error),
+    Failed(IoErrorKind),
 }
 
 struct Exchange {
@@ -93,14 +93,14 @@ impl Exchange {
         self.body_done = false;
     }
 
-    fn fail(&mut self, error: Error) {
+    fn fail(&mut self, error: IoErrorKind) {
         self.release();
         self.phase = Phase::Failed(error);
     }
 
     fn begin(&mut self, controller: AbortController) -> Result<u64> {
         if matches!(self.phase, Phase::Connecting | Phase::Streaming) {
-            return Err(Error::RessourceBusy);
+            return Err(IoErrorKind::ResourceBusy);
         }
         self.release();
         self.phase = Phase::Connecting;
@@ -330,7 +330,7 @@ impl BaseOperations for HttpClientDevice {
     ) -> core::task::Poll<Result<usize>> {
         let client = context
             .get_private_data_mutable_of_type::<HttpClientContext>()
-            .ok_or(Error::InvalidContext)?;
+            .ok_or(IoErrorKind::InvalidState)?;
         poll_read(client, cx, buffer)
     }
 
@@ -344,15 +344,15 @@ impl BaseOperations for HttpClientDevice {
         file_system::ready(|| {
             let client = context
                 .get_private_data_of_type::<HttpClientContext>()
-                .ok_or(Error::InvalidContext)?;
+                .ok_or(IoErrorKind::InvalidState)?;
             let prepared = request::prepare(self.scheme, buffer)?;
-            Url::new(&prepared.url).map_err(|_| Error::InvalidParameter)?;
+            Url::new(&prepared.url).map_err(|_| IoErrorKind::InvalidArgument)?;
             let head_request = prepared.method.eq_ignore_ascii_case("HEAD");
-            let controller = AbortController::new().map_err(|_| Error::InternalError)?;
+            let controller = AbortController::new().map_err(|_| IoErrorKind::InputOutput)?;
             let options = fetch::options(&prepared, &controller)?;
             let mut exchange = client.exchange.state.borrow_mut();
             if matches!(exchange.phase, Phase::Connecting | Phase::Streaming) {
-                return Err(Error::RessourceBusy);
+                return Err(IoErrorKind::ResourceBusy);
             }
             let response = fetch::send(&prepared.url, &options)?;
             let generation = exchange.begin(controller.clone())?;
@@ -372,7 +372,7 @@ impl BaseOperations for HttpClientDevice {
     fn clone_context(&self, context: &Context) -> Result<Context> {
         let client = context
             .get_private_data_of_type::<HttpClientContext>()
-            .ok_or(Error::InvalidContext)?;
+            .ok_or(IoErrorKind::InvalidState)?;
         Ok(Context::new(Some(HttpClientContext {
             exchange: client.exchange.clone(),
             waiter: Waiter::new(),

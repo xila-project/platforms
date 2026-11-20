@@ -4,7 +4,7 @@ use std::{
 };
 
 use file_system::{
-    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectBlockDevice, Error,
+    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectBlockDevice, IoErrorKind,
     MountOperations, Path, Position, Size,
     block_device::{GET_BLOCK_COUNT, GET_BLOCK_SIZE},
     mount::MutexMountWrapper,
@@ -104,7 +104,7 @@ impl DirectBaseOperations for FileDriveDevice {
 
         self.0
             .try_get()
-            .map_err(|_| Error::RessourceBusy)?
+            .map_err(|_| IoErrorKind::WouldBlock)?
             .seek(position)
             .map_err(map_error)
     }
@@ -116,7 +116,7 @@ impl DirectBaseOperations for FileDriveDevice {
         file_system::ready(|| {
             self.0
                 .try_get()
-                .map_err(|_| Error::RessourceBusy)?
+                .map_err(|_| IoErrorKind::WouldBlock)?
                 .sync_all()
                 .map_err(map_error)
         })
@@ -143,7 +143,7 @@ impl DirectBaseOperations for FileDriveDevice {
                     let file_size = self
                         .0
                         .try_get()
-                        .map_err(|_| Error::RessourceBusy)?
+                        .map_err(|_| IoErrorKind::WouldBlock)?
                         .metadata()
                         .map_err(map_error)?
                         .len();
@@ -152,7 +152,7 @@ impl DirectBaseOperations for FileDriveDevice {
 
                     Ok(())
                 }
-                _ => Err(Error::UnsupportedOperation),
+                _ => Err(IoErrorKind::Unsupported),
             }
         })
     }

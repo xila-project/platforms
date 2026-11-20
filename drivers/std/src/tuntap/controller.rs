@@ -1,6 +1,6 @@
 use file_system::{
-    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice, Error,
-    MountOperations,
+    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice,
+    IoErrorKind, MountOperations,
 };
 use network::{GET_KIND, InterfaceKind};
 use shared::AnyByLayout;
@@ -14,7 +14,7 @@ impl DirectBaseOperations for TunTapControllerDevice {
         _: &mut [u8],
         _: file_system::Size,
     ) -> core::task::Poll<file_system::Result<usize>> {
-        file_system::ready(|| Err(Error::UnsupportedOperation))
+        file_system::ready(|| Err(IoErrorKind::Unsupported))
     }
 
     fn write(
@@ -23,7 +23,7 @@ impl DirectBaseOperations for TunTapControllerDevice {
         _: &[u8],
         _: file_system::Size,
     ) -> core::task::Poll<file_system::Result<usize>> {
-        file_system::ready(|| Err(Error::UnsupportedOperation))
+        file_system::ready(|| Err(IoErrorKind::Unsupported))
     }
 
     fn control(
@@ -39,7 +39,7 @@ impl DirectBaseOperations for TunTapControllerDevice {
                 *kind = InterfaceKind::Ethernet;
                 Ok(())
             }
-            _ => Err(Error::UnsupportedOperation),
+            _ => Err(IoErrorKind::Unsupported),
         })
     }
 }

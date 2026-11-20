@@ -3,8 +3,8 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::{Context, Poll, Waker};
 use file_system::{
-    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice, Error,
-    MountOperations, Result, Size,
+    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice,
+    IoErrorKind, MountOperations, Result, Size,
     character_device::{
         GET_TERMINAL_ATTRIBUTES, SET_TERMINAL_ATTRIBUTES, TerminalAttributes, TerminalFlags,
     },
@@ -494,7 +494,7 @@ impl DirectBaseOperations for ScriptedInputDevice {
         _buffer: &[u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
-        Poll::Ready(Err(Error::UnsupportedOperation))
+        Poll::Ready(Err(IoErrorKind::Unsupported))
     }
 }
 
@@ -524,7 +524,7 @@ impl DirectBaseOperations for RecordingOutputDevice {
         _buffer: &mut [u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
-        Poll::Ready(Err(Error::UnsupportedOperation))
+        Poll::Ready(Err(IoErrorKind::Unsupported))
     }
 
     fn write(
@@ -550,7 +550,7 @@ impl DirectBaseOperations for StalledOutputDevice {
         _buffer: &mut [u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
-        Poll::Ready(Err(Error::UnsupportedOperation))
+        Poll::Ready(Err(IoErrorKind::Unsupported))
     }
 
     fn write(
@@ -669,7 +669,7 @@ fn device_control_forwarding() {
                 *out = true;
                 Poll::Ready(Ok(()))
             } else {
-                Poll::Ready(Err(Error::UnsupportedOperation))
+                Poll::Ready(Err(IoErrorKind::Unsupported))
             }
         }
     }
@@ -712,7 +712,7 @@ impl DirectBaseOperations for LimitedOutputDevice {
         _buffer: &mut [u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
-        Poll::Ready(Err(Error::UnsupportedOperation))
+        Poll::Ready(Err(IoErrorKind::Unsupported))
     }
 
     fn write(
@@ -1016,7 +1016,7 @@ fn device_rejects_unknown_terminal_flags() {
     let unknown = TerminalAttributes::new(TerminalFlags::from_bits_retain(1 << 31));
     assert_eq!(
         set_attributes(&terminal, unknown),
-        Poll::Ready(Err(Error::InvalidParameter))
+        Poll::Ready(Err(IoErrorKind::InvalidArgument))
     );
     assert_eq!(get_attributes(&terminal), TerminalAttributes::INTERACTIVE);
 }
@@ -1085,7 +1085,7 @@ fn device_forwards_other_control_commands_to_the_input_device() {
             AnyByLayout::from(&()),
             AnyByLayout::from_mutable(&mut block_size),
         ),
-        Poll::Ready(Err(Error::UnsupportedOperation))
+        Poll::Ready(Err(IoErrorKind::Unsupported))
     );
 }
 
@@ -1375,7 +1375,7 @@ impl DirectBaseOperations for SwitchingInputDevice {
         _buffer: &[u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
-        Poll::Ready(Err(Error::UnsupportedOperation))
+        Poll::Ready(Err(IoErrorKind::Unsupported))
     }
 }
 

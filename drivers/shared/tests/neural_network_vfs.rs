@@ -117,9 +117,7 @@ async fn loader_device_loads_model_in_chunks_and_runs_inference() {
     // Staging handle rejects inference commands before LOAD
     assert_eq!(
         loader_file.control(COMPUTE, &()).await.err(),
-        Some(virtual_file_system::Error::FileSystem(
-            file_system::Error::InvalidContext
-        ))
+        Some(file_system::IoErrorKind::InvalidState)
     );
 
     // Write fixture in several chunks
@@ -140,9 +138,7 @@ async fn loader_device_loads_model_in_chunks_and_runs_inference() {
             .control(LOAD, &LoadRequest::tensorflow_lite())
             .await
             .err(),
-        Some(virtual_file_system::Error::FileSystem(
-            file_system::Error::InvalidContext
-        ))
+        Some(file_system::IoErrorKind::InvalidState)
     );
 
     // Verify input/output metadata match ROM device
@@ -193,9 +189,7 @@ async fn loader_device_loads_model_in_chunks_and_runs_inference() {
     // Writing beyond SMALL_MAXIMUM is rejected with FileTooLarge
     assert_eq!(
         small_file.write(&[0u8; 41]).await.err(),
-        Some(virtual_file_system::Error::FileSystem(
-            file_system::Error::FileTooLarge
-        ))
+        Some(file_system::IoErrorKind::FileTooLarge)
     );
 
     drop(small_file);

@@ -1,6 +1,6 @@
 use ::audio::{AudioSystem, Configuration, OutputHandle};
 use core::pin::Pin;
-use file_system::{Error, Result};
+use file_system::{IoErrorKind, Result};
 
 /// A bounded output sink for the real audio mixer, without a physical device.
 ///
@@ -43,7 +43,7 @@ impl<'a, const S: usize, const B: usize, const F: usize, const O: usize, const Q
             .len()
             .is_multiple_of(self.configuration().frame_size()?)
         {
-            return Err(Error::InvalidParameter);
+            return Err(IoErrorKind::InvalidArgument);
         }
         Ok(self.output.with_consumer(|consumer| consumer.read(buffer)))
     }
