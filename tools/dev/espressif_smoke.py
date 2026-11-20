@@ -1,12 +1,13 @@
-"""Boot a merged ESP32-S3 flash image in Espressif's QEMU and check the boot log.
+"""Boot a merged ESP32 flash image in Espressif's QEMU and check the boot log.
 
-    espressif_smoke.py QEMU_SYSTEM_XTENSA FLASH_IMAGE RUNS_DIRECTORY
+    espressif_smoke.py [--chip esp32s3|esp32c6] QEMU FLASH_IMAGE RUNS_DIRECTORY
 
 Each run gets its own directory under RUNS_DIRECTORY holding a private copy of the
-image (the firmware formats its LittleFS partition), `uart.log`, `qemu.log` and
-`screen.ppm` and `screen.png`, the frame that LVGL drew on QEMU's virtual RGB panel.
+image (the firmware formats its LittleFS partition), `uart.log` and `qemu.log`.
+The S3 run also keeps the LVGL frame in `screen.ppm` and `screen.png`.
 """
 
+import argparse
 import json
 import os
 from pathlib import Path
@@ -21,13 +22,15 @@ import time
 import zlib
 
 TIMEOUT = 60
+RNG_MARKER = "Xila: RNG "
+LVGL_MARKER = "Xila: LVGL frame flushed"
 # Each marker must appear in this order: the smoke check fails on the first one
 # that is missing, so the failing boot stage is named.
 MARKERS = [
     "Xila ESP32 startup",
-    "Xila: RNG ",
+    RNG_MARKER,
     "Xila: LittleFS mounted",
-    "Xila: LVGL frame flushed",
+    LVGL_MARKER,
     "Xila heap: ",
     "Xila: boot smoke ready",
 ]
@@ -38,10 +41,13 @@ class SmokeError(Exception):
     pass
 
 
-def check_markers(log):
+def check_markers(log, chip):
     lines = log.splitlines()
     position = 0
     for marker in MARKERS:
+        # The C6 machine lacks the RNG register and virtual RGB panel.
+        if chip == "esp32c6" and marker in (RNG_MARKER, LVGL_MARKER):
+            continue
         try:
             position = next(i for i in range(position, len(lines)) if lines[i].startswith(marker)) + 1
         except StopIteration:
@@ -102,20 +108,23 @@ def check_frame(screen):
     print(f"Captured the {WIDTH}x{HEIGHT} LVGL frame: {screen.with_suffix('.png')}", flush=True)
 
 
-def run(qemu, image, runs):
+def run(chip, qemu, image, runs):
+    # Espressif QEMU exposes the virtual RGB panel on the S3 machine.
+    check_display = chip == "esp32s3"
     runs.mkdir(parents=True, exist_ok=True)
-    directory = Path(tempfile.mkdtemp(prefix="esp32s3.", dir=runs))
+    directory = Path(tempfile.mkdtemp(prefix=f"{chip}.", dir=runs))
     print(f"Emulator artifacts: {directory}", flush=True)
     flash = directory / "flash.bin"
     shutil.copyfile(image, flash)
     uart = directory / "uart.log"
     os.chdir(directory)
     command = [
-        qemu, "-M", "esp32s3", "-display", "none", "-monitor", "none", "-nic", "none",
+        qemu, "-M", chip, "-display", "none", "-monitor", "none", "-nic", "none",
         "-no-reboot", "-serial", f"file:{uart}",
         "-drive", f"file={flash},if=mtd,format=raw",
-        "-qmp", "unix:qmp.sock,server=on,wait=off",
     ]
+    if check_display:
+        command += ["-qmp", "unix:qmp.sock,server=on,wait=off"]
     deadline = time.monotonic() + TIMEOUT
     with (directory / "qemu.log").open("wb") as diagnostics:
         emulator = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=diagnostics,
@@ -131,11 +140,12 @@ def run(qemu, image, runs):
                 log = uart.read_text(errors="replace") if uart.exists() else ""
                 if "Xila panic:" in log:
                     raise SmokeError("the firmware panicked")
-            check_markers(log)
-            check_frame(screendump(directory, deadline))
+            check_markers(log, chip)
+            if check_display:
+                check_frame(screendump(directory, deadline))
         except BaseException:
             sys.stdout.write(uart.read_text(errors="replace") if uart.exists() else "")
-            print(f"ESP32-S3 smoke failed; see {directory}", file=sys.stderr)
+            print(f"{chip} smoke failed; see {directory}", file=sys.stderr)
             raise
         finally:
             emulator.terminate()
@@ -148,9 +158,14 @@ def run(qemu, image, runs):
 
 
 if __name__ == "__main__":
-    qemu, image, runs = (Path(argument).resolve() for argument in sys.argv[1:])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--chip", choices=("esp32s3", "esp32c6"), default="esp32s3")
+    parser.add_argument("qemu", type=Path)
+    parser.add_argument("image", type=Path)
+    parser.add_argument("runs", type=Path)
+    args = parser.parse_args()
     try:
-        run(str(qemu), image, runs)
+        run(args.chip, str(args.qemu.resolve()), args.image.resolve(), args.runs.resolve())
     except SmokeError as error:
-        print(f"ESP32-S3 smoke check failed: {error}", file=sys.stderr)
+        print(f"{args.chip} smoke check failed: {error}", file=sys.stderr)
         sys.exit(1)

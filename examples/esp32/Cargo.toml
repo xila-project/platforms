@@ -5,6 +5,12 @@ edition = "2024"
 rust-version.workspace = true
 
 [features]
+esp32c6 = [
+  "drivers_espressif/esp32c6",
+  "esp-bootloader-esp-idf/esp32c6",
+  "esp-println/esp32c6",
+  "esp-storage/esp32c6",
+]
 esp32s3 = [
   "drivers_espressif/esp32s3",
   "esp-bootloader-esp-idf/esp32s3",
@@ -14,7 +20,7 @@ esp32s3 = [
 # Draws through the virtual RGB panel that only Espressif's QEMU provides.
 qemu-display = ["esp32s3", "xila/graphics_rendering_rgb565"]
 
-[target.'cfg(all(target_os = "none", target_arch = "xtensa"))'.dependencies]
+[target.'cfg(all(target_os = "none", any(target_arch = "xtensa", target_arch = "riscv32")))'.dependencies]
 drivers_espressif = { package = "xila-drivers-espressif", path = "../../drivers/espressif", default-features = false }
 xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
 esp-hal = { version = "=1.2.2", features = ["unstable"] }
