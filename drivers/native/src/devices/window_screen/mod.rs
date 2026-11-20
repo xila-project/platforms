@@ -7,8 +7,8 @@ mod screen;
 mod screenshot;
 mod window;
 
-use graphics::{InputData, Key, Point, State};
-use synchronization::rwlock::RwLock;
+use drivers_shared::devices::SharedPointerQueue;
+use graphics::{Key, Point, State};
 use synchronization::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 
 use inner_window::*;
@@ -26,7 +26,7 @@ pub use inner_window::FramebufferSnapshot;
 pub use screenshot::{encode_png, write_png};
 
 pub fn control_operations() -> ControlOperations<'static> {
-    ControlOperations::new(&INNER_WINDOW, &POINTER_RWLOCK, KEYBOARD_CHANNEL.sender())
+    ControlOperations::new(&INNER_WINDOW, &POINTER_QUEUE, KEYBOARD_CHANNEL.sender())
 }
 
 pub async fn framebuffer_snapshot() -> Result<FramebufferSnapshot, String> {
@@ -38,7 +38,7 @@ pub fn debug_screen_device() -> ScreenDevice<'static> {
 }
 
 pub fn debug_pointer_device() -> PointerDevice {
-    PointerDevice::new(&POINTER_RWLOCK)
+    PointerDevice::new(&POINTER_QUEUE)
 }
 
 pub fn debug_keyboard_device() -> KeyboardDevice<CriticalSectionRawMutex, 512> {
@@ -46,8 +46,7 @@ pub fn debug_keyboard_device() -> KeyboardDevice<CriticalSectionRawMutex, 512> {
 }
 
 static KEYBOARD_CHANNEL: Channel<CriticalSectionRawMutex, (Key, State), 512> = Channel::new();
-static POINTER_RWLOCK: RwLock<CriticalSectionRawMutex, InputData> =
-    RwLock::new(InputData::default_constant());
+static POINTER_QUEUE: SharedPointerQueue = SharedPointerQueue::new();
 static INNER_WINDOW: InnerWindow = InnerWindow::new();
 
 pub async fn new(
@@ -65,14 +64,14 @@ pub async fn new(
         resolution,
         &INNER_WINDOW,
         KEYBOARD_CHANNEL.sender(),
-        &POINTER_RWLOCK,
+        &POINTER_QUEUE,
     );
 
     let event_loop = Runner::new(window);
 
     let screen_device = ScreenDevice::new(&INNER_WINDOW);
 
-    let pointer_device = PointerDevice::new(&POINTER_RWLOCK);
+    let pointer_device = PointerDevice::new(&POINTER_QUEUE);
 
     let keyboard_device =
         KeyboardDevice::new(KEYBOARD_CHANNEL.receiver(), KEYBOARD_CHANNEL.sender());

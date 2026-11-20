@@ -5,6 +5,7 @@ mod http_client;
 mod http_common;
 #[cfg(feature = "network")]
 mod https_client;
+mod pointer_queue;
 #[cfg(any(
     target_os = "linux",
     target_os = "macos",
@@ -19,6 +20,7 @@ pub use hash::*;
 pub use http_client::*;
 #[cfg(feature = "network")]
 pub use https_client::*;
+pub use pointer_queue::*;
 #[cfg(any(
     target_os = "linux",
     target_os = "macos",

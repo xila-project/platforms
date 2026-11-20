@@ -1,13 +1,13 @@
 #![cfg(target_arch = "wasm32")]
 
 use core::task::{Context, Poll, Waker};
-use drivers_wasm::devices::graphics::{CanvasScreenDevice, KeyboardDevice};
+use drivers_wasm::devices::graphics::{CanvasScreenDevice, KeyboardDevice, MouseDevice};
 use file_system::{ControlCommand, DirectBaseOperations};
 use graphics::{Area, ColorARGB8888, InputData, Key, Point, SET_DRAWING_AREA, State, WAS_RESIZED};
 use shared::AnyByLayout;
-use wasm_bindgen::JsCast;
+use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_test::*;
-use web_sys::{HtmlCanvasElement, KeyboardEvent, KeyboardEventInit};
+use web_sys::{HtmlCanvasElement, KeyboardEvent, KeyboardEventInit, MouseEvent, MouseEventInit};
 
 wasm_bindgen_test_configure!(run_in_browser);
 drivers_wasm::memory::instantiate_global_allocator!();
@@ -315,5 +315,222 @@ async fn dirty_rectangle_with_unaligned_width_preserves_canvas_color_order() {
             "pixel {index} in {WIDTH}x{HEIGHT} dirty rectangle",
         );
     }
+    canvas.remove();
+}
+
+fn mouse(canvas: &web_sys::EventTarget, kind: &str, x: i32, y: i32, buttons: u16) {
+    let options = MouseEventInit::new();
+    options.set_client_x(x);
+    options.set_client_y(y);
+    options.set_buttons(buttons);
+    options.set_bubbles(true);
+    let event = MouseEvent::new_with_mouse_event_init_dict(kind, &options).unwrap();
+    canvas.dispatch_event(&event).unwrap();
+}
+
+fn read_mouse(device: &MouseDevice) -> InputData {
+    let mut data = InputData::default();
+    device.read_sync(data.as_mut(), 0).unwrap();
+    data
+}
+
+#[wasm_bindgen_test]
+fn a_click_between_two_reads_delivers_the_press_and_the_release() {
+    let canvas = canvas();
+    let device = MouseDevice::new(&canvas).unwrap();
+
+    // Mouse flood, then press and release, all before LVGL reads once.
+    for x in 0..1000 {
+        mouse(&canvas, "mousemove", x % 200, 40, 0);
+    }
+    mouse(&canvas, "mousemove", 120, 45, 0);
+    mouse(&canvas, "mousedown", 120, 45, 1);
+    mouse(&canvas, "mouseup", 120, 45, 0);
+
+    let moved = read_mouse(&device);
+    assert_eq!(
+        (moved.state, moved.point),
+        (State::Released, Point::new(120, 45))
+    );
+    assert!(moved.get_continue());
+    let press = read_mouse(&device);
+    assert_eq!(
+        (press.state, press.point),
+        (State::Pressed, Point::new(120, 45))
+    );
+    assert!(press.get_continue());
+    let release = read_mouse(&device);
+    assert_eq!(release.state, State::Released);
+    assert!(!release.get_continue());
+    // Idle reads keep reporting the last state without `continue`.
+    let idle = read_mouse(&device);
+    assert_eq!(
+        (idle.state, idle.point),
+        (State::Released, Point::new(120, 45))
+    );
+    assert!(!idle.get_continue());
+    canvas.remove();
+}
+
+#[wasm_bindgen_test]
+fn a_held_press_stays_pressed_across_reads() {
+    let canvas = canvas();
+    let device = MouseDevice::new(&canvas).unwrap();
+
+    mouse(&canvas, "mousedown", 10, 20, 1);
+    for _ in 0..3 {
+        let data = read_mouse(&device);
+        assert_eq!(
+            (data.state, data.point),
+            (State::Pressed, Point::new(10, 20))
+        );
+        assert!(!data.get_continue());
+    }
+    // Leaving the canvas while dragging keeps the button held, and the position follows.
+    mouse(&canvas, "mouseleave", 11, 21, 1);
+    let data = read_mouse(&device);
+    assert_eq!(
+        (data.state, data.point),
+        (State::Pressed, Point::new(11, 21))
+    );
+    canvas.remove();
+}
+
+#[wasm_bindgen_test]
+fn a_release_outside_the_canvas_ends_the_press() {
+    let canvas = canvas();
+    let device = MouseDevice::new(&canvas).unwrap();
+
+    mouse(&canvas, "mousedown", 10, 20, 1);
+    mouse(&canvas, "mouseleave", 11, 21, 1);
+    // The button is released over another element: the canvas never sees the `mouseup`.
+    let outside = web_sys::window()
+        .unwrap()
+        .document()
+        .unwrap()
+        .body()
+        .unwrap();
+    mouse(&outside, "mouseup", 300, 400, 0);
+
+    let press = read_mouse(&device);
+    assert_eq!(
+        (press.state, press.point),
+        (State::Pressed, Point::new(10, 20))
+    );
+    assert!(press.get_continue());
+    let moved = read_mouse(&device);
+    assert_eq!(
+        (moved.state, moved.point),
+        (State::Pressed, Point::new(11, 21))
+    );
+    let release = read_mouse(&device);
+    assert_eq!(
+        (release.state, release.point),
+        (State::Released, Point::new(300, 400))
+    );
+    assert!(!release.get_continue());
+    canvas.remove();
+}
+
+fn touch_point(target: &web_sys::EventTarget, identifier: i32, x: i32, y: i32) -> web_sys::Touch {
+    let init = web_sys::TouchInit::new(identifier, target);
+    init.set_client_x(x);
+    init.set_client_y(y);
+    web_sys::Touch::new(&init).unwrap()
+}
+
+/// Dispatches a touch event. `touches` are the fingers still down, `changed` the ones the event is
+/// about.
+fn touch(
+    canvas: &web_sys::EventTarget,
+    kind: &str,
+    touches: &[&web_sys::Touch],
+    changed: &[&web_sys::Touch],
+) {
+    let list = |touches: &[&web_sys::Touch]| {
+        touches
+            .iter()
+            .map(|touch| JsValue::from((*touch).clone()))
+            .collect::<js_sys::Array>()
+    };
+    let options = web_sys::TouchEventInit::new();
+    options.set_touches(&list(touches));
+    options.set_changed_touches(&list(changed));
+    options.set_cancelable(true);
+    options.set_bubbles(true);
+    let event = web_sys::TouchEvent::new_with_event_init_dict(kind, &options).unwrap();
+    canvas.dispatch_event(&event).unwrap();
+}
+
+#[wasm_bindgen_test]
+fn only_the_first_finger_drives_the_pointer() {
+    let canvas = canvas();
+    let device = MouseDevice::new(&canvas).unwrap();
+
+    let first = touch_point(&canvas, 1, 10, 20);
+    touch(&canvas, "touchstart", &[&first], &[&first]);
+    let second = touch_point(&canvas, 2, 200, 210);
+    touch(&canvas, "touchstart", &[&first, &second], &[&second]);
+    let data = read_mouse(&device);
+    assert_eq!(
+        (data.state, data.point),
+        (State::Pressed, Point::new(10, 20))
+    );
+
+    // The second finger moves and lifts: the first finger is still down and nothing changes.
+    let second_moved = touch_point(&canvas, 2, 220, 230);
+    touch(
+        &canvas,
+        "touchmove",
+        &[&first, &second_moved],
+        &[&second_moved],
+    );
+    touch(&canvas, "touchend", &[&first], &[&second_moved]);
+    let data = read_mouse(&device);
+    assert_eq!(
+        (data.state, data.point),
+        (State::Pressed, Point::new(10, 20))
+    );
+    assert!(!data.get_continue());
+
+    // The first finger still drags, then lifts where it was.
+    let first_moved = touch_point(&canvas, 1, 15, 25);
+    touch(&canvas, "touchmove", &[&first_moved], &[&first_moved]);
+    touch(&canvas, "touchend", &[], &[&first_moved]);
+    let moved = read_mouse(&device);
+    assert_eq!(
+        (moved.state, moved.point),
+        (State::Pressed, Point::new(15, 25))
+    );
+    let release = read_mouse(&device);
+    assert_eq!(
+        (release.state, release.point),
+        (State::Released, Point::new(15, 25))
+    );
+    canvas.remove();
+}
+
+#[wasm_bindgen_test]
+fn lifting_the_first_finger_releases_even_while_another_stays_down() {
+    let canvas = canvas();
+    let device = MouseDevice::new(&canvas).unwrap();
+
+    let first = touch_point(&canvas, 1, 10, 20);
+    let second = touch_point(&canvas, 2, 200, 210);
+    touch(&canvas, "touchstart", &[&first], &[&first]);
+    touch(&canvas, "touchstart", &[&first, &second], &[&second]);
+    touch(&canvas, "touchend", &[&second], &[&first]);
+    // The remaining finger moving does not press again.
+    let second_moved = touch_point(&canvas, 2, 220, 230);
+    touch(&canvas, "touchmove", &[&second_moved], &[&second_moved]);
+
+    assert_eq!(read_mouse(&device).state, State::Pressed);
+    let release = read_mouse(&device);
+    assert_eq!(
+        (release.state, release.point),
+        (State::Released, Point::new(10, 20))
+    );
+    assert!(!release.get_continue());
+    assert_eq!(read_mouse(&device).state, State::Released);
     canvas.remove();
 }

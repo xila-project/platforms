@@ -10,6 +10,7 @@ audio = ["dep:audio", "dep:nanoaudio-web"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 file_system = { workspace = true }
+drivers_shared = { workspace = true }
 time = { workspace = true }
 audio = { workspace = true, optional = true }
 nanoaudio-web = { workspace = true, optional = true }
@@ -94,7 +95,13 @@ xila_http = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies.web-sys]
 version = "0.3.64"
-features = ["KeyboardEventInit", "ClipboardEventInit"]
+features = [
+  "KeyboardEventInit",
+  "ClipboardEventInit",
+  "MouseEventInit",
+  "TouchInit",
+  "TouchEventInit",
+]
 
 [lib]
 name = "drivers_wasm"

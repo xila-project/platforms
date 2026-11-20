@@ -1,7 +1,6 @@
-use graphics::{InputData, Key, Point, State};
-use synchronization::{
-    blocking_mutex::raw::CriticalSectionRawMutex, channel::Sender, rwlock::RwLock,
-};
+use drivers_shared::devices::SharedPointerQueue;
+use graphics::{Key, Point, State};
+use synchronization::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Sender};
 use task::block_on;
 
 use super::inner_window::InnerWindow;
@@ -23,14 +22,14 @@ pub enum ControlError {
 
 pub struct ControlOperations<'a> {
     inner_window: &'a InnerWindow,
-    pointer: &'a RwLock<CriticalSectionRawMutex, InputData>,
+    pointer: &'a SharedPointerQueue,
     keyboard: Sender<'a, CriticalSectionRawMutex, (Key, State), 512>,
 }
 
 impl<'a> ControlOperations<'a> {
     pub fn new(
         inner_window: &'a InnerWindow,
-        pointer: &'a RwLock<CriticalSectionRawMutex, InputData>,
+        pointer: &'a SharedPointerQueue,
         keyboard: Sender<'a, CriticalSectionRawMutex, (Key, State), 512>,
     ) -> Self {
         Self {
@@ -47,20 +46,12 @@ impl<'a> ControlOperations<'a> {
     pub fn pointer_move(&self, x: u32, y: u32) -> Result<(), ControlError> {
         let resolution = self.resolution()?;
         validate_coordinates(x, y, resolution)?;
-        let mut pointer = self
-            .pointer
-            .try_write()
-            .map_err(|_| ControlError::DisplayUnavailable)?;
-        pointer.set_point(Point::new(x as i16, y as i16));
+        self.pointer.move_to(x as i16, y as i16);
         Ok(())
     }
 
     pub fn pointer_button(&self, state: State) -> Result<(), ControlError> {
-        let mut pointer = self
-            .pointer
-            .try_write()
-            .map_err(|_| ControlError::DisplayUnavailable)?;
-        pointer.set_state(state);
+        self.pointer.set_pressed(state == State::Pressed);
         Ok(())
     }
 
@@ -129,8 +120,7 @@ mod tests {
 
     static KEYBOARD: Channel<CriticalSectionRawMutex, (Key, State), 512> = Channel::new();
     static KEYBOARD_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    static POINTER: RwLock<CriticalSectionRawMutex, InputData> =
-        RwLock::new(InputData::default_constant());
+    static POINTER: SharedPointerQueue = SharedPointerQueue::new();
     static WINDOW: InnerWindow = InnerWindow::new();
 
     #[test]

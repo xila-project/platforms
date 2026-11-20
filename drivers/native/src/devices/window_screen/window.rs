@@ -1,9 +1,9 @@
 use alloc::sync::Arc;
 
 use arboard::Clipboard;
-use graphics::{InputData, Key, Point, State};
+use drivers_shared::devices::SharedPointerQueue;
+use graphics::{Key, Point, State};
 use pixels::{Pixels, SurfaceTexture};
-use synchronization::rwlock::RwLock;
 use synchronization::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Sender};
 use winit::{
     application::ApplicationHandler,
@@ -19,7 +19,7 @@ pub struct Window<'a> {
     resolution: Point,
     inner_window: &'a InnerWindow,
     keyboard_receiver: Sender<'static, CriticalSectionRawMutex, (Key, State), 512>,
-    pointer_rwlock: &'static RwLock<CriticalSectionRawMutex, InputData>,
+    pointer: &'static SharedPointerQueue,
     is_control_pressed: bool,
     clipboard: Clipboard,
 }
@@ -29,13 +29,13 @@ impl<'a> Window<'a> {
         resolution: Point,
         inner_window: &'a InnerWindow,
         keyboard_receiver: Sender<'static, CriticalSectionRawMutex, (Key, State), 512>,
-        pointer_rwlock: &'static RwLock<CriticalSectionRawMutex, InputData>,
+        pointer: &'static SharedPointerQueue,
     ) -> Self {
         Self {
             resolution,
             inner_window,
             keyboard_receiver,
-            pointer_rwlock,
+            pointer,
             is_control_pressed: false,
             clipboard: Clipboard::new().expect("Failed to initialize clipboard"),
         }
@@ -174,26 +174,16 @@ impl<'a> ApplicationHandler for Window<'a> {
                 device_id: _,
                 position,
             } => {
-                if let Ok(mut pointer_data) = self.pointer_rwlock.try_write() {
-                    pointer_data.set_point((position.x as i16, position.y as i16).into());
-                }
+                // Moves coalesce in the queue and are never dropped for lock contention.
+                self.pointer.move_to(position.x as i16, position.y as i16);
             }
             WindowEvent::MouseInput {
                 device_id: _,
                 state,
                 button: _,
             } => {
-                if let Ok(mut pointer_data) = self.pointer_rwlock.try_write() {
-                    match state {
-                        ElementState::Pressed => {
-                            pointer_data.set_state(State::Pressed);
-                        }
-
-                        ElementState::Released => {
-                            pointer_data.set_state(State::Released);
-                        }
-                    }
-                }
+                let pressed = matches!(state, ElementState::Pressed);
+                self.pointer.set_pressed(pressed);
             }
             _ => {}
         }
