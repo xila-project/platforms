@@ -6325,13 +6325,24 @@ name = "xila-drivers-espressif"
 version = "0.1.0"
 dependencies = [
  "critical-section",
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embassy-time-driver",
+ "embassy-time-queue-utils",
  "embedded-hal 1.0.0",
  "embedded-io 0.7.1",
  "esp-hal",
+ "static_cell",
  "xila-drivers-peripherals",
+ "xila-drivers-shared",
+ "xila-file-system",
+ "xila-log",
  "xila-memory",
  "xila-peripherals",
+ "xila-shared",
  "xila-task",
+ "xila-time",
  "xila-virtual-file-system",
 ]
 

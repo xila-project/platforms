@@ -21,22 +21,24 @@ if [[ -n "${CARGO_CONFIG:-}" ]]; then
   CONFIG_ARGS=(--config "$CARGO_CONFIG")
 fi
 
-# chip:target:architecture:features. ESP32-C2, ESP32-C3 and ESP32-S2 lack native
+FEATURES="gpio,i2c,spi,uart,console,executor,power,random,time"
+
+# chip:target:architecture. ESP32-C2, ESP32-C3 and ESP32-S2 lack native
 # atomic compare-and-swap; esp-hal's chip features enable
 # `portable-atomic/unsafe-assume-single-core` for them so Core and `gpio` build
 # on every supported chip.
 CHIPS=(
-  "esp32:xtensa-esp32-none-elf:xtensa:gpio,i2c,spi,uart"
-  "esp32s2:xtensa-esp32s2-none-elf:xtensa:gpio,i2c,spi,uart"
-  "esp32s3:xtensa-esp32s3-none-elf:xtensa:gpio,i2c,spi,uart"
-  "esp32c2:riscv32imc-unknown-none-elf:riscv:gpio,i2c,spi,uart"
-  "esp32c3:riscv32imc-unknown-none-elf:riscv:gpio,i2c,spi,uart"
-  "esp32c5:riscv32imac-unknown-none-elf:riscv:gpio,i2c,spi,uart"
-  "esp32c6:riscv32imac-unknown-none-elf:riscv:gpio,i2c,spi,uart"
-  "esp32c61:riscv32imac-unknown-none-elf:riscv:gpio,i2c,spi,uart"
-  "esp32h2:riscv32imac-unknown-none-elf:riscv:gpio,i2c,spi,uart"
-  "esp32p4:riscv32imafc-unknown-none-elf:riscv:gpio,i2c,spi,uart"
-  "esp32s31:riscv32imafc-unknown-none-elf:riscv:gpio,i2c,spi,uart"
+  "esp32:xtensa-esp32-none-elf:xtensa"
+  "esp32s2:xtensa-esp32s2-none-elf:xtensa"
+  "esp32s3:xtensa-esp32s3-none-elf:xtensa"
+  "esp32c2:riscv32imc-unknown-none-elf:riscv"
+  "esp32c3:riscv32imc-unknown-none-elf:riscv"
+  "esp32c5:riscv32imac-unknown-none-elf:riscv"
+  "esp32c6:riscv32imac-unknown-none-elf:riscv"
+  "esp32c61:riscv32imac-unknown-none-elf:riscv"
+  "esp32h2:riscv32imac-unknown-none-elf:riscv"
+  "esp32p4:riscv32imafc-unknown-none-elf:riscv"
+  "esp32s31:riscv32imafc-unknown-none-elf:riscv"
 )
 
 known_chip() {
@@ -75,6 +77,7 @@ cargo_for() {
     --manifest-path "$ROOT_DIR/Cargo.toml"
     "${CONFIG_ARGS[@]}"
     -p xila-drivers-espressif
+    --locked
     --target "$target"
   )
   if [[ "$architecture" == "xtensa" ]]; then
@@ -112,29 +115,29 @@ record() {
 }
 
 for entry in "${CHIPS[@]}"; do
-  IFS=':' read -r chip target architecture features <<<"$entry"
+  IFS=':' read -r chip target architecture <<<"$entry"
   selected "$chip" "$@" || continue
 
   if [[ "$architecture" == "xtensa" && (-z "$ESP_RUSTC" || -z "$ESP_CLIPPY_DRIVER") ]]; then
     echo "=== $chip: the '$ESP_TOOLCHAIN' toolchain is missing (install it with espup)" >&2
-    record "$chip" "$features" "MISSING" "MISSING"
+    record "$chip" "$FEATURES" "MISSING" "MISSING"
     continue
   fi
 
-  echo "=== $chip ($target, features: $features)"
-  arguments=(--no-default-features --features "$chip,$features")
+  echo "=== $chip ($target, features: $FEATURES)"
+  arguments=(--no-default-features --features "$chip,$FEATURES")
   check="FAIL"
   clippy="FAIL"
   cargo_for "$architecture" "$target" check "${arguments[@]}" && check="PASS"
   cargo_for "$architecture" "$target" clippy "${arguments[@]}" && clippy="PASS"
-  record "$chip" "$features" "$check" "$clippy"
+  record "$chip" "$FEATURES" "$check" "$clippy"
 done
 
 echo
-printf "%-10s %-22s %-8s %-8s\n" "Chip" "Features" "Check" "Clippy"
+printf "%-10s %-55s %-8s %-8s\n" "Chip" "Features" "Check" "Clippy"
 for row in "${RESULTS[@]}"; do
   IFS='|' read -r chip features check clippy <<<"$row"
-  printf "%-10s %-22s %-8s %-8s\n" "$chip" "$features" "$check" "$clippy"
+  printf "%-10s %-55s %-8s %-8s\n" "$chip" "$features" "$check" "$clippy"
 done
 
 if [[ "$FAILURES" -gt 0 ]]; then

@@ -4,6 +4,10 @@
 //! `esp32c5`, `esp32c6`, `esp32c61`, `esp32h2`, `esp32p4`, `esp32s2`, `esp32s3`
 //! or `esp32s31`). Without one, or on a host target, the crate is empty.
 //!
+//! The optional `console`, `executor`, `power`, `random` and `time` features
+//! provide the shell's runtime drivers. Initialize the time driver before
+//! starting the executor. Run the executor, console and timer on the same core.
+//!
 //! # Firmware requirements
 //!
 //! - **Critical section**: the drivers and memory manager use `critical-section`,
@@ -52,7 +56,17 @@ const _: () = assert!(
 );
 
 pub mod chips;
+#[cfg(feature = "console")]
+pub mod console;
+#[cfg(feature = "executor")]
+pub mod executor;
 pub mod memory;
+#[cfg(feature = "power")]
+pub mod power;
+#[cfg(feature = "random")]
+pub mod random;
+#[cfg(feature = "time")]
+pub mod time;
 
 #[cfg(feature = "gpio")]
 pub mod shared;

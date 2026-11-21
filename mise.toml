@@ -103,11 +103,11 @@ cargo check --locked -p xila-firmware-native --no-default-features --lib --targe
 
 [tasks."test:drivers"]
 description = "Test native and common platform drivers"
-run = "cargo test --locked -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-drivers-nordic --features xila-drivers-native/audio,xila-drivers-shared/neural-network-cmsis-nn"
+run = "cargo test --locked -p xila-drivers-espressif -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-drivers-nordic --features xila-drivers-native/audio,xila-drivers-shared/neural-network-cmsis-nn"
 
 [tasks."clippy:drivers"]
 description = "Lint native and common platform drivers"
-run = "cargo clippy --locked -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-drivers-nordic --all-targets --features xila-drivers-native/audio,xila-drivers-shared/neural-network-cmsis-nn -- -D warnings"
+run = "cargo clippy --locked -p xila-drivers-espressif -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-drivers-nordic --all-targets --features xila-drivers-native/audio,xila-drivers-shared/neural-network-cmsis-nn -- -D warnings"
 
 [tasks."clippy:browser"]
 description = "Lint browser drivers"
