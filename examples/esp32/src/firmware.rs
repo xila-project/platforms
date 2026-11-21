@@ -24,6 +24,17 @@ fn main() -> ! {
     // SAFETY: startup hands this static SRAM exclusively to the allocator.
     assert!(unsafe { heap.init_internal(addr_of_mut!(HEAP).cast(), HEAP_SIZE) });
     println!("Xila ESP32 startup");
+
+    #[cfg(feature = "esp32p4")]
+    {
+        let psram =
+            esp_hal::psram::Psram::new(peripherals.PSRAM, esp_hal::psram::PsramConfig::default());
+        let (_, size) = psram.raw_parts();
+        // SAFETY: The detected PSRAM is reserved exclusively for this allocator.
+        let registered = unsafe { heap.init_psram_from_hal(&psram) };
+        println!("Xila: PSRAM {size} bytes (registered: {registered})");
+    }
+
     // The pinned C6 QEMU machine does not implement the LP_PERI RNG register.
     #[cfg(feature = "esp32s3")]
     {

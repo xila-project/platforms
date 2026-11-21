@@ -1,4 +1,4 @@
-//! A bare-metal Xila boot example for ESP32-S3 and ESP32-C6, used by the QEMU smoke checks.
+//! Bare-metal Xila example for Espressif targets (ESP32-S3, ESP32-C6 and ESP32-P4).
 #![cfg_attr(
     all(
         target_os = "none",

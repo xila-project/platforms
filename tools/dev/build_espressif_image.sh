@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Builds the ESP32 example for Espressif's QEMU and merges the bootloader,
-# partition table and application into one 4 MiB flash image:
-# target/espressif-emulator/CHIP-flash.bin.
+# Builds the ESP32 example and merges the bootloader, partition table and
+# application into one flash image: target/espressif-emulator/CHIP-flash.bin.
 #
-#   tools/dev/build_espressif_image.sh ESPFLASH_VERSION RUST_VERSION ESP_GCC_VERSION [esp32s3|esp32c6]
+#   tools/dev/build_espressif_image.sh ESPFLASH_VERSION RUST_VERSION ESP_GCC_VERSION [esp32s3|esp32c6|esp32p4]
 #
 # S3 needs the `esp` toolchain from `mise run setup:espressif-rust`.
-# C6 needs the stable RISC-V target and Clang for LittleFS.
+# C6 and P4 need the stable RISC-V targets and Clang for LittleFS.
 set -euo pipefail
 
 espflash_version=$1
@@ -47,6 +46,7 @@ case "$chip" in
     esp32s3)
         target=xtensa-esp32s3-none-elf
         flash_mode=dio
+        flash_size=4mb
         build_esp32s3
         ;;
     esp32c6)
@@ -55,14 +55,25 @@ case "$chip" in
         # phases separately, shifting flash reads. Use espflash's default
         # again once the pinned QEMU release contains the fix.
         flash_mode=qio
+        flash_size=4mb
         CC_riscv32imac_unknown_none_elf=clang \
             rustup run "$rust_version" cargo "${build_args[@]}" --target "$target" --features esp32c6
+        ;;
+    esp32p4)
+        target=riscv32imafc-unknown-none-elf
+        flash_mode=dio
+        # This is the flash capacity of the ESP32-P4-Function-EV-Board.
+        flash_size=16mb
+        # LVGL needs explicit compiler flags until lvgl-rust-sys derives them.
+        CC_riscv32imafc_unknown_none_elf=clang \
+        CFLAGS_riscv32imafc_unknown_none_elf="-march=rv32imafc -mabi=ilp32f" \
+            rustup run "$rust_version" cargo "${build_args[@]}" --target "$target" --features esp32p4
         ;;
     *) echo "Unsupported ESP32 chip: $chip" >&2; exit 2 ;;
 esac
 
 "$root/tools/espflash-$espflash_version/espflash" save-image --skip-update-check \
-    --chip "$chip" --flash-size 4mb --flash-mode "$flash_mode" \
+    --chip "$chip" --flash-size "$flash_size" --flash-mode "$flash_mode" \
     --partition-table examples/esp32/partitions.csv --partition-table-offset 0x8000 \
     --merge "$CARGO_TARGET_DIR/$target/release-embedded/esp32_example" "$root/$chip-flash.bin"
 echo "Flash image: $root/$chip-flash.bin"
