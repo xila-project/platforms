@@ -139,7 +139,7 @@ fn browser_and_native_bundles_contain_their_declared_apps() {
         assert!(contains(b"/applications/executables/activity"));
         assert!(contains(b"/applications/executables/terminal"));
         // Only the native runtime registers the Debug executable and its
-        // transport, and only on Unix hosts (see `bundle.rs`).
+        // transport, and only on Unix hosts (see `src/main.rs`).
         assert_eq!(
             contains(b"/applications/executables/debug"),
             profile == "native" && cfg!(unix),

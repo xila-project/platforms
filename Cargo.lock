@@ -6613,13 +6613,7 @@ dependencies = [
 name = "xila-fs-image"
 version = "0.1.0"
 dependencies = [
- "critical-section",
- "libc",
- "xila-authentication",
- "xila-drivers-std",
- "xila-file-system",
- "xila-little-fs",
- "xila-users",
+ "xila-tools-image",
 ]
 
 [[package]]
@@ -7046,6 +7040,22 @@ dependencies = [
  "xila-log",
  "xila-shared",
  "xila-synchronization",
+]
+
+[[package]]
+name = "xila-tools-image"
+version = "0.1.0"
+source = "git+https://github.com/xila-project/tools?branch=main#7b0ba583f036862188b3271fc92f9f87d495ad63"
+dependencies = [
+ "critical-section",
+ "embassy-executor",
+ "libc",
+ "xila-authentication",
+ "xila-file-system",
+ "xila-little-fs",
+ "xila-memory",
+ "xila-shared",
+ "xila-users",
 ]
 
 [[package]]

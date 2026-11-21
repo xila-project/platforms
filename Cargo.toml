@@ -50,6 +50,8 @@ nanoglia = { version = "0.3", default-features = false }
 xila = { git = "https://github.com/xila-project/core", branch = "main" }
 xila_http = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
 verification = { package = "xila-package-verification", git = "https://github.com/xila-project/package_manager", branch = "main", default-features = false }
+# Image engine of the `xila` developer tools (`xila image build`).
+tools_image = { package = "xila-tools-image", git = "https://github.com/xila-project/tools", branch = "main" }
 audio = { package = "xila-audio", git = "https://github.com/xila-project/core", branch = "main" }
 nanoaudio = { git = "https://github.com/AlixANNERAUD/nanoaudio.git", rev = "596076c64827fd8bf9e8319addc2f215e0cde8be", default-features = false }
 nanoaudio-cpal = { git = "https://github.com/AlixANNERAUD/nanoaudio.git", rev = "596076c64827fd8bf9e8319addc2f215e0cde8be", default-features = false }
@@ -63,7 +65,6 @@ task = { package = "xila-task", git = "https://github.com/xila-project/core", br
 users = { package = "xila-users", git = "https://github.com/xila-project/core", branch = "main" }
 memory = { package = "xila-memory", git = "https://github.com/xila-project/core", branch = "main" }
 file_system = { package = "xila-file-system", git = "https://github.com/xila-project/core", branch = "main" }
-authentication = { package = "xila-authentication", git = "https://github.com/xila-project/core", branch = "main" }
 log = { package = "xila-log", git = "https://github.com/xila-project/core", branch = "main" }
 shared = { package = "xila-shared", git = "https://github.com/xila-project/core", branch = "main" }
 synchronization = { package = "xila-synchronization", git = "https://github.com/xila-project/core", branch = "main" }

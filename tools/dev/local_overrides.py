@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write Cargo source patches for adjacent Core and Platforms checkouts."""
+"""Write Cargo source patches for adjacent Core, Platforms and other Xila checkouts."""
 import argparse
 import json
 from pathlib import Path
@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--platforms", type=Path, required=True)
     parser.add_argument("--applications", type=Path, required=True)
     parser.add_argument("--package-manager", type=Path)
+    parser.add_argument("--tools", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     sections = {
@@ -32,6 +33,7 @@ def main():
         "https://github.com/xila-project/platforms": (args.platforms, ["drivers"]),
         "https://github.com/xila-project/applications": (args.applications, ["executables"]),
         **({"https://github.com/xila-project/package_manager": (args.package_manager, ["crates"])} if args.package_manager else {}),
+        **({"https://github.com/xila-project/tools": (args.tools, ["crates"])} if args.tools else {}),
     }
     lines = []
     for url, (root, roots) in sections.items():
