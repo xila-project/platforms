@@ -97,8 +97,8 @@ jobs:
         with:
           cache-mode: target
           cache-generation: v1-platforms-nano-33-ble
-      - name: "Setup | Native build dependencies"
-        run: mise run ci:packages-host
+      - name: "Setup | Clang and linker dependencies"
+        run: mise run ci:packages-linker
       - name: "Build | Arduino Nano 33 BLE firmware"
         run: mise run build:nano-33-ble
   browser:

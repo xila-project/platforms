@@ -374,6 +374,11 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         self.assertEqual(wasm_bindgen_versions, {mise_vars['wasm_bindgen_version']})
         self.assertIn('needs: [quality, native, nano-33-ble, browser]', ci)
 
+    def test_nano_build_installs_the_linker_package_set(self):
+        job = yaml.safe_load(read('.github/workflows/ci.yml'))['jobs']['nano-33-ble']
+        tasks = [step['run'] for step in job['steps'] if 'run' in step]
+        self.assertEqual(tasks, ['mise run ci:packages-linker', 'mise run build:nano-33-ble'])
+
     def test_quality_reuses_shared_job_without_weakening_gate(self):
         ci = read('.github/workflows/ci.yml')
         self.assertIn('  quality:', ci)
