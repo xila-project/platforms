@@ -62,9 +62,11 @@ case "$chip" in
     esp32p4)
         target=riscv32imafc-unknown-none-elf
         flash_mode=dio
-        # This is the flash capacity of the ESP32-P4-Function-EV-Board.
+        # This is the flash capacity of the ESP32-P4X-Function-EV-Board.
         flash_size=16mb
-        # LVGL needs explicit compiler flags until lvgl-rust-sys derives them.
+        # LittleFS (littlefs2-sys) needs the hard-float flags until the locked
+        # Core includes core#801, which derives them. LVGL will need them too until
+        # core#805 is done, once graphics is part of the P4 build.
         CC_riscv32imafc_unknown_none_elf=clang \
         CFLAGS_riscv32imafc_unknown_none_elf="-march=rv32imafc -mabi=ilp32f" \
             rustup run "$rust_version" cargo "${build_args[@]}" --target "$target" --features esp32p4
