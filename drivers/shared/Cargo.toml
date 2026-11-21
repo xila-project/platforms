@@ -19,6 +19,7 @@ file_system = { workspace = true }
 log = { workspace = true, optional = true }
 shared = { workspace = true }
 device = { workspace = true }
+time = { workspace = true }
 critical-section = { workspace = true }
 network = { workspace = true, optional = true }
 task = { workspace = true, optional = true }

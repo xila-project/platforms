@@ -1,4 +1,4 @@
-//! Asynchronous serial console using the HAL's interrupt-driven transmit and
+//! Asynchronous serial console using esp-hal's interrupt-driven transmit and
 //! receive halves. The peripheral adapter owns a blocking driver and cannot
 //! register a waker or wait asynchronously for transmission to complete.
 
@@ -304,6 +304,12 @@ async fn transmit_bytes(mut transmit: UartTx<'static, Async>) -> ! {
                 .await
                 .expect("serial write failed");
             remaining = &remaining[written..];
+        }
+
+        // Keep the transmit FIFO fed while more output is queued; wait for the
+        // line to go idle only once the queue is empty.
+        if !with_output(|output| output.queue.is_empty()) {
+            continue;
         }
         transmit.flush_async().await.expect("serial flush failed");
 

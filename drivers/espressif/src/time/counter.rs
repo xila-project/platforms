@@ -29,5 +29,5 @@ impl Counter {
 }
 
 pub(super) fn alarm_has_elapsed(start: u64, delay: u64, end: u64) -> bool {
-    end - start >= delay
+    end.saturating_sub(start) >= delay
 }

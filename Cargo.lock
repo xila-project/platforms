@@ -6342,7 +6342,6 @@ dependencies = [
  "xila-peripherals",
  "xila-shared",
  "xila-task",
- "xila-time",
  "xila-virtual-file-system",
 ]
 
@@ -6419,6 +6418,7 @@ dependencies = [
  "embedded-storage",
  "linked_list_allocator",
  "xila-device",
+ "xila-drivers-shared",
  "xila-file-system",
  "xila-log",
  "xila-memory",

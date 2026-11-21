@@ -14,6 +14,7 @@ mod pointer_queue;
 ))]
 mod random;
 pub mod terminal;
+mod unsynchronized_time;
 
 pub use hash::*;
 #[cfg(feature = "network")]
@@ -29,6 +30,7 @@ pub use pointer_queue::*;
 ))]
 pub use random::*;
 pub use terminal::*;
+pub use unsynchronized_time::*;
 
 #[cfg(feature = "network")]
 mod http_exchange;

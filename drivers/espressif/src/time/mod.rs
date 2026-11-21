@@ -1,25 +1,18 @@
 mod counter;
 
-use core::{
-    cell::RefCell,
-    task::{Context, Poll, Waker},
-};
+use core::{cell::RefCell, task::Waker};
 
 use critical_section::Mutex;
 use embassy_time_driver::Driver;
 use embassy_time_queue_utils::Queue;
 use esp_hal::{Blocking, time::Duration, timer::OneShotTimer};
-use file_system::{
-    DirectBaseOperations, DirectCharacterDevice, IoErrorKind, MountOperations, Result, Size,
-};
 
 use counter::{Counter, alarm_has_elapsed};
 
+pub use drivers_shared::devices::UnsynchronizedTimeDevice as TimeDevice;
+
 #[cfg(not(feature = "esp32"))]
-use esp_hal::{
-    peripherals::SYSTIMER,
-    timer::systimer::{SystemTimer, Unit},
-};
+use esp_hal::timer::systimer::{Alarm as SystemTimerAlarm, SystemTimer, Unit};
 #[cfg(feature = "esp32")]
 use esp_hal::{time::Instant, timer::timg::Timer};
 
@@ -127,17 +120,19 @@ fn counter_value() -> u64 {
 /// Call after initializing esp-hal and before starting the executor.
 #[cfg(feature = "esp32")]
 pub fn initialize(timer: Timer<'static>) {
-    // The HAL converts the ESP32's 64-bit, 16-megahertz counter to microseconds.
+    // esp-hal converts the ESP32's 64-bit, 16-megahertz counter to microseconds.
     initialize_alarm(OneShotTimer::new(timer), u64::MAX >> 4, 1_000_000);
 }
 
-/// Initializes the one-megahertz Embassy clock using system timer alarm zero.
+/// Initializes the one-megahertz Embassy clock using one system timer alarm.
 ///
+/// Pass one alarm of `SystemTimer::new(peripherals.SYSTIMER)`; the other alarms
+/// stay available to the firmware. The clock reads system timer unit zero.
 /// Call after initializing esp-hal and before starting the executor.
 #[cfg(not(feature = "esp32"))]
-pub fn initialize(system_timer: SYSTIMER<'static>) {
+pub fn initialize(alarm: SystemTimerAlarm<'static>) {
     initialize_alarm(
-        OneShotTimer::new(SystemTimer::new(system_timer).alarm0),
+        OneShotTimer::new(alarm),
         SystemTimer::BIT_MASK,
         SystemTimer::ticks_per_second(),
     );
@@ -157,27 +152,4 @@ fn initialize_alarm(mut timer: OneShotTimer<'static, Blocking>, mask: u64, frequ
         alarm.schedule(&mut state.queue);
         state.alarm = Some(alarm);
     });
-}
-
-/// Hardware time device for boards without a configured wall clock.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct TimeDevice;
-
-impl DirectBaseOperations for TimeDevice {
-    fn read(&self, _: &mut Context<'_>, _: &mut [u8], _: Size) -> Poll<Result<usize>> {
-        Poll::Ready(Err(IoErrorKind::DeviceUnavailable))
-    }
-
-    fn write(&self, _: &mut Context<'_>, _: &[u8], _: Size) -> Poll<Result<usize>> {
-        Poll::Ready(Err(IoErrorKind::Unsupported))
-    }
-}
-
-impl MountOperations for TimeDevice {}
-impl DirectCharacterDevice for TimeDevice {}
-
-impl time::RealtimeSource for TimeDevice {
-    fn read(&self) -> time::Result<time::RealtimeSample> {
-        Err(time::Error::Unsynchronized)
-    }
 }

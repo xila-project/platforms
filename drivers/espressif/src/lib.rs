@@ -21,6 +21,12 @@
 //!   `portable-atomic/critical-section` (which `portable-atomic` rejects when
 //!   combined with `unsafe-assume-single-core`).
 #![no_std]
+// The executor's idle sequence uses Xtensa inline assembly, which is still
+// unstable; the `esp` toolchain allows it, as for esp-hal and esp-sync.
+#![cfg_attr(
+    all(target_arch = "xtensa", feature = "executor"),
+    feature(asm_experimental_arch)
+)]
 #![cfg(all(
     any(target_arch = "xtensa", target_arch = "riscv32"),
     any(

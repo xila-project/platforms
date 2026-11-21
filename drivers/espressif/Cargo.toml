@@ -23,7 +23,6 @@ file_system = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 shared = { workspace = true, optional = true }
 static_cell = { version = "2", optional = true }
-time = { workspace = true, optional = true }
 embedded-hal = { workspace = true, optional = true }
 embedded-io = { workspace = true, optional = true }
 esp-hal = { version = "=1.2.2", default-features = false, features = [
@@ -64,10 +63,9 @@ executor = ["dep:embassy-executor", "dep:static_cell"]
 power = ["dep:peripherals", "peripherals/power"]
 random = ["dep:file_system", "dep:static_cell"]
 time = [
+  "dep:drivers_shared",
   "dep:embassy-time-driver",
   "dep:embassy-time-queue-utils",
-  "dep:file_system",
-  "dep:time",
 ]
 
 # Supported Espressif chips (esp-hal 1.2.2). Enable exactly one; without one
