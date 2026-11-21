@@ -9,6 +9,20 @@ rust-version.workspace = true
 [target.'cfg(any(target_arch = "xtensa", target_arch = "riscv32"))'.dependencies]
 critical-section = { workspace = true }
 drivers_peripherals = { workspace = true, optional = true }
+drivers_shared = { package = "xila-drivers-shared", path = "../shared", default-features = false, optional = true }
+embassy-executor = { workspace = true, optional = true }
+embassy-futures = { workspace = true, optional = true }
+embassy-sync = { workspace = true, optional = true }
+embassy-time-driver = { workspace = true, features = [
+  "tick-hz-1_000_000",
+], optional = true }
+embassy-time-queue-utils = { workspace = true, features = [
+  "integrated-timers",
+], optional = true }
+file_system = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+shared = { workspace = true, optional = true }
+static_cell = { version = "2", optional = true }
 embedded-hal = { workspace = true, optional = true }
 embedded-io = { workspace = true, optional = true }
 esp-hal = { version = "=1.2.2", default-features = false, features = [
@@ -35,6 +49,24 @@ gpio = [
 i2c = ["dep:embedded-hal", "dep:peripherals", "peripherals/i2c"]
 spi = ["dep:embedded-hal", "dep:peripherals", "peripherals/spi"]
 uart = ["dep:embedded-io", "dep:peripherals", "peripherals/uart"]
+
+# Shell runtime drivers.
+console = [
+  "dep:drivers_shared",
+  "dep:embassy-futures",
+  "dep:embassy-sync",
+  "dep:file_system",
+  "dep:log",
+  "dep:shared",
+]
+executor = ["dep:embassy-executor", "dep:static_cell"]
+power = ["dep:peripherals", "peripherals/power"]
+random = ["dep:file_system", "dep:static_cell"]
+time = [
+  "dep:drivers_shared",
+  "dep:embassy-time-driver",
+  "dep:embassy-time-queue-utils",
+]
 
 # Supported Espressif chips (esp-hal 1.2.2). Enable exactly one; without one
 # the crate is empty.
