@@ -55,6 +55,10 @@ FLAGS = {
 }
 INPUT_ONLY = "This pin can only be used as an input."
 
+# Espressif documents these ESP32-P4 pins as the default UART0 transmit and
+# receive pins, but the chip metadata only marks them as strapping pins.
+CONSOLE_PINS = {"esp32p4": {37, 38}}
+
 PIN = re.compile(
     r'#\[doc\s*=\s*"GPIO(\d+) peripheral singleton[^"]*"\](.*?)\bGPIO\1\s*<=\s*virtual\(\)',
     re.DOTALL,
@@ -86,10 +90,12 @@ def render(chip: str, title: str, version: str, pins: dict[int, list[str]]) -> s
             for reason in reasons:
                 excluded.setdefault(reason, []).append(number)
             continue
-        flags = sorted({FLAGS[i] for i in items if i in FLAGS})
+        flags = {FLAGS[i] for i in items if i in FLAGS}
+        if number in CONSOLE_PINS.get(chip, ()):
+            flags.add("CONSOLE")
         macro = "pin_input_only" if INPUT_ONLY in items else "pin_line"
         if flags:
-            joined = ".union(LineFlags::".join(flags)
+            joined = ".union(LineFlags::".join(sorted(flags))
             expression = "LineFlags::" + joined + ")" * (len(flags) - 1)
             lines.append(f"    {macro}!({number}, {expression}),")
         else:

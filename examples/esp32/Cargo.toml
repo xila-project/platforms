@@ -11,6 +11,12 @@ esp32c6 = [
   "esp-println/esp32c6",
   "esp-storage/esp32c6",
 ]
+esp32p4 = [
+  "drivers_espressif/esp32p4",
+  "esp-bootloader-esp-idf/esp32p4",
+  "esp-println/esp32p4",
+  "esp-storage/esp32p4",
+]
 esp32s3 = [
   "drivers_espressif/esp32s3",
   "esp-bootloader-esp-idf/esp32s3",

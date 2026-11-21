@@ -4,11 +4,10 @@
 # SHA-256 digest recorded here; the versions come from `[vars]` in mise.toml.
 #
 #   tools/dev/install_espressif_emulator.sh QEMU_VERSION ESPFLASH_VERSION [xtensa|riscv32]
+#   tools/dev/install_espressif_emulator.sh --espflash-only ESPFLASH_VERSION
 set -euo pipefail
 
-qemu_version=$1
 espflash_version=$2
-architecture=${3:-xtensa}
 root="$PWD/target/espressif-emulator/tools"
 mkdir -p "$root"
 
@@ -25,7 +24,7 @@ case "$(uname -s)/$(uname -m)" in
         riscv32_sha=4038e03d6e312b2372106516855a2c72eda02b49f6480917c55e56e04d958781
         espflash_sha=a2081c002f6050a287007a93ba01cdd4c9d111181b69d5ddf7bdb71d33841c65
         ;;
-    *) echo "The Espressif emulator tasks require Linux x86_64 or aarch64." >&2; exit 2 ;;
+    *) echo "The Espressif tools require Linux x86_64 or aarch64." >&2; exit 2 ;;
 esac
 
 download() {
@@ -34,24 +33,28 @@ download() {
     printf '%s  %s\n' "$sha" "$file" | sha256sum --check --quiet
 }
 
-case "$architecture" in
-    xtensa) qemu="$root/qemu-$qemu_version"; qemu_sha=$xtensa_sha ;;
-    riscv32) qemu="$root/qemu-riscv32-$qemu_version"; qemu_sha=$riscv32_sha ;;
-    *) echo "Unsupported QEMU architecture: $architecture" >&2; exit 2 ;;
-esac
+if [[ $1 != --espflash-only ]]; then
+    qemu_version=$1
+    architecture=${3:-xtensa}
+    case "$architecture" in
+        xtensa) qemu="$root/qemu-$qemu_version"; qemu_sha=$xtensa_sha ;;
+        riscv32) qemu="$root/qemu-riscv32-$qemu_version"; qemu_sha=$riscv32_sha ;;
+        *) echo "Unsupported QEMU architecture: $architecture" >&2; exit 2 ;;
+    esac
 
-# `esp_develop_9.2.2_20261109` is released as tag `esp-develop-9.2.2-20261109`.
-qemu_tag="esp-develop-${qemu_version%_*}-${qemu_version##*_}"
-qemu_bin="$qemu/qemu/bin/qemu-system-$architecture"
-if [[ ! -x $qemu_bin ]]; then
-    archive="qemu-$architecture-softmmu-esp_develop_$qemu_version-$host-linux-gnu.tar.xz"
-    stage=$(mktemp -d "$root/qemu-download.XXXXXXXX")
-    download "https://github.com/espressif/qemu/releases/download/$qemu_tag/$archive" \
-        "$stage/$archive" "$qemu_sha"
-    tar -xJf "$stage/$archive" -C "$stage"
-    mv "$stage" "$qemu"
+    # `esp_develop_9.2.2_20261109` is released as tag `esp-develop-9.2.2-20261109`.
+    qemu_tag="esp-develop-${qemu_version%_*}-${qemu_version##*_}"
+    qemu_bin="$qemu/qemu/bin/qemu-system-$architecture"
+    if [[ ! -x $qemu_bin ]]; then
+        archive="qemu-$architecture-softmmu-esp_develop_$qemu_version-$host-linux-gnu.tar.xz"
+        stage=$(mktemp -d "$root/qemu-download.XXXXXXXX")
+        download "https://github.com/espressif/qemu/releases/download/$qemu_tag/$archive" \
+            "$stage/$archive" "$qemu_sha"
+        tar -xJf "$stage/$archive" -C "$stage"
+        mv "$stage" "$qemu"
+    fi
+    "$qemu_bin" --version | head -n 1
 fi
-"$qemu_bin" --version | head -n 1
 
 espflash="$root/espflash-$espflash_version"
 if [[ ! -x $espflash/espflash ]]; then

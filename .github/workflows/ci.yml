@@ -183,6 +183,22 @@ jobs:
             target/espressif-emulator/runs/${{ matrix.chip }}.*/uart.log
             target/espressif-emulator/runs/${{ matrix.chip }}.*/qemu.log
             target/espressif-emulator/runs/${{ matrix.chip }}.*/screen.png
+  esp32p4:
+    # Advisory build while boot testing on ESP32-P4 hardware is pending.
+    name: "Build / ESP32-P4 firmware"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: "Setup | Checkout sources"
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: "Setup | Activate mise"
+        uses: jdx/mise-action@v5.2.2
+      - name: "Setup | Native build and flasher dependencies"
+        run: mise run ci:packages-espressif
+      - name: "Build | ESP32-P4 flash image"
+        run: mise run build:esp32p4-image
   required:
     if: always()
     needs: [quality, native, nano-33-ble, browser]
