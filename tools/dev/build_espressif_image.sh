@@ -57,7 +57,7 @@ case "$chip" in
         flash_mode=qio
         flash_size=4mb
         CC_riscv32imac_unknown_none_elf=clang \
-            rustup run "$rust_version" cargo "${build_args[@]}" --target "$target" --features esp32c6
+            rustup run "$rust_version" cargo "${build_args[@]}" --target "$target" --features qemu-esp32c6
         ;;
     esp32p4)
         target=riscv32imafc-unknown-none-elf
@@ -65,8 +65,8 @@ case "$chip" in
         # This is the flash capacity of the ESP32-P4X-Function-EV-Board.
         flash_size=16mb
         # LittleFS (littlefs2-sys) needs the hard-float flags until the locked
-        # Core includes core#801, which derives them. LVGL will need them too until
-        # core#805 is done, once graphics is part of the P4 build.
+        # Core includes core#801/#808 (blocked on Applications matching Core's
+        # lvgl-rust-sys revision and package_manager#65).
         CC_riscv32imafc_unknown_none_elf=clang \
         CFLAGS_riscv32imafc_unknown_none_elf="-march=rv32imafc -mabi=ilp32f" \
             rustup run "$rust_version" cargo "${build_args[@]}" --target "$target" --features esp32p4

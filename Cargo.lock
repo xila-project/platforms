@@ -6537,13 +6537,18 @@ dependencies = [
 name = "xila-esp32-example"
 version = "0.1.0"
 dependencies = [
+ "critical-section",
  "embedded-storage",
  "esp-bootloader-esp-idf",
  "esp-hal",
  "esp-println",
  "esp-storage",
  "xila",
+ "xila-command-line-shell",
+ "xila-drivers-core",
  "xila-drivers-espressif",
+ "xila-drivers-peripherals",
+ "xila-drivers-shared",
 ]
 
 [[package]]

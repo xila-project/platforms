@@ -80,5 +80,5 @@ pub(super) fn render() {
         FLUSHED.load(Ordering::Relaxed),
         "LVGL did not flush a frame"
     );
-    esp_println::println!("Xila: LVGL frame flushed");
+    xila::log::information!("Xila: LVGL frame flushed");
 }

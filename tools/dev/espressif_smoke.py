@@ -8,12 +8,12 @@ The S3 run also keeps the LVGL frame in `screen.ppm` and `screen.png`.
 """
 
 import argparse
+import asyncio
 import json
 import os
 from pathlib import Path
 import re
 import shutil
-import socket
 import struct
 import subprocess
 import sys
@@ -24,15 +24,17 @@ import zlib
 TIMEOUT = 60
 RNG_MARKER = "Xila: RNG "
 LVGL_MARKER = "Xila: LVGL frame flushed"
+SHELL_PROMPT_MARKER = "User name:"
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 # Each marker must appear in this order: the smoke check fails on the first one
 # that is missing, so the failing boot stage is named.
 MARKERS = [
     "Xila ESP32 startup",
-    RNG_MARKER,
     "Xila: LittleFS mounted",
+    RNG_MARKER,
     LVGL_MARKER,
     "Xila heap: ",
-    "Xila: boot smoke ready",
+    SHELL_PROMPT_MARKER,
 ]
 WIDTH, HEIGHT = 160, 120
 
@@ -42,17 +44,18 @@ class SmokeError(Exception):
 
 
 def check_markers(log, chip):
-    lines = log.splitlines()
+    plain = ANSI_ESCAPE.sub("", log)
+    lines = plain.splitlines()
     position = 0
     for marker in MARKERS:
         # The C6 machine lacks the RNG register and virtual RGB panel.
         if chip == "esp32c6" and marker in (RNG_MARKER, LVGL_MARKER):
             continue
         try:
-            position = next(i for i in range(position, len(lines)) if lines[i].startswith(marker)) + 1
+            position = next(i for i in range(position, len(lines)) if marker in lines[i]) + 1
         except StopIteration:
             raise SmokeError(f"missing boot marker {marker!r}") from None
-    heap = re.search(r"^Xila heap: (\d+) bytes used, (\d+) free, (\d+) total", log, re.MULTILINE)
+    heap = re.search(r"Xila heap: (\d+) bytes used, (\d+) free, (\d+) total", plain)
     if heap is None:
         raise SmokeError("malformed heap statistics line")
     used, free, total = map(int, heap.groups())
@@ -61,26 +64,43 @@ def check_markers(log, chip):
     print(f"Heap after boot: {used} bytes used, {free} free, {total} total", flush=True)
 
 
+async def capture_screen(screen):
+    # A relative path keeps the Unix socket name within its length limit.
+    reader, writer = await asyncio.open_unix_connection("qmp.sock")
+    try:
+        if "QMP" not in json.loads(await reader.readline()):
+            raise SmokeError("missing QEMU monitor greeting")
+        for command in (
+            {"execute": "qmp_capabilities"},
+            {"execute": "screendump", "arguments": {"filename": str(screen)}},
+        ):
+            writer.write(json.dumps(command).encode() + b"\n")
+            await writer.drain()
+            while True:
+                line = await reader.readline()
+                if not line:
+                    raise SmokeError(f"QEMU monitor closed during {command['execute']}")
+                reply = json.loads(line)
+                if "error" in reply:
+                    raise SmokeError(
+                        f"QEMU monitor {command['execute']}: {reply['error']['desc']}"
+                    )
+                if "return" in reply:
+                    break
+    finally:
+        writer.close()
+
+
 def screendump(directory, deadline):
-    """Capture the virtual RGB panel through QMP (this QEMU build writes PPM only)."""
+    """Capture the virtual panel through the QEMU monitor within the boot deadline."""
     screen = directory / "screen.ppm"
-    with socket.socket(socket.AF_UNIX) as qmp:
-        qmp.settimeout(max(1.0, deadline - time.monotonic()))
-        qmp.connect("qmp.sock")  # Relative: a Unix socket path holds at most 107 bytes.
-        with qmp.makefile("rwb", buffering=0) as stream:
-            if "QMP" not in json.loads(stream.readline()):
-                raise SmokeError("missing QMP greeting")
-            for command in (
-                {"execute": "qmp_capabilities"},
-                {"execute": "screendump", "arguments": {"filename": str(screen)}},
-            ):
-                stream.write(json.dumps(command).encode() + b"\n")
-                while True:
-                    reply = json.loads(stream.readline())
-                    if "error" in reply:
-                        raise SmokeError(f"QMP {command['execute']}: {reply['error']['desc']}")
-                    if "return" in reply:
-                        break
+    try:
+        remaining = deadline - time.monotonic()
+        asyncio.run(asyncio.wait_for(capture_screen(screen), timeout=remaining))
+    except TimeoutError:
+        raise SmokeError("timed out capturing the frame from the QEMU monitor") from None
+    except (OSError, ValueError) as error:
+        raise SmokeError(f"could not capture the frame from the QEMU monitor: {error}") from error
     return screen
 
 
@@ -131,11 +151,11 @@ def run(chip, qemu, image, runs):
                                     stderr=subprocess.STDOUT)
         try:
             log = ""
-            while "Xila: boot smoke ready" not in log:
+            while SHELL_PROMPT_MARKER not in log:
                 if emulator.poll() is not None:
-                    raise SmokeError(f"QEMU exited with {emulator.returncode} before the boot completed")
+                    raise SmokeError(f"QEMU exited with {emulator.returncode} before the shell prompt appeared")
                 if time.monotonic() > deadline:
-                    raise SmokeError(f"no boot marker after {TIMEOUT} s")
+                    raise SmokeError(f"no {SHELL_PROMPT_MARKER!r} shell prompt after {TIMEOUT} s")
                 time.sleep(0.2)
                 log = uart.read_text(errors="replace") if uart.exists() else ""
                 if "Xila panic:" in log:
@@ -153,7 +173,10 @@ def run(chip, qemu, image, runs):
                 emulator.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 emulator.kill()
-                emulator.wait()
+                try:
+                    emulator.wait(timeout=5)
+                except subprocess.TimeoutExpired as error:
+                    raise SmokeError("QEMU did not exit after being killed") from error
     sys.stdout.write(uart.read_text(errors="replace"))
 
 

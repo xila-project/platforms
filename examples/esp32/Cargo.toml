@@ -25,17 +25,32 @@ esp32s3 = [
 ]
 # Draws through the virtual RGB panel that only Espressif's QEMU provides.
 qemu-display = ["esp32s3", "xila/graphics_rendering_rgb565"]
+# The pinned QEMU machine lacks the ESP32-C6 random register.
+qemu-esp32c6 = ["esp32c6"]
 
 [target.'cfg(all(target_os = "none", any(target_arch = "xtensa", target_arch = "riscv32")))'.dependencies]
-drivers_espressif = { package = "xila-drivers-espressif", path = "../../drivers/espressif", default-features = false }
-xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
-esp-hal = { version = "=1.2.2", features = ["unstable"] }
+# Not the workspace entries: these boards have no network, and a workspace
+# member cannot turn off default features the workspace entry leaves on.
+command_line_shell = { package = "xila-command-line-shell", git = "https://github.com/xila-project/applications", branch = "main", default-features = false }
+critical-section = { workspace = true }
+drivers_core = { workspace = true }
+drivers_espressif = { package = "xila-drivers-espressif", path = "../../drivers/espressif", default-features = false, features = [
+  "console",
+  "executor",
+  "power",
+  "random",
+  "time",
+] }
+drivers_peripherals = { workspace = true }
+drivers_shared = { package = "xila-drivers-shared", path = "../../drivers/shared", default-features = false }
+embedded-storage = "0.3"
 esp-bootloader-esp-idf = "0.6"
+esp-hal = { version = "=1.2.2", features = ["unstable"] }
 esp-println = { version = "0.18", default-features = false, features = [
   "uart",
 ] }
 esp-storage = { version = "0.10", features = ["embedded-storage"] }
-embedded-storage = "0.3"
+xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
 
 [[bin]]
 name = "esp32_example"
