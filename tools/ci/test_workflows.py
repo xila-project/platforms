@@ -374,6 +374,39 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         self.assertEqual(wasm_bindgen_versions, {mise_vars['wasm_bindgen_version']})
         self.assertIn('needs: [quality, native, nano-33-ble, browser]', ci)
 
+    def test_host_test_suites_use_pinned_nextest_and_run_doctests(self):
+        self.assertRegex(tomllib.loads(read('mise.toml'))['vars']['nextest_version'], r'^\d+\.\d+\.\d+$')
+        expected = 'cargo-nextest-{{ vars.nextest_version }}'
+        tasks = {}
+        for name in ('mise.toml', 'mise.ci.toml'):
+            for task, configuration in tomllib.loads(read(name)).get('tasks', {}).items():
+                merged = tasks.setdefault(task, {})
+                # mise merges the tools of a task across configuration files.
+                merged['tools'] = merged.get('tools', {}) | configuration.get('tools', {})
+                merged.update({key: value for key, value in configuration.items() if key != 'tools'})
+        for task, requires_doctests in (
+            ('test:seed', True),
+            ('test:drivers', True),
+            ('firmware:test', True),
+            ('ci:profiling', True),
+            ('ci:profiling-runtime-tests', False),
+            ('ci:profiling-native-tests', False),
+        ):
+            with self.subTest(task=task):
+                configuration = tasks[task]
+                self.assertEqual(configuration['tools']['github:nextest-rs/nextest'], expected)
+                self.assertIn('cargo nextest run --locked', configuration['run'])
+                if requires_doctests:
+                    self.assertRegex(configuration['run'], r'cargo test [^\n]*--doc')
+
+    def test_workspace_actions_share_one_pinned_revision(self):
+        revisions = set()
+        for workflow in sorted((ROOT / '.github/workflows').glob('*.yml')):
+            revisions.update(re.findall(
+                r'xila-project/workspace/\.github/(?:actions/setup-rust|workflows/quality\.yml)@([0-9a-f]{40})',
+                workflow.read_text()))
+        self.assertEqual(len(revisions), 1, revisions)
+
     def test_nano_build_installs_the_linker_package_set(self):
         job = yaml.safe_load(read('.github/workflows/ci.yml'))['jobs']['nano-33-ble']
         tasks = [step['run'] for step in job['steps'] if 'run' in step]
