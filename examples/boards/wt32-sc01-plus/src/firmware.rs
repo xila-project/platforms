@@ -96,8 +96,12 @@ fn main() -> ! {
         },
         memory_check: Some(psram_self_test::run),
         system_check: Some(screen::log_report),
-        display: Some(display),
-        sessions: &[session::CONSOLE, session::GRAPHICAL],
+        sessions: if display.is_some() {
+            &[session::CONSOLE, session::GRAPHICAL]
+        } else {
+            &[session::CONSOLE]
+        },
+        display,
     })
 }
 

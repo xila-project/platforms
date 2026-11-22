@@ -21,11 +21,14 @@
 //! touch panel reports portrait coordinates; RIOT maps them to the landscape
 //! screen by swapping the axes and mirroring Y.
 
-use alloc::boxed::Box;
+use alloc::{boxed::Box, format, string::String};
 use core::{
+    cell::RefCell,
     ptr::addr_of_mut,
     sync::atomic::{AtomicU16, Ordering},
 };
+
+use critical_section::Mutex;
 
 use drivers_espressif::lcd::I8080Bus;
 use drivers_shared::devices::{
@@ -79,6 +82,9 @@ const TOUCH_START_MILLISECONDS: u32 = 200;
 /// logged once the logger runs; zero when it did not answer.
 static TOUCH_IDENTIFIERS: AtomicU16 = AtomicU16::new(0);
 
+/// Why the screen could not start, logged once the logger runs.
+static FAILURE: Mutex<RefCell<Option<String>>> = Mutex::new(RefCell::new(None));
+
 type Screen = MipidsiScreenDevice<ParallelInterface<I8080Bus>, ST7796, Output<'static>>;
 type Touch = TouchInputDevice<Ft6336<I2c<'static, Blocking>>>;
 
@@ -106,8 +112,21 @@ pub(super) struct Pins {
 }
 
 /// Initialises the panel, clears it, turns the backlight on and starts the
-/// touch controller.
-pub(super) fn start(pins: Pins) -> Display {
+/// touch controller. On failure, the board runs without its screen:
+/// [`log_report`] logs why.
+pub(super) fn start(pins: Pins) -> Option<Display> {
+    match try_start(pins) {
+        Ok(display) => Some(display),
+        Err(failure) => {
+            critical_section::with(|section| {
+                FAILURE.borrow(section).replace(Some(failure));
+            });
+            None
+        }
+    }
+}
+
+fn try_start(pins: Pins) -> Result<Display, String> {
     // Dark until the panel holds a black frame.
     let mut backlight = Output::new(pins.backlight, Level::Low, OutputConfig::default());
     let reset = Output::new(pins.reset, Level::High, OutputConfig::default());
@@ -119,7 +138,7 @@ pub(super) fn start(pins: Pins) -> Display {
         pins.dma,
         I8080Configuration::default().with_frequency(Rate::from_mhz(BUS_FREQUENCY_MEGAHERTZ)),
     )
-    .expect("Failed to configure the LCD bus")
+    .map_err(|error| format!("cannot configure the LCD bus: {error:?}"))?
     .with_dc(pins.command_data)
     .with_wrx(pins.write_clock)
     .with_data0(d0)
@@ -146,13 +165,13 @@ pub(super) fn start(pins: Pins) -> Display {
         .color_order(ColorOrder::Bgr)
         .invert_colors(ColorInversion::Inverted)
         .init(&mut Delay::new())
-        .expect("Failed to initialise the ST7796 panel");
+        .map_err(|error| format!("cannot initialise the ST7796 panel: {error:?}"))?;
 
     let black_row = [0u8; WIDTH as usize * 2];
     for row in 0..HEIGHT {
         display
             .set_pixels_raw(0, row, WIDTH - 1, row, &black_row)
-            .expect("Failed to clear the panel");
+            .map_err(|error| format!("cannot clear the panel: {error:?}"))?;
     }
     // esp-hal's `Output` has no `Drop`: the pin keeps driving the backlight
     // on after `backlight` goes out of scope.
@@ -167,7 +186,7 @@ pub(super) fn start(pins: Pins) -> Display {
         pins.i2c,
         I2cConfiguration::default().with_frequency(Rate::from_khz(400)),
     )
-    .expect("Failed to configure the touch I²C bus")
+    .map_err(|error| format!("cannot configure the touch I²C bus: {error:?}"))?
     .with_sda(pins.touch_data)
     .with_scl(pins.touch_clock);
     let mut controller = Ft6336::new(
@@ -187,18 +206,22 @@ pub(super) fn start(pins: Pins) -> Display {
     }
     let touch: &'static Touch = Box::leak(Box::new(TouchInputDevice::new(controller)));
 
-    Display {
+    Ok(Display {
         screen,
         pointer: Some(touch),
         draw_buffer_pixels: WIDTH as usize * DRAW_BUFFER_ROWS,
         double_buffered: false,
         byte_swapped_rgb565: true,
         internal_draw_buffers: true,
-    }
+    })
 }
 
 /// Logs what start-up found, once the logger runs.
 pub(super) fn log_report() {
+    if let Some(failure) = critical_section::with(|section| FAILURE.borrow(section).take()) {
+        log::error!("Xila: the screen is off, {failure}; only the console session starts");
+        return;
+    }
     log::information!(
         "Xila: ST7796 panel {WIDTH}x{HEIGHT} on the 8080 bus at {BUS_FREQUENCY_MEGAHERTZ} MHz, backlight on"
     );

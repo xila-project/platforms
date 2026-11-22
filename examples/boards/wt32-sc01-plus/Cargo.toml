@@ -7,6 +7,7 @@ description = "Wireless-Tag's WT32-SC01 Plus (ESP32-S3, 16 MB flash, 2 MB PSRAM,
 
 # The board selects the chip: exactly one chip feature of each Espressif crate.
 [target.'cfg(all(target_os = "none", target_arch = "xtensa"))'.dependencies]
+critical-section = { workspace = true }
 drivers_espressif = { package = "xila-drivers-espressif", path = "../../../drivers/espressif", default-features = false, features = [
   "esp32s3",
   "lcd-i8080",

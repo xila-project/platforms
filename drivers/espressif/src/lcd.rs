@@ -39,10 +39,31 @@ struct BorrowedTransmitBuffer<'a> {
 }
 
 impl<'a> BorrowedTransmitBuffer<'a> {
-    /// Links enough of `descriptors` to cover `data`; `None` if there are too
-    /// few.
+    /// A transfer of no data, for a command without parameters. The LCD_CAM
+    /// always runs a DMA data phase, and the DMA rejects a descriptor whose
+    /// buffer address is not real memory, such as an empty slice's dangling
+    /// pointer. As esp-hal's own `DmaTxBuf` does for an empty write, the
+    /// descriptor points at `target`, in internal SRAM, with a non-zero size
+    /// and a length of zero.
+    fn empty(descriptors: &'a mut [DmaDescriptor], target: &'a [u8; 4]) -> Option<Self> {
+        let descriptor = descriptors.first_mut()?;
+        descriptor.buffer = target.as_ptr().cast_mut();
+        descriptor.set_size(target.len());
+        descriptor.set_length(0);
+        descriptor.next = core::ptr::null_mut();
+        Some(Self {
+            descriptors: core::slice::from_mut(descriptor),
+            data: &target[..0],
+        })
+    }
+
+    /// Links enough of `descriptors` to cover `data`, which must not be
+    /// empty; `None` if there are too few.
     fn new(descriptors: &'a mut [DmaDescriptor], data: &'a [u8]) -> Option<Self> {
-        let count = data.len().div_ceil(DESCRIPTOR_CHUNK_SIZE).max(1);
+        if data.is_empty() {
+            return None;
+        }
+        let count = data.len().div_ceil(DESCRIPTOR_CHUNK_SIZE);
         let descriptors = descriptors.get_mut(..count)?;
         let mut next = core::ptr::null_mut();
         for (index, descriptor) in descriptors.iter_mut().enumerate().rev() {
@@ -71,11 +92,13 @@ unsafe impl DmaTxBuffer for BorrowedTransmitBuffer<'_> {
             descriptor.reset_for_tx(index == last);
         }
         // Push the CPU's writes out of the cache before the DMA reads PSRAM.
-        // SAFETY: writing back cache lines does not change any data.
-        unsafe { DmaAlignedRef::new_unchecked(self.data) }.writeback();
+        if !self.data.is_empty() {
+            // SAFETY: writing back cache lines does not change any data.
+            unsafe { DmaAlignedRef::new_unchecked(self.data) }.writeback();
+        }
         Preparation {
             start: self.descriptors.as_mut_ptr(),
-            accesses_psram: !is_internal(self.data),
+            accesses_psram: !self.data.is_empty() && !is_internal(self.data),
             burst_transfer: BurstConfig::default(),
             check_owner: None,
             auto_write_back: false,
@@ -122,8 +145,14 @@ impl I8080Bus {
     }
 
     fn transfer(&mut self, command: Command<u8>, data: &[u8]) -> Result<(), I8080Error> {
-        let buffer =
-            BorrowedTransmitBuffer::new(self.descriptors, data).ok_or(I8080Error::Unavailable)?;
+        // In internal SRAM: the stack of this call outlives the transfer.
+        let empty_target = [0; 4];
+        let buffer = if data.is_empty() {
+            BorrowedTransmitBuffer::empty(self.descriptors, &empty_target)
+        } else {
+            BorrowedTransmitBuffer::new(self.descriptors, data)
+        }
+        .ok_or(I8080Error::Unavailable)?;
         let i8080 = self.i8080.take().ok_or(I8080Error::Unavailable)?;
         let (result, i8080) = match i8080.send(command, 0, buffer) {
             Ok(transfer) => {

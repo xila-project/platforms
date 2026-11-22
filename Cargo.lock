@@ -6306,6 +6306,7 @@ dependencies = [
 name = "xila-board-wt32-sc01-plus"
 version = "0.1.0"
 dependencies = [
+ "critical-section",
  "esp-bootloader-esp-idf",
  "esp-hal",
  "esp-storage",
