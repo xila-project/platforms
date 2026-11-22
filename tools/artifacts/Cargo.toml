@@ -7,7 +7,7 @@ rust-version.workspace = true
 [dependencies]
 xila-package-manifest = { git = "https://github.com/xila-project/package_manager", branch = "main" }
 wasmparser = "0.228"
-abi_application = { workspace = true }
+xila_version = { workspace = true }
 xila-package-reader = { git = "https://github.com/xila-project/package_manager", branch = "main" }
 xila-package-verification = { git = "https://github.com/xila-project/package_manager", branch = "main", default-features = false, features = [
   "sha256",

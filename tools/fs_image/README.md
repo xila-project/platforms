@@ -35,8 +35,9 @@ from either source:
 
 - **Released bundles** (official images): `tools/prepare_seed.py` downloads the
   archives pinned in [`profiles/bundles.lock.json`](profiles/bundles.lock.json)
-  (URL, version, SHA-256), verifies their identity, ABI, file hashes and
-  publisher signature (`publisher_key`), and extracts complete bundles.
+  (URL, version, SHA-256), verifies their identity, Xila version compatibility,
+  file hashes and publisher signature (`publisher_key`), and extracts complete
+  bundles.
 - **Locally built guests** (Pages demos, Docker, development): translations are
   compiled into each guest, so locale-specific images bundle their own build with
   `tools/bundle_applications.sh <applications-source> <wasm-dir> <output>`, which

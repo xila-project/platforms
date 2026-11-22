@@ -26,7 +26,8 @@ def main() -> None:
         lock = {"applications": {}}
         for app in APPS:
             package = "xila." + app.replace("_", "-")
-            filename = f"{package}-0.1.0-wasm32-wasip1.xpk"
+            version = json.loads((args.applications / f"packaging/{app}.json").read_text())["version"]
+            filename = f"{package}-{version}-wasm32-wasip1.xpk"
             subprocess.run([
                 "python3", str(args.package_manager / "tools/package_wasm.py"),
                 "--wasm-root", str(args.wasm_dir), "--wasm-path", f"{app}.wasm",
@@ -36,7 +37,7 @@ def main() -> None:
                 "--output", str(root / "packages"), "--builder", str(args.builder),
             ], check=True)
             checksum = (root / "packages" / f"{filename}.sha256").read_text().split()[0]
-            lock["applications"][app] = {"name": package, "version": "0.1.0",
+            lock["applications"][app] = {"name": package, "version": version,
                                          "archive": f"packages/{filename}", "sha256": checksum}
         lockfile = root / "bundles.lock.json"
         lockfile.write_text(json.dumps(lock))
@@ -47,8 +48,8 @@ def main() -> None:
         for profile, bundle in (("native", "native"), ("browser", "wasm")):
             packaged = root / f"{profile}-bundles"
             subprocess.run(["python3", str(PLATFORMS / "tools/prepare_seed.py"), "--profile", profile,
-                            "--lockfile", str(lockfile), "--output", str(packaged), "--tool", str(args.preparer),
-                            "--max-abi", "1"], check=True)
+                            "--lockfile", str(lockfile), "--output", str(packaged),
+                            "--tool", str(args.preparer)], check=True)
             for suffix, bundles in (("packaged", packaged), ("direct", direct)):
                 subprocess.run([str(args.fs_image), str(root / f"{profile}-{suffix}.img"), "16777216",
                                 "--bundle", bundle, "--bundles-dir", str(bundles)], check=True)
@@ -60,7 +61,7 @@ def main() -> None:
         (root / "bad.json").write_text(json.dumps(bad))
         result = subprocess.run(["python3", str(PLATFORMS / "tools/prepare_seed.py"), "--profile", "native",
                                  "--lockfile", str(root / "bad.json"), "--output", str(root / "invalid"),
-                                 "--tool", str(args.preparer), "--max-abi", "1"])
+                                 "--tool", str(args.preparer)])
         if result.returncode == 0 or (root / "invalid").exists():
             raise SystemExit("invalid checksum was not rejected cleanly")
 

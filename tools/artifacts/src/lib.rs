@@ -1,6 +1,10 @@
 use tar_no_std::TarArchiveRef;
-use xila_package_manifest::{MANIFEST_PATH, SIGNATURE_PATH};
+use xila_package_manifest::{MANIFEST_PATH, SIGNATURE_PATH, XilaVersion};
 use xila_package_verification::{ContentVerifier, PublicKey};
+
+/// The Xila version of the Core revision compiled into this tool.
+pub const RUNNING_XILA_VERSION: XilaVersion =
+    XilaVersion::new(xila_version::RUNNING.major, xila_version::RUNNING.minor);
 
 /// One file of an extracted bundle, at its bundle-relative path.
 pub struct BundleFile {
@@ -8,21 +12,18 @@ pub struct BundleFile {
     pub bytes: Vec<u8>,
 }
 
-/// Verify a released archive against a pinned digest, identity and ABI (and
-/// its publisher signature when `publisher` is given), then return every file
-/// of the bundle it contains: `.xila/manifest.json`, `.xila/manifest.sig` when
-/// signed, and each declared payload. Extracting them yields a ready bundle.
+/// Verify a released archive against a pinned digest, identity and the running
+/// Xila version (and its publisher signature when `publisher` is given), then
+/// return every file of the bundle it contains: `.xila/manifest.json`,
+/// `.xila/manifest.sig` when signed, and each declared payload. Extracting them
+/// yields a ready bundle.
 pub fn prepare(
     bytes: &[u8],
     name: &str,
     version: &str,
-    max_abi: u32,
     digest: [u8; 32],
     publisher: Option<&PublicKey>,
 ) -> Result<Vec<BundleFile>, &'static str> {
-    if max_abi > abi_application::APPLICATION_ABI_VERSION {
-        return Err("requested ABI exceeds this runtime version");
-    }
     let mut verifier =
         ContentVerifier::new(bytes.len() as u64, digest).map_err(|_| "invalid size")?;
     verifier.update(bytes).map_err(|_| "invalid archive size")?;
@@ -33,12 +34,11 @@ pub fn prepare(
             .map_err(|_| "invalid package or publisher signature")?,
         None => xila_package_reader::inspect_unsigned(bytes).map_err(|_| "invalid package")?,
     };
-    if manifest.name != name
-        || manifest.version != version
-        || manifest.target != "wasm32-wasip1"
-        || manifest.minimum_xila_abi > max_abi
-    {
+    if manifest.name != name || manifest.version != version || manifest.target != "wasm32-wasip1" {
         return Err("package is incompatible");
+    }
+    if !xila_package_manifest::compatible(manifest.xila_version, RUNNING_XILA_VERSION) {
+        return Err("package requires a Xila version incompatible with this runtime");
     }
     let entrypoint = manifest
         .application
@@ -92,9 +92,11 @@ pub fn prepare(
 
 #[cfg(test)]
 mod tests {
-    use super::prepare;
+    use super::{RUNNING_XILA_VERSION, prepare};
     use ed25519_dalek::{Signer, SigningKey};
-    use xila_package_manifest::{Application, FORMAT_VERSION, Manifest, ManifestFile, SCHEMA_URL};
+    use xila_package_manifest::{
+        Application, FORMAT_VERSION, Manifest, ManifestFile, SCHEMA_URL, XilaVersion,
+    };
     use xila_package_verification::PublicKey;
     use xila_package_writer::{SourceFile, write_package};
 
@@ -111,14 +113,14 @@ mod tests {
         sha256(bytes).iter().map(|b| format!("{b:02x}")).collect()
     }
 
-    fn manifest(target: &str, payload: &[u8]) -> Manifest {
+    fn manifest(target: &str, xila_version: XilaVersion, payload: &[u8]) -> Manifest {
         Manifest {
             schema: Some(SCHEMA_URL.into()),
             format_version: FORMAT_VERSION,
             name: "xila.clock".into(),
             version: "1.0.0".into(),
             target: target.into(),
-            minimum_xila_abi: 1,
+            xila_version,
             capabilities: vec![],
             files: vec![
                 ManifestFile {
@@ -142,8 +144,13 @@ mod tests {
         }
     }
 
-    fn package(target: &str, payload: &[u8], signer: Option<&SigningKey>) -> Vec<u8> {
-        let manifest = manifest(target, payload);
+    fn package_for_xila(
+        target: &str,
+        xila_version: XilaVersion,
+        payload: &[u8],
+        signer: Option<&SigningKey>,
+    ) -> Vec<u8> {
+        let manifest = manifest(target, xila_version, payload);
         let signature = signer.map(|key| {
             let raw = xila_package_manifest::encode(&manifest).unwrap();
             let mut buffer = vec![0; raw.len() + 64];
@@ -171,10 +178,14 @@ mod tests {
         archive
     }
 
+    fn package(target: &str, payload: &[u8], signer: Option<&SigningKey>) -> Vec<u8> {
+        package_for_xila(target, RUNNING_XILA_VERSION, payload, signer)
+    }
+
     #[test]
     fn extracts_the_complete_bundle() {
         let bytes = package("wasm32-wasip1", WASM, None);
-        let files = prepare(&bytes, "xila.clock", "1.0.0", 1, sha256(&bytes), None).unwrap();
+        let files = prepare(&bytes, "xila.clock", "1.0.0", sha256(&bytes), None).unwrap();
         let paths: Vec<_> = files.iter().map(|file| file.path.as_str()).collect();
         assert_eq!(
             paths,
@@ -197,34 +208,15 @@ mod tests {
         };
         let signed = package("wasm32-wasip1", WASM, Some(&signer));
         let digest = sha256(&signed);
-        let files = prepare(
-            &signed,
-            "xila.clock",
-            "1.0.0",
-            1,
-            digest,
-            Some(&key(&signer)),
-        )
-        .unwrap();
+        let files = prepare(&signed, "xila.clock", "1.0.0", digest, Some(&key(&signer))).unwrap();
         assert!(files.iter().any(|file| file.path == ".xila/manifest.sig"));
-        assert!(
-            prepare(
-                &signed,
-                "xila.clock",
-                "1.0.0",
-                1,
-                digest,
-                Some(&key(&other))
-            )
-            .is_err()
-        );
+        assert!(prepare(&signed, "xila.clock", "1.0.0", digest, Some(&key(&other))).is_err());
         let unsigned = package("wasm32-wasip1", WASM, None);
         assert!(
             prepare(
                 &unsigned,
                 "xila.clock",
                 "1.0.0",
-                1,
                 sha256(&unsigned),
                 Some(&key(&signer))
             )
@@ -233,24 +225,38 @@ mod tests {
     }
 
     #[test]
-    fn verifies_identity_target_abi_and_integrity_before_extracting() {
+    fn verifies_identity_target_xila_version_and_integrity_before_extracting() {
         let bytes = package("wasm32-wasip1", WASM, None);
         let expected = sha256(&bytes);
-        assert!(prepare(&bytes, "xila.clock", "1.0.0", 1, expected, None).is_ok());
-        assert!(prepare(&bytes, "xila.other", "1.0.0", 1, expected, None).is_err());
-        assert!(prepare(&bytes, "xila.clock", "2.0.0", 1, expected, None).is_err());
-        assert!(prepare(&bytes, "xila.clock", "1.0.0", 0, expected, None).is_err());
-        assert!(prepare(&bytes, "xila.clock", "1.0.0", 2, expected, None).is_err());
+        assert!(prepare(&bytes, "xila.clock", "1.0.0", expected, None).is_ok());
+        assert!(prepare(&bytes, "xila.other", "1.0.0", expected, None).is_err());
+        assert!(prepare(&bytes, "xila.clock", "2.0.0", expected, None).is_err());
+        for incompatible in [
+            XilaVersion::new(
+                RUNNING_XILA_VERSION.major,
+                RUNNING_XILA_VERSION.minor.wrapping_add(1),
+            ),
+            XilaVersion::new(
+                RUNNING_XILA_VERSION.major.wrapping_add(1),
+                RUNNING_XILA_VERSION.minor,
+            ),
+        ] {
+            let future = package_for_xila("wasm32-wasip1", incompatible, WASM, None);
+            assert_eq!(
+                prepare(&future, "xila.clock", "1.0.0", sha256(&future), None).err(),
+                Some("package requires a Xila version incompatible with this runtime")
+            );
+        }
         let mut corrupt = bytes.clone();
         let index = corrupt.windows(4).position(|w| w == b"\0asm").unwrap();
         corrupt[index] ^= 1;
-        assert!(prepare(&corrupt, "xila.clock", "1.0.0", 1, expected, None).is_err());
-        assert!(prepare(&corrupt, "xila.clock", "1.0.0", 1, sha256(&corrupt), None).is_err());
+        assert!(prepare(&corrupt, "xila.clock", "1.0.0", expected, None).is_err());
+        assert!(prepare(&corrupt, "xila.clock", "1.0.0", sha256(&corrupt), None).is_err());
         for package in [
             package("wasm32-wasip1", b"abc", None),
             package("wasm32-unknown-unknown", WASM, None),
         ] {
-            assert!(prepare(&package, "xila.clock", "1.0.0", 1, sha256(&package), None).is_err());
+            assert!(prepare(&package, "xila.clock", "1.0.0", sha256(&package), None).is_err());
         }
     }
 }
