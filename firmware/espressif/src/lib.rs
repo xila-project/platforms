@@ -18,7 +18,7 @@
 
 extern crate alloc;
 
-#[cfg(feature = "graphics")]
+#[cfg(any(feature = "graphics", feature = "wasm"))]
 mod applications;
 mod board;
 mod flash;
@@ -61,6 +61,9 @@ pub const SHELL_PATH: &str = "/system/executables/command_line_shell";
 
 /// The graphical shell, mounted when the firmware has the `graphics` feature.
 pub const GRAPHICAL_SHELL_PATH: &str = "/system/executables/graphical_shell";
+
+/// The WebAssembly runtime, mounted when the firmware has the `wasm` feature.
+pub const WASM_PATH: &str = "/applications/executables/wasm";
 
 /// How long the startup task waits for the boot report to reach the console
 /// before it starts the sessions: at most 50 checks, 2 seconds in all.
@@ -376,7 +379,7 @@ async fn start(task_manager: &'static task::Manager) {
     if let Err(error) = mounted {
         log::error!("Xila: cannot mount the shells: {error}");
     }
-    #[cfg(feature = "graphics")]
+    #[cfg(any(feature = "graphics", feature = "wasm"))]
     applications::mount(executable_context, virtual_file_system, task).await;
 
     task_manager

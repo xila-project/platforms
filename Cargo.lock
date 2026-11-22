@@ -6698,6 +6698,7 @@ dependencies = [
  "xila-graphical-shell",
  "xila-settings",
  "xila-terminal",
+ "xila-wasm",
 ]
 
 [[package]]

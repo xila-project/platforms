@@ -102,9 +102,10 @@ The 3.5-inch 480 × 320 ST7796 panel runs on the 8-bit 8080 bus of the chip's
 LCD_CAM peripheral, with DMA, through `mipidsi`: each LVGL flush is one
 `set_pixels_raw` call, one address window and one DMA transfer of LVGL's draw
 buffer (40 rows, in internal SRAM, rendered in the panel's byte order). The
-FT6336U touch panel is polled over I²C, and the backlight is on GPIO45. Two
-sessions run side by side, each with its own login: the graphical shell on the
-screen and the command-line shell on the USB console. The pins come from
+FT6336U touch panel is polled over I²C, and the backlight is on GPIO45. Two sessions run side by side, each with its own login: the graphical shell on the
+screen and the command-line shell on the USB console. The firmware also mounts the
+WebAssembly runtime at `/applications/executables/wasm` with lazy function
+translation by default. The pins come from
 Wireless-Tag's datasheet; `src/firmware/screen.rs` lists them.
 
 From the repository root, after `mise run setup:espressif-rust`, install the

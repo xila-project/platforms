@@ -9,6 +9,9 @@
 //! - Screen: a 480 × 320 ST7796 panel on the 8080 bus, its backlight and an
 //!   FT6336U touch panel, in [`screen`]. The graphical shell runs on it, and
 //!   the command-line shell on the console, as two sessions.
+//! - WebAssembly runtime: mounted at `/applications/executables/wasm` with lazy
+//!   function translation by default; large Wasmi buffers (4096 bytes and up,
+//!   including guest linear memory and module source) land in PSRAM.
 
 use core::{fmt::Write, panic::PanicInfo};
 
