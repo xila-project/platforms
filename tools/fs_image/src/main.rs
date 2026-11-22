@@ -3,15 +3,41 @@
 //! (`xila-tools-image`). Cargo.lock pins that library with the firmware's Core,
 //! so the images always match the Core revision that mounts them.
 use std::{env, error::Error, path::PathBuf, process};
-use tools_image::{Profile, ProfileFile};
+use tools_image::{Geometry, Layout, Profile, ProfileFile};
 
 tools_image::instantiate_global_allocator!();
+
+/// Default block size of raw flash partition images (Espressif flash erase size).
+const DEFAULT_RAW_BLOCK_SIZE: u32 = 4096;
 
 fn main() {
     if let Err(error) = run() {
         eprintln!("fs_image: {error}");
         process::exit(1);
     }
+}
+
+fn parse_layout(value: &str) -> Result<Layout, Box<dyn Error>> {
+    match value {
+        "mbr" => Ok(Layout::Mbr),
+        "raw" => Ok(Layout::Raw),
+        _ => Err("--layout must be mbr or raw".into()),
+    }
+}
+
+fn resolve_geometry(
+    layout: Option<Layout>,
+    block_size: Option<u32>,
+) -> Result<Geometry, Box<dyn Error>> {
+    let layout = layout.unwrap_or(Layout::Mbr);
+    let geometry = match (layout, block_size) {
+        (Layout::Mbr, None) => Geometry::MBR,
+        (Layout::Raw, None) => Geometry::raw(DEFAULT_RAW_BLOCK_SIZE),
+        (Layout::Mbr, Some(block_size)) => Geometry { layout, block_size },
+        (Layout::Raw, Some(block_size)) => Geometry::raw(block_size),
+    };
+    geometry.validate()?;
+    Ok(geometry)
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
@@ -32,6 +58,8 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut bundle = None;
     let mut bundles = None;
     let mut native_runtime = None;
+    let mut layout = None;
+    let mut block_size = None;
     while let Some(flag) = arguments.next() {
         match flag.to_str() {
             Some("--root") => {
@@ -40,7 +68,11 @@ fn run() -> Result<(), Box<dyn Error>> {
                 ))
             }
             Some("--bundle") => {
-                bundle = Some(arguments.next().ok_or("--bundle requires native or wasm")?)
+                bundle = Some(
+                    arguments
+                        .next()
+                        .ok_or("--bundle requires native, wasm or wt32-sc01-plus")?,
+                )
             }
             Some("--bundles-dir") => {
                 bundles = Some(PathBuf::from(
@@ -57,9 +89,26 @@ fn run() -> Result<(), Box<dyn Error>> {
                     value.to_str().ok_or("invalid native runtime")?,
                 )?)
             }
+            Some("--layout") => {
+                let value = arguments.next().ok_or("--layout requires mbr or raw")?;
+                layout = Some(parse_layout(value.to_str().ok_or("invalid layout")?)?)
+            }
+            Some("--block-size") => {
+                let value = arguments
+                    .next()
+                    .ok_or("--block-size requires a block size in bytes")?;
+                block_size = Some(
+                    value
+                        .to_str()
+                        .ok_or("invalid block size")?
+                        .parse::<u32>()
+                        .map_err(|_| "--block-size must be a positive integer")?,
+                )
+            }
             _ => return Err("unknown argument".into()),
         }
     }
+    let geometry = resolve_geometry(layout, block_size)?;
     let output = match (bundle, bundles) {
         (Some(name), Some(directory)) if root.is_none() => {
             let name = name.to_str().ok_or("invalid bundle")?;
@@ -69,23 +118,31 @@ fn run() -> Result<(), Box<dyn Error>> {
             let profile = profile(name, native_runtime.unwrap_or_else(NativeRuntime::host))?;
             let staging = tools_image::stage(&profile, &directory)?;
             println!("Prepared {name} bundle: {}", profile.applications.join(","));
-            tools_image::build(&output, size, Some(staging.path()))?
+            tools_image::build_with(&output, size, Some(staging.path()), geometry)?
         }
         (None, None) if native_runtime.is_none() => {
-            tools_image::build(&output, size, root.as_deref())?
+            tools_image::build_with(&output, size, root.as_deref(), geometry)?
         }
         _ => {
             return Err(
-                "use --root or --bundle native|wasm --bundles-dir <directory> [--native-runtime unix|windows]"
+                "use --root or --bundle native|wasm|wt32-sc01-plus --bundles-dir <directory> [--native-runtime unix|windows] [--layout mbr|raw] [--block-size <bytes>]"
                     .into(),
             );
         }
     };
-    println!(
-        "Verified Xila MBR, LittleFS contents and metadata: {} ({} bytes)",
-        output.display(),
-        size
-    );
+    match geometry.layout {
+        Layout::Mbr => println!(
+            "Verified Xila MBR, LittleFS contents and metadata: {} ({} bytes)",
+            output.display(),
+            size
+        ),
+        Layout::Raw => println!(
+            "Verified raw LittleFS ({}-byte blocks), contents and metadata: {} ({} bytes)",
+            geometry.block_size,
+            output.display(),
+            size
+        ),
+    }
     Ok(())
 }
 
@@ -126,8 +183,8 @@ impl NativeRuntime {
     }
 }
 
-/// Platforms' seed profile `native` or `wasm` (the browser profile).
-/// `native_runtime` only affects the `native` profile.
+/// Platforms' seed profile: `native`, `wasm` (the browser profile) or
+/// `wt32-sc01-plus`. `native_runtime` only affects the `native` profile.
 fn profile(name: &str, native_runtime: NativeRuntime) -> Result<Profile, Box<dyn Error>> {
     let (applications, shortcuts) = match name {
         "native" => (
@@ -138,7 +195,11 @@ fn profile(name: &str, native_runtime: NativeRuntime) -> Result<Profile, Box<dyn
             include_str!("../profiles/browser.txt"),
             include_str!("../profiles/browser-shortcuts.txt"),
         ),
-        _ => return Err("bundle must be native or wasm".into()),
+        "wt32-sc01-plus" => (
+            include_str!("../profiles/wt32-sc01-plus.txt"),
+            include_str!("../profiles/wt32-sc01-plus-shortcuts.txt"),
+        ),
+        _ => return Err("bundle must be native, wasm or wt32-sc01-plus".into()),
     };
     // Native applications are linked into the runtime; only their shortcuts
     // are seeded. The Debug application needs the control transport of the
@@ -233,5 +294,141 @@ mod tests {
         );
         assert!(NativeRuntime::parse("linux").is_err());
         assert_eq!(NativeRuntime::host() == NativeRuntime::Unix, cfg!(unix));
+    }
+
+    #[test]
+    fn geometry_resolution_matches_layout_defaults_and_rejects_invalid_values() {
+        assert_eq!(resolve_geometry(None, None).unwrap(), Geometry::MBR);
+        assert_eq!(
+            resolve_geometry(Some(Layout::Raw), None).unwrap(),
+            Geometry::raw(4096)
+        );
+        assert_eq!(
+            resolve_geometry(Some(Layout::Raw), Some(512)).unwrap(),
+            Geometry::raw(512)
+        );
+        assert!(resolve_geometry(Some(Layout::Mbr), Some(4096)).is_err());
+        assert!(resolve_geometry(Some(Layout::Raw), Some(3000)).is_err());
+        assert!(parse_layout("other").is_err());
+    }
+
+    #[test]
+    fn wt32_sc01_plus_profile_and_raw_image_carry_bundles_shortcuts_registry_and_seed_marker() {
+        use file_system::{AccessFlags, BaseOperations, Context, FileSystemOperations};
+        use std::fs;
+
+        let board_profile = profile("wt32-sc01-plus", NativeRuntime::Unix).unwrap();
+        assert_eq!(board_profile.applications, ["calculator", "clock"]);
+        let shortcut_names: Vec<&str> = board_profile
+            .shortcuts
+            .iter()
+            .map(|file| file.name.as_str())
+            .collect();
+        assert_eq!(
+            shortcut_names,
+            [
+                "activity.json",
+                "file_manager.json",
+                "settings.json",
+                "terminal.json",
+            ]
+        );
+        assert_eq!(board_profile.repositories[0].name, "xila.json");
+
+        let root = env::temp_dir().join(format!("xila-fs-image-wt32-test-{}", process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let bundles = root.join("bundles");
+        for (package, executable) in [
+            ("xila.calculator", "calculator.wasm"),
+            ("xila.clock", "clock.wasm"),
+        ] {
+            let bundle = bundles.join(package);
+            fs::create_dir_all(bundle.join(".xila")).unwrap();
+            fs::create_dir_all(bundle.join("executables")).unwrap();
+            fs::write(bundle.join(".xila/manifest.json"), b"{}").unwrap();
+            fs::write(bundle.join("shortcut.json"), b"{}").unwrap();
+            fs::write(bundle.join("executables").join(executable), b"\0asm").unwrap();
+        }
+
+        let image_path = root.join("storage.img");
+        let partition_size: u64 = 3312 * 4096;
+        let geometry = Geometry::raw(4096);
+        let staging = tools_image::stage(&board_profile, &bundles).unwrap();
+        tools_image::build_with(&image_path, partition_size, Some(staging.path()), geometry)
+            .unwrap();
+        drop(staging);
+
+        let image_bytes = fs::read(&image_path).unwrap();
+        assert_eq!(image_bytes.len() as u64, partition_size);
+        assert_ne!(image_bytes[510..512], [0x55, 0xAA]);
+
+        let drive: &'static tools_image::FileDrive = Box::leak(Box::new(
+            tools_image::FileDrive::open_with_block_size(&image_path, 4096)
+                .unwrap()
+                .with_flash_erase(),
+        ));
+        let file_system =
+            little_fs::FileSystem::new(drive, little_fs::Options::new(256).set_block_cycles(500))
+                .unwrap();
+
+        let read_file = |path: &str| -> Vec<u8> {
+            let mut context = Context::new_empty();
+            file_system
+                .lookup_file(&mut context, path.as_ref(), AccessFlags::Read.into())
+                .unwrap();
+            let mut output = Vec::new();
+            let mut chunk = [0u8; 256];
+            loop {
+                let count = file_system
+                    .read_sync(&mut context, &mut chunk, output.len() as u64)
+                    .unwrap();
+                if count == 0 {
+                    break;
+                }
+                output.extend_from_slice(&chunk[..count]);
+            }
+            file_system.close(&mut context).unwrap();
+            output
+        };
+
+        assert_eq!(
+            read_file("/system/accounts/.seed-pending"),
+            b"xila-seed-v1\n"
+        );
+        assert!(
+            !read_file("/configuration/shared/applications/shortcuts/activity.json").is_empty()
+        );
+        assert!(
+            !read_file("/configuration/shared/applications/shortcuts/file_manager.json").is_empty()
+        );
+        assert!(
+            !read_file("/configuration/shared/applications/shortcuts/settings.json").is_empty()
+        );
+        assert!(
+            !read_file("/configuration/shared/applications/shortcuts/terminal.json").is_empty()
+        );
+        assert!(!read_file("/configuration/system/packages/repositories/xila.json").is_empty());
+        assert_eq!(
+            read_file("/applications/bundles/xila.calculator/executables/calculator.wasm"),
+            b"\0asm"
+        );
+        assert_eq!(
+            read_file("/applications/bundles/xila.clock/executables/clock.wasm"),
+            b"\0asm"
+        );
+        let mut missing_debug = Context::new_empty();
+        assert!(
+            file_system
+                .lookup_file(
+                    &mut missing_debug,
+                    "/configuration/shared/applications/shortcuts/debug.json".as_ref(),
+                    AccessFlags::Read.into()
+                )
+                .is_err()
+        );
+
+        drop(file_system);
+        drive.close();
+        let _ = fs::remove_dir_all(&root);
     }
 }

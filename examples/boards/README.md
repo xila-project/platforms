@@ -136,5 +136,21 @@ and touch controller lines, the heap report and the `User name:` prompt.
 Once the shell session starts, the console shows only warnings and errors from
 the log, a few per second at most, so that they do not bury the session.
 
+To seed the `storage` partition with the native application shortcuts
+(Activity, File manager, Settings and Terminal), the official package registry,
+and the Calculator and Clock WebAssembly application bundles, build the raw
+4096-byte-block LittleFS image (`13,565,952` bytes) and write it at `0x310000`
+(warning: this replaces existing contents of the `storage` partition):
+
+```sh
+mise run image:wt32-sc01-plus
+mise run run:espflash -- write-bin --chip esp32s3 --port "$FLASH_PORT" \
+  --flash-size 16mb --flash-mode dio 0x310000 target/seed/wt32-sc01-plus/storage.img
+```
+
+The seeded image carries the first-installation marker so the firmware creates
+the default `administrator` account (empty password) on first boot without
+reformatting the partition.
+
 [board]: https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32p4/esp32-p4x-function-ev-board/user_guide.html
 [entropy]: https://github.com/esp-rs/esp-hal/issues/5982

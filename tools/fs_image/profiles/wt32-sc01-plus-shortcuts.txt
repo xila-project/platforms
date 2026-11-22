@@ -1,0 +1,4 @@
+activity
+file_manager
+settings
+terminal

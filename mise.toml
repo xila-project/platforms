@@ -116,6 +116,23 @@ fi
 cargo run --locked -p xila-fs-image -- target/seed/browser/seed.img 16777216 --bundle wasm --bundles-dir "$bundles"
 '''
 
+[tasks."image:wt32-sc01-plus"]
+description = "Create a raw 4096-byte LittleFS storage image for the WT32-SC01 Plus from bundles.lock.json, or from XILA_BUNDLES_DIR"
+run = '''
+set -eu
+mkdir -p target/seed/wt32-sc01-plus
+bundles="${XILA_BUNDLES_DIR:-}"
+if [ -z "$bundles" ]; then
+  bundles=target/seed/wt32-sc01-plus/bundles
+  rm -rf "$bundles"
+  cargo build --locked -p xila-prepare-applications
+  python3 tools/prepare_seed.py --profile wt32-sc01-plus --output "$bundles" \
+    --tool "${CARGO_TARGET_DIR:-target}/debug/xila-prepare-applications"
+fi
+cargo run --locked -p xila-fs-image -- target/seed/wt32-sc01-plus/storage.img 13565952 \
+  --layout raw --block-size 4096 --bundle wt32-sc01-plus --bundles-dir "$bundles"
+'''
+
 [tasks."firmware:test"]
 description = "Test the native firmware simulator and VFS integration"
 tools."github:nextest-rs/nextest" = "cargo-nextest-{{ vars.nextest_version }}"

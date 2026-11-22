@@ -6734,6 +6734,8 @@ dependencies = [
 name = "xila-fs-image"
 version = "0.1.0"
 dependencies = [
+ "xila-file-system",
+ "xila-little-fs",
  "xila-tools-image",
 ]
 
@@ -7180,7 +7182,7 @@ dependencies = [
 [[package]]
 name = "xila-tools-image"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/tools?branch=main#32ee9090752ae6027e736e27f1f8839ccea9d7f2"
+source = "git+https://github.com/xila-project/tools?branch=main#421e68ec4bec2961d0d4678d4e32337b4cddfd30"
 dependencies = [
  "critical-section",
  "embassy-executor",
