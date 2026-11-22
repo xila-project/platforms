@@ -29,6 +29,17 @@ model contents are verified by Nanoglia. The shared immutable graph retains the 
 until the last owner drops. Xila's Arc implementation also supports targets without pointer
 atomics. The backend reports only graphs fitting Core's six-dimension VFS metadata layout.
 
+## Backend information node
+
+`mount_backend_information(vfs, task, "/devices/nn/backend")` registers a read-only text node that
+reports which kernel backends this build includes, fastest first and separated by commas, with no
+trailing newline: `esp-nn`, `cmsis-nn` and `kernels` (the portable Rust kernels), for example
+`cmsis-nn,kernels`. Writes fail with `Unsupported`. The list does not depend on a loaded model.
+For each operator Nanoglia picks the first listed backend that supports it, so the list is what a
+model may use rather than what it did use: an integer-only accelerated backend does not run a
+float32 model, which falls back to the portable kernels. Applications must treat the node as
+optional, since runtimes are free not to mount it.
+
 ## Runtime model loading protocol
 
 When a loader device is mounted (for example at `/devices/nn/cpu`), applications dynamically load models:

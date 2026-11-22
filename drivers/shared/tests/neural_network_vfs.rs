@@ -195,3 +195,32 @@ async fn loader_device_loads_model_in_chunks_and_runs_inference() {
     drop(small_file);
     vfs.unmount("/nn_small", false).await.unwrap();
 }
+
+#[task::test]
+async fn backend_information_node_lists_backends_and_is_read_only() {
+    let tasks = Box::leak(Box::new(task::Manager::new()));
+    let users = Box::leak(Box::new(users::Manager::new()));
+    let time = Box::leak(Box::new(time::Manager::new(&testing::TimeDevice).unwrap()));
+    let task = tasks.get_current_task_identifier().await;
+    let disk = MemoryDevice::<512>::new_static(512 * 1024);
+    little_fs::FileSystem::format(disk, little_fs::Options::new(256)).unwrap();
+    let fs = little_fs::FileSystem::new(disk, little_fs::Options::new(256)).unwrap();
+    let vfs = virtual_file_system::initialize(tasks, users, time, fs).unwrap();
+    drivers_shared::devices::neural_network::mount_backend_information(&vfs, task, "/backend")
+        .await
+        .unwrap();
+
+    let expected = drivers_shared::devices::neural_network::backend_names();
+    assert!(expected.split(',').next() == Some("cmsis-nn"));
+    let mut file = File::open(&vfs, task, "/backend", Flags::from(AccessFlags::READ_WRITE))
+        .await
+        .unwrap();
+    let mut buffer = [0u8; 64];
+    let length = file.read(&mut buffer).await.unwrap();
+    assert_eq!(&buffer[..length], expected.as_bytes());
+    // The end of the text reads as an empty read, and the node rejects writes.
+    assert_eq!(file.read(&mut buffer).await.unwrap(), 0);
+    assert!(file.write(b"x").await.is_err());
+    drop(file);
+    vfs.unmount("/backend", false).await.unwrap();
+}

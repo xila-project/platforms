@@ -1,6 +1,8 @@
 //! Nanoglia model ownership and accelerator selection for platform assemblies.
 use drivers_neural_network::{LoaderDevice, MAX_TENSOR_RANK, NeuralNetworkDevice};
-use file_system::{IoErrorKind, Result};
+use file_system::{
+    BaseOperations, CharacterDevice, Context, IoErrorKind, MountOperations, Result, Size,
+};
 use nanoglia::{Encoding, Graph, GraphExecutionContext, GraphHandle, OwnedGraph};
 use neural_network::{
     Backend, Loader, ModelBuffer as CoreModelBuffer, ModelEncoding, QuantizationEntry, TensorInfo,
@@ -193,6 +195,81 @@ pub async fn mount_loader(
     maximum_model_size: usize,
 ) -> virtual_file_system::Result<()> {
     vfs.mount_character_device(task, path, from_loader(target, maximum_model_size))
+        .await
+}
+
+/// Names of the kernel backends compiled into this build, fastest first, separated by commas
+/// (for example `cmsis-nn,kernels`).
+///
+/// For every operator Nanoglia uses the first backend that supports it, so the list is what a
+/// model may use, not a promise that every operator runs on the first entry: a float32 model on a
+/// build with an integer-only accelerated backend still runs on the portable Rust kernels.
+pub fn backend_names() -> alloc::string::String {
+    let mut names = alloc::string::String::new();
+    for backend in nanoglia::Registry::default().backends() {
+        if !names.is_empty() {
+            names.push(',');
+        }
+        names.push_str(backend.name());
+    }
+    names
+}
+
+/// Read-only character device whose content is the [`backend_names`] text, without a trailing
+/// newline. It does not depend on a loaded model, so it can be read at any time and independently
+/// of the loader or model devices.
+pub struct BackendInformationDevice;
+
+impl BaseOperations for BackendInformationDevice {
+    fn read(
+        &self,
+        _context: &mut Context,
+        _cx: &mut core::task::Context<'_>,
+        buffer: &mut [u8],
+        absolute_position: Size,
+    ) -> core::task::Poll<Result<usize>> {
+        file_system::ready(|| {
+            let names = backend_names();
+            let remaining = names
+                .as_bytes()
+                .get(usize::try_from(absolute_position).unwrap_or(usize::MAX)..)
+                .unwrap_or(&[]);
+            let length = remaining.len().min(buffer.len());
+            buffer[..length].copy_from_slice(&remaining[..length]);
+            Ok(length)
+        })
+    }
+
+    fn write(
+        &self,
+        _context: &mut Context,
+        _cx: &mut core::task::Context<'_>,
+        _buffer: &[u8],
+        _absolute_position: Size,
+    ) -> core::task::Poll<Result<usize>> {
+        file_system::ready(|| Err(IoErrorKind::Unsupported))
+    }
+
+    fn clone_context(&self, _context: &Context) -> Result<Context> {
+        Ok(Context::new::<()>(None))
+    }
+}
+
+impl MountOperations for BackendInformationDevice {
+    fn unmount(&self) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl CharacterDevice for BackendInformationDevice {}
+
+/// Register the read-only backend information node (conventionally `/devices/nn/backend`).
+pub async fn mount_backend_information(
+    vfs: &virtual_file_system::VirtualFileSystem,
+    task: task::TaskIdentifier,
+    path: impl AsRef<file_system::Path>,
+) -> virtual_file_system::Result<()> {
+    vfs.mount_character_device(task, path, BackendInformationDevice)
         .await
 }
 
