@@ -147,7 +147,7 @@ impl ExecutableMemory {
 
 /// Make the instructions written to `[start, start + size)` visible to instruction
 /// fetch.
-fn synchronize_instruction_fetch(start: usize, size: usize) {
+fn synchronize_instruction_fetch(start: usize, size: usize) -> Result<(), Error> {
     #[cfg(feature = "esp32p4")]
     {
         const CACHE_MAP_L1_ICACHE_0: u32 = 1 << 0;
@@ -155,18 +155,25 @@ fn synchronize_instruction_fetch(start: usize, size: usize) {
         const CACHE_MAP_L1_DCACHE: u32 = 1 << 4;
 
         unsafe extern "C" {
-            fn Cache_WriteBack_Addr(bus: u32, address: u32, size: u32);
-            fn Cache_Invalidate_Addr(bus: u32, address: u32, size: u32);
+            fn Cache_WriteBack_Addr(bus: u32, address: u32, size: u32) -> core::ffi::c_int;
+            fn Cache_Invalidate_Addr(bus: u32, address: u32, size: u32) -> core::ffi::c_int;
         }
         // SAFETY: the ROM routines only maintain the caches over the given range,
         // which is mapped internal memory; neither changes its contents.
         unsafe {
-            Cache_WriteBack_Addr(CACHE_MAP_L1_DCACHE, start as u32, size as u32);
-            Cache_Invalidate_Addr(
+            // Order the loader's stores before the ROM starts cache maintenance.
+            core::arch::asm!("fence iorw, iorw", options(nostack));
+            if Cache_WriteBack_Addr(CACHE_MAP_L1_DCACHE, start as u32, size as u32) != 0 {
+                return Err(Error::FinalizationFailed);
+            }
+            if Cache_Invalidate_Addr(
                 CACHE_MAP_L1_ICACHE_0 | CACHE_MAP_L1_ICACHE_1,
                 start as u32,
                 size as u32,
-            );
+            ) != 0
+            {
+                return Err(Error::FinalizationFailed);
+            }
         }
     }
     #[cfg(not(feature = "esp32p4"))]
@@ -174,6 +181,7 @@ fn synchronize_instruction_fetch(start: usize, size: usize) {
 
     // SAFETY: fences have no memory-safety preconditions.
     unsafe { core::arch::asm!("fence", "fence.i", options(nostack)) };
+    Ok(())
 }
 
 // SAFETY: the arena hands out exclusive blocks of the requested layout, which the CPU
@@ -204,8 +212,7 @@ unsafe impl native_loader::ExecutableMemory for ExecutableMemory {
                 return Err(Error::FinalizationFailed);
             }
         }
-        synchronize_instruction_fetch(allocation.as_ptr() as usize, layout.size());
-        Ok(())
+        synchronize_instruction_fetch(allocation.as_ptr() as usize, layout.size())
     }
 
     unsafe fn free(&self, allocation: NonNull<u8>, layout: Layout) {

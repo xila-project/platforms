@@ -15,7 +15,7 @@
 //!
 //! [`finish_writes`]: native_loader::ExecutableMemory::finish_writes
 
-use core::{alloc::Layout, ffi::c_void, ptr::NonNull};
+use core::{alloc::Layout, ptr::NonNull};
 
 use libc::{
     _SC_PAGE_SIZE, MAP_ANONYMOUS, MAP_FAILED, MAP_PRIVATE, PROT_EXEC, PROT_NONE, PROT_READ,
@@ -46,6 +46,19 @@ fn page_size() -> usize {
         .ok()
         .filter(|size| size.is_power_of_two())
         .unwrap_or(4096)
+}
+
+/// Linux can implicitly add execute permission to any readable mapping.
+#[cfg(target_os = "linux")]
+fn explicit_execute_permissions() -> bool {
+    // SAFETY: this argument only queries the calling thread's personality.
+    let personality = unsafe { libc::personality(0xffff_ffff) };
+    personality >= 0 && personality & libc::READ_IMPLIES_EXEC == 0
+}
+
+#[cfg(not(target_os = "linux"))]
+fn explicit_execute_permissions() -> bool {
+    true
 }
 
 /// The mapped length of an allocation: its size rounded up to whole pages.
@@ -134,10 +147,10 @@ fn synchronize_instruction_cache(start: *const u8, size: usize) {
     #[cfg(target_vendor = "apple")]
     {
         unsafe extern "C" {
-            fn sys_icache_invalidate(start: *mut c_void, length: usize);
+            fn sys_icache_invalidate(start: *mut core::ffi::c_void, length: usize);
         }
         // SAFETY: the range is mapped and readable.
-        unsafe { sys_icache_invalidate(start as *mut c_void, size) };
+        unsafe { sys_icache_invalidate(start.cast_mut().cast(), size) };
     }
     #[cfg(not(target_vendor = "apple"))]
     {
@@ -191,6 +204,9 @@ fn synchronize_instruction_cache(_start: *const u8, _size: usize) {}
 // instruction cache. Only `free` unmaps.
 unsafe impl native_loader::ExecutableMemory for ExecutableMemory {
     fn allocate(&self, layout: Layout) -> Result<NonNull<u8>, Error> {
+        if !explicit_execute_permissions() {
+            return Err(Error::AllocationFailed);
+        }
         let page_size = page_size();
         let size = mapped_size(layout, page_size).ok_or(Error::AllocationFailed)?;
         // Mappings are page aligned. For a larger alignment, map enough to contain an
@@ -212,21 +228,28 @@ unsafe impl native_loader::ExecutableMemory for ExecutableMemory {
         if pointer == MAP_FAILED {
             return Err(Error::AllocationFailed);
         }
-        let base = pointer as usize;
-        let start = base.next_multiple_of(alignment);
-        let leading = start - base;
+        let Some(allocation) = NonNull::new(pointer.cast::<u8>()) else {
+            // SAFETY: mmap succeeded, but a null address cannot be returned.
+            unsafe { munmap(pointer, reserved) };
+            return Err(Error::AllocationFailed);
+        };
+        let leading = allocation.as_ptr().align_offset(alignment);
         let trailing = excess - leading;
+        // SAFETY: the aligned start lies within the mapping.
+        let aligned = unsafe { allocation.add(leading) };
         // SAFETY: both ranges are whole pages of the mapping above, outside the
-        // returned allocation.
+        // returned allocation. On failure, release only pages still owned here.
         unsafe {
-            if leading > 0 {
-                munmap(pointer, leading);
+            if leading > 0 && munmap(pointer, leading) != 0 {
+                munmap(pointer, reserved);
+                return Err(Error::AllocationFailed);
             }
-            if trailing > 0 {
-                munmap((start + size) as *mut c_void, trailing);
+            if trailing > 0 && munmap(aligned.as_ptr().add(size).cast(), trailing) != 0 {
+                munmap(aligned.as_ptr().cast(), size + trailing);
+                return Err(Error::AllocationFailed);
             }
         }
-        NonNull::new(start as *mut u8).ok_or(Error::AllocationFailed)
+        Ok(aligned)
     }
 
     unsafe fn finish_writes(
@@ -235,6 +258,9 @@ unsafe impl native_loader::ExecutableMemory for ExecutableMemory {
         layout: Layout,
         regions: &mut dyn Iterator<Item = Region>,
     ) -> Result<(), Error> {
+        if !explicit_execute_permissions() {
+            return Err(Error::FinalizationFailed);
+        }
         let page_size = page_size();
         let size = mapped_size(layout, page_size).ok_or(Error::FinalizationFailed)?;
         let mut collected = [Region {
