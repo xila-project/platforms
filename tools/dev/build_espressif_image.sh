@@ -72,8 +72,31 @@ case "$chip" in
     *) echo "Unsupported ESP32 chip: $chip" >&2; exit 2 ;;
 esac
 
-"$root/tools/espflash-$espflash_version/espflash" save-image --skip-update-check \
+# One partition table per flash size; the firmware reads the same file in build.rs.
+partition_table="examples/esp32/partitions_$flash_size.csv"
+test -f "$partition_table" || { echo "Missing partition table $partition_table." >&2; exit 1; }
+
+report="$root/$chip-save-image.log"
+if ! "$root/tools/espflash-$espflash_version/espflash" save-image --skip-update-check \
     --chip "$chip" --flash-size "$flash_size" --flash-mode "$flash_mode" \
-    --partition-table examples/esp32/partitions.csv --partition-table-offset 0x8000 \
-    --merge "$CARGO_TARGET_DIR/$target/release-embedded/esp32_example" "$root/$chip-flash.bin"
+    --partition-table "$partition_table" --partition-table-offset 0x8000 \
+    --merge "$CARGO_TARGET_DIR/$target/release-embedded/esp32_example" "$root/$chip-flash.bin" \
+    > "$report" 2>&1; then
+    cat "$report" >&2
+    echo "Could not build the $chip flash image with $partition_table." >&2
+    exit 1
+fi
+cat "$report"
+
+# Fail clearly when the firmware outgrows its partition, and warn before it does.
+sizes=$(sed -n 's/^App\/part\. size: *\([0-9,]*\)\/\([0-9,]*\) bytes.*/\1 \2/p' "$report")
+test -n "$sizes" || { echo "Could not read the firmware size from espflash." >&2; exit 1; }
+read -r used capacity <<< "${sizes//,/}"
+if (( used > capacity )); then
+    echo "The $chip firmware ($used bytes) does not fit in the factory partition of $partition_table ($capacity bytes)." >&2
+    exit 1
+fi
+if (( used * 3 > capacity * 2 )); then
+    echo "Warning: the $chip firmware uses $used of $capacity bytes; $partition_table should keep at least 50% headroom." >&2
+fi
 echo "Flash image: $root/$chip-flash.bin"
