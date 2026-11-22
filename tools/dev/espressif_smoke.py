@@ -24,15 +24,17 @@ import zlib
 TIMEOUT = 60
 RNG_MARKER = "Xila: RNG "
 LVGL_MARKER = "Xila: LVGL frame flushed"
+SHELL_PROMPT_MARKER = "User name:"
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 # Each marker must appear in this order: the smoke check fails on the first one
 # that is missing, so the failing boot stage is named.
 MARKERS = [
     "Xila ESP32 startup",
-    RNG_MARKER,
     "Xila: LittleFS mounted",
+    RNG_MARKER,
     LVGL_MARKER,
     "Xila heap: ",
-    "Xila: boot smoke ready",
+    SHELL_PROMPT_MARKER,
 ]
 WIDTH, HEIGHT = 160, 120
 
@@ -42,17 +44,18 @@ class SmokeError(Exception):
 
 
 def check_markers(log, chip):
-    lines = log.splitlines()
+    plain = ANSI_ESCAPE.sub("", log)
+    lines = plain.splitlines()
     position = 0
     for marker in MARKERS:
         # The C6 machine lacks the RNG register and virtual RGB panel.
         if chip == "esp32c6" and marker in (RNG_MARKER, LVGL_MARKER):
             continue
         try:
-            position = next(i for i in range(position, len(lines)) if lines[i].startswith(marker)) + 1
+            position = next(i for i in range(position, len(lines)) if marker in lines[i]) + 1
         except StopIteration:
             raise SmokeError(f"missing boot marker {marker!r}") from None
-    heap = re.search(r"^Xila heap: (\d+) bytes used, (\d+) free, (\d+) total", log, re.MULTILINE)
+    heap = re.search(r"Xila heap: (\d+) bytes used, (\d+) free, (\d+) total", plain)
     if heap is None:
         raise SmokeError("malformed heap statistics line")
     used, free, total = map(int, heap.groups())
@@ -131,11 +134,11 @@ def run(chip, qemu, image, runs):
                                     stderr=subprocess.STDOUT)
         try:
             log = ""
-            while "Xila: boot smoke ready" not in log:
+            while SHELL_PROMPT_MARKER not in log:
                 if emulator.poll() is not None:
-                    raise SmokeError(f"QEMU exited with {emulator.returncode} before the boot completed")
+                    raise SmokeError(f"QEMU exited with {emulator.returncode} before the shell prompt appeared")
                 if time.monotonic() > deadline:
-                    raise SmokeError(f"no boot marker after {TIMEOUT} s")
+                    raise SmokeError(f"no shell prompt marker after {TIMEOUT} s")
                 time.sleep(0.2)
                 log = uart.read_text(errors="replace") if uart.exists() else ""
                 if "Xila panic:" in log:
