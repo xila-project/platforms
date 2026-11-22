@@ -64,11 +64,9 @@ case "$chip" in
         flash_mode=dio
         # This is the flash capacity of the ESP32-P4X-Function-EV-Board.
         flash_size=16mb
-        # LittleFS (littlefs2-sys) needs the hard-float flags until the locked
-        # Core includes core#801/#808 (blocked on Applications matching Core's
-        # lvgl-rust-sys revision and package_manager#65).
+        # LittleFS (littlefs2-sys) takes its compiler flags from Core
+        # (core#801, core#808), which exports the single-float ABI of the target.
         CC_riscv32imafc_unknown_none_elf=clang \
-        CFLAGS_riscv32imafc_unknown_none_elf="-march=rv32imafc -mabi=ilp32f" \
             rustup run "$rust_version" cargo "${build_args[@]}" --target "$target" --features esp32p4
         ;;
     *) echo "Unsupported ESP32 chip: $chip" >&2; exit 2 ;;
