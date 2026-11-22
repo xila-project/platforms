@@ -78,7 +78,6 @@ pub struct Ft6336<I2C> {
     i2c: I2C,
     address: u8,
     transform: TouchTransform,
-    last_native_point: Option<(u16, u16)>,
 }
 
 impl<I2C: I2c> Ft6336<I2C> {
@@ -89,7 +88,6 @@ impl<I2C: I2c> Ft6336<I2C> {
             i2c,
             address,
             transform,
-            last_native_point: None,
         }
     }
 
@@ -126,13 +124,9 @@ impl<I2C: I2c> TouchSensor for Ft6336<I2C> {
     type Error = I2C::Error;
 
     fn read(&mut self) -> Result<Option<(i16, i16)>, Self::Error> {
-        let point = self.read_point()?;
-        self.last_native_point = point.map(|point| (point.x, point.y));
-        Ok(point.map(|point| self.transform.apply(point.x, point.y)))
-    }
-
-    fn last_native_point(&self) -> Option<(u16, u16)> {
-        self.last_native_point
+        Ok(self
+            .read_point()?
+            .map(|point| self.transform.apply(point.x, point.y)))
     }
 }
 
@@ -251,7 +245,6 @@ mod tests {
             IDENTITY,
         );
         assert_eq!(controller.read().unwrap(), Some((10, 20)));
-        assert_eq!(controller.last_native_point(), Some((10, 20)));
         assert_eq!(controller.release().transactions, vec![(0x38, 0x02, 5)]);
     }
 

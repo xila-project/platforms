@@ -28,11 +28,21 @@ esp-hal = { version = "=1.2.2", features = ["unstable"] }
 esp-storage = { version = "0.10", features = ["embedded-storage"] }
 xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
 graphical_shell = { package = "xila-graphical-shell", git = "https://github.com/xila-project/applications", branch = "main", optional = true }
+# Native applications for boards with a screen.
+activity = { package = "xila-activity", git = "https://github.com/xila-project/applications", branch = "main", optional = true }
+file_manager = { package = "xila-file-manager", git = "https://github.com/xila-project/applications", branch = "main", optional = true }
+settings = { package = "xila-settings", git = "https://github.com/xila-project/applications", branch = "main", optional = true }
+terminal = { package = "xila-terminal", git = "https://github.com/xila-project/applications", branch = "main", optional = true }
 
 [features]
-# Xila's graphics on the board's screen, and the graphical shell.
+# Xila's graphics on the board's screen, the graphical shell and the native
+# applications: activity, file manager, settings and terminal.
 graphics = [
+  "dep:activity",
+  "dep:file_manager",
   "dep:graphical_shell",
+  "dep:settings",
+  "dep:terminal",
   "drivers_shared/touch-ft6336",
   "xila/graphics",
 ]

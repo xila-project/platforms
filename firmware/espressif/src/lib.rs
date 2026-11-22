@@ -368,6 +368,29 @@ async fn start(task_manager: &'static task::Manager) {
         &[
             (&SHELL_PATH, command_line_shell::ShellExecutable),
             (&GRAPHICAL_SHELL_PATH, graphical_shell::ShellExecutable),
+            // The native applications, where the seed image's shortcuts
+            // (`tools/fs_image/shortcuts`) expect them. The terminal starts
+            // the command-line shell from there.
+            (
+                &"/applications/executables/command_line_shell",
+                command_line_shell::ShellExecutable
+            ),
+            (
+                &"/applications/executables/activity",
+                activity::ActivityExecutable
+            ),
+            (
+                &"/applications/executables/file_manager",
+                file_manager::FileManagerExecutable
+            ),
+            (
+                &"/applications/executables/settings",
+                settings::SettingsExecutable
+            ),
+            (
+                &"/applications/executables/terminal",
+                terminal::TerminalExecutable
+            ),
         ]
     )
     .await

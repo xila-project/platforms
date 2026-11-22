@@ -12,10 +12,4 @@ pub trait TouchSensor {
 
     /// The current touch point, or `None` when nothing touches the panel.
     fn read(&mut self) -> Result<Option<(i16, i16)>, Self::Error>;
-
-    /// The point of the last [`Self::read`] in the controller's own
-    /// coordinates, before the mapping to the screen, for diagnostics.
-    fn last_native_point(&self) -> Option<(u16, u16)> {
-        None
-    }
 }

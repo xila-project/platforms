@@ -6688,12 +6688,16 @@ dependencies = [
  "esp-hal",
  "esp-storage",
  "xila",
+ "xila-activity",
  "xila-command-line-shell",
  "xila-drivers-core",
  "xila-drivers-espressif",
  "xila-drivers-peripherals",
  "xila-drivers-shared",
+ "xila-file-manager",
  "xila-graphical-shell",
+ "xila-settings",
+ "xila-terminal",
 ]
 
 [[package]]

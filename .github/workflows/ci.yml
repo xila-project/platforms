@@ -205,9 +205,11 @@ jobs:
           - board: esp32-p4-function-ev-board
             name: ESP32-P4-Function-EV-Board
             xtensa: false
+            graphics: false
           - board: wt32-sc01-plus
             name: WT32-SC01 Plus
             xtensa: true
+            graphics: true
     steps:
       - name: "Setup | Checkout sources"
         uses: actions/checkout@v7
@@ -220,6 +222,10 @@ jobs:
       - name: "Setup | Espressif Rust and GCC toolchain"
         if: matrix.xtensa
         run: mise run setup:espressif-rust
+      - name: "Setup | Locked npm dependencies"
+        # Xila's graphics converts its fonts with the locked `lv_font_conv`.
+        if: matrix.graphics
+        run: mise run ci:deps-npm
       - name: "Build | Flash image"
         run: mise run build:${{ matrix.board }}
   required:
