@@ -926,6 +926,51 @@ fn raw_mode_drops_bytes_when_the_reader_queue_is_full() {
 }
 
 #[test]
+fn full_queue_rejects_a_line_and_keeps_the_queued_bytes() {
+    // The terminal policy is to reject what does not fit, never to drop queued bytes.
+    let mut editor = LineEditor::<16, 6>::new();
+    let mut echo = Vec::new();
+
+    assert!(editor.feed_slice(b"abc\n", &mut echo).line_ready);
+    echo.clear();
+
+    // "defg\n" needs five bytes and only two are left: the line is kept, the bell rings.
+    let result = editor.feed_slice(b"defg\n", &mut echo);
+    assert!(!result.line_ready);
+    assert_eq!(echo, b"defg\x07");
+    assert_eq!(editor.current_line(), b"defg");
+    assert_eq!(editor.completed_len(), 4);
+
+    // Once the reader drains the queue, the same line commits whole.
+    let mut buffer = [0u8; 8];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"abc\n");
+    assert!(editor.feed_byte(b'\n', &mut echo).line_ready);
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"defg\n");
+}
+
+#[test]
+fn ctrl_c_on_a_full_queue_drops_the_oldest_byte() {
+    // Ctrl-C is the one input that overwrites: the oldest queued byte makes room.
+    let mut editor = LineEditor::<16, 4>::new();
+    let mut echo = Vec::new();
+
+    editor.feed_slice(b"abc\n", &mut echo);
+    assert_eq!(editor.completed_len(), 4);
+
+    echo.clear();
+    let result = editor.feed_byte(0x03, &mut echo);
+    assert!(result.line_ready);
+    assert_eq!(echo, b"^C\r\n");
+    assert_eq!(editor.completed_len(), 4);
+
+    let mut buffer = [0u8; 8];
+    let count = editor.pop_completed(&mut buffer);
+    assert_eq!(&buffer[..count], b"bc\n\n");
+}
+
+#[test]
 fn leaving_canonical_mode_releases_the_partial_line() {
     let mut editor = LineEditor::<256>::new();
     let mut echo = Vec::new();

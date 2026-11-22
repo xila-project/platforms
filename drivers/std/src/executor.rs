@@ -70,11 +70,11 @@ impl Executor {
     ///
     /// This function never returns.
     pub fn run(&'static self, init: impl FnOnce(Spawner, &'static Self)) {
-        init(self.inner.spawner(), self);
-
-        while !self.stop.load(std::sync::atomic::Ordering::SeqCst) {
-            self.poll_and_wait();
-        }
+        drivers_shared::executor::run_until_stopped(
+            &self.stop,
+            || init(self.inner.spawner(), self),
+            || self.poll_and_wait(),
+        );
     }
 
     #[inline(always)]
@@ -92,11 +92,12 @@ impl Executor {
     }
 
     pub fn start(&'static mut self, init: impl FnOnce(Spawner)) -> ! {
-        init(self.inner.spawner());
+        let executor: &'static Self = self;
 
-        loop {
-            self.poll_and_wait();
-        }
+        drivers_shared::executor::run_forever(
+            || init(executor.inner.spawner()),
+            || executor.poll_and_wait(),
+        )
     }
 }
 
@@ -128,18 +129,15 @@ impl Signaler {
     }
 }
 
+/// Share the static storage of the executor with the other drivers.
+#[doc(hidden)]
+pub use drivers_shared as __shared;
+
 #[macro_export]
 macro_rules! instantiate_static_executor {
-    () => {{
-        static mut __EXECUTOR: Option<$crate::executor::Executor> = None;
-
-        unsafe {
-            if __EXECUTOR.is_none() {
-                __EXECUTOR = Some($crate::executor::Executor::new());
-            }
-            __EXECUTOR.as_mut().expect("Executor is not initialized")
-        }
-    }};
+    () => {
+        $crate::executor::__shared::instantiate_static_executor!($crate::executor::Executor)
+    };
 }
 
 pub use instantiate_static_executor;
@@ -170,4 +168,61 @@ pub async fn new_thread_executor(task_manager: &'static task::Manager) -> Spawne
     }
 
     spawner_id
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    static STEPS: AtomicUsize = AtomicUsize::new(0);
+    static WAKE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+
+    #[embassy_executor::task]
+    async fn worker(executor: &'static Executor) {
+        // Initial work: polled before the executor first waits.
+        STEPS.store(1, Ordering::SeqCst);
+
+        WAKE.wait().await;
+        STEPS.store(2, Ordering::SeqCst);
+
+        executor.stop();
+    }
+
+    /// Initial work runs, the executor then idles without progress, a wake-up
+    /// resumes it, and `stop` ends `run`.
+    #[test]
+    fn runs_initial_work_idles_wakes_and_stops() {
+        // The executor is not `Send`: it is created on the thread that runs it.
+        let thread = std::thread::spawn(|| {
+            Executor::new_static()
+                .run(|spawner, executor| spawner.spawn(worker(executor).unwrap()));
+        });
+
+        while STEPS.load(Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+
+        // Idle: nothing wakes the task, so it makes no further progress.
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(STEPS.load(Ordering::SeqCst), 1);
+        assert!(!thread.is_finished());
+
+        WAKE.signal(());
+        thread.join().unwrap();
+        assert_eq!(STEPS.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn stop_before_run_skips_polling() {
+        let executor = Executor::new_static();
+        executor.stop();
+
+        let initialized = std::sync::atomic::AtomicBool::new(false);
+        executor.run(|_, _| initialized.store(true, Ordering::SeqCst));
+
+        // Initialization still runs; the loop exits at once.
+        assert!(initialized.load(Ordering::SeqCst));
+    }
 }

@@ -20,7 +20,7 @@ use file_system::{
 };
 use shared::AnyByLayout;
 
-use super::logic::{QueueWriter, RingBuffer, is_1200_bps_touch};
+use super::logic::{OverwriteOldest, QueueWriter, RingBuffer, is_1200_bps_touch};
 
 embassy_nrf::bind_interrupts!(struct Irqs {
     USBD => embassy_nrf::usb::InterruptHandler<embassy_nrf::peripherals::USBD>;

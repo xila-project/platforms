@@ -15,6 +15,7 @@ users = { workspace = true }
 synchronization = { workspace = true }
 virtual_file_system = { workspace = true }
 shared = { workspace = true }
+drivers_shared = { package = "xila-drivers-shared", path = "../shared", default-features = false }
 peripherals = { workspace = true, features = ["power"] }
 
 libc = { version = "0.2" }

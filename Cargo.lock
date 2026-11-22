@@ -6501,6 +6501,7 @@ dependencies = [
  "linked_list_allocator",
  "miniserde",
  "smoltcp",
+ "xila-drivers-shared",
  "xila-file-system",
  "xila-little-fs",
  "xila-log",

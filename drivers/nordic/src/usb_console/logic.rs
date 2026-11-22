@@ -11,115 +11,40 @@ pub const fn is_1200_bps_touch(baud_rate: u32, dtr: bool) -> bool {
     baud_rate == 1200 && !dtr
 }
 
-/// A fixed-capacity ring buffer with support for FIFO push/pop and overwrite on full.
-#[derive(Debug)]
-pub struct RingBuffer<const N: usize> {
-    storage: [u8; N],
-    read_pos: usize,
-    write_pos: usize,
-    len: usize,
-}
+pub use drivers_shared::ring_buffer::RingBuffer;
 
-impl<const N: usize> Default for RingBuffer<N> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<const N: usize> RingBuffer<N> {
-    pub const fn new() -> Self {
-        Self {
-            storage: [0; N],
-            read_pos: 0,
-            write_pos: 0,
-            len: 0,
-        }
-    }
-
-    pub const fn capacity(&self) -> usize {
-        N
-    }
-
-    pub const fn len(&self) -> usize {
-        self.len
-    }
-
-    pub const fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
-    pub const fn is_full(&self) -> bool {
-        self.len == N
-    }
-
-    pub const fn available_space(&self) -> usize {
-        N - self.len
-    }
-
-    /// Pop `count` oldest bytes from the front without returning them.
-    pub fn drop_oldest(&mut self, count: usize) {
-        let to_drop = count.min(self.len);
-        self.read_pos = (self.read_pos + to_drop) % N;
-        self.len -= to_drop;
-    }
-
-    /// Push as many bytes as can fit without dropping any bytes.
+/// The console overflow policy: new bytes are always accepted and the oldest
+/// bytes are dropped to make room for them.
+///
+/// The terminal keeps the opposite policy (reject what does not fit) on the same
+/// [`RingBuffer`] storage, so the policy lives with each driver.
+pub trait OverwriteOldest {
+    /// Push `data`, dropping the oldest bytes when the ring is full.
     ///
-    /// Returns the number of bytes pushed.
-    pub fn push_slice(&mut self, data: &[u8]) -> usize {
-        let to_push = data.len().min(self.available_space());
-        for &byte in &data[..to_push] {
-            self.storage[self.write_pos] = byte;
-            self.write_pos = (self.write_pos + 1) % N;
-        }
-        self.len += to_push;
-        to_push
-    }
-
-    /// Push bytes with a "drop oldest" policy when full.
-    ///
-    /// If `data.len() >= N`, the buffer is replaced with the last `N` bytes of `data`.
+    /// If `data.len() >= N`, the ring is replaced with the last `N` bytes of `data`.
     /// Otherwise, if `len + data.len() > N`, the oldest `len + data.len() - N` bytes are dropped.
     /// Always returns `data.len()`.
-    pub fn push_slice_overwrite(&mut self, data: &[u8]) -> usize {
+    fn push_slice_overwrite(&mut self, data: &[u8]) -> usize;
+}
+
+impl<const N: usize> OverwriteOldest for RingBuffer<N> {
+    fn push_slice_overwrite(&mut self, data: &[u8]) -> usize {
         if data.is_empty() {
             return 0;
         }
 
         if data.len() >= N {
-            let start = data.len() - N;
-            self.storage.copy_from_slice(&data[start..]);
-            self.read_pos = 0;
-            self.write_pos = 0;
-            self.len = N;
+            self.replace_with_tail(data);
             return data.len();
         }
 
-        let needed_space = data.len();
-        if needed_space > self.available_space() {
-            let to_drop = needed_space - self.available_space();
-            self.drop_oldest(to_drop);
+        let available_space = self.available_space();
+        if data.len() > available_space {
+            self.drop_oldest(data.len() - available_space);
         }
 
-        for &byte in data {
-            self.storage[self.write_pos] = byte;
-            self.write_pos = (self.write_pos + 1) % N;
-        }
-        self.len += data.len();
-        data.len()
-    }
-
-    /// Pop up to `out.len()` bytes into `out`.
-    ///
-    /// Returns the number of bytes popped.
-    pub fn pop_slice(&mut self, out: &mut [u8]) -> usize {
-        let to_read = out.len().min(self.len);
-        for byte in &mut out[..to_read] {
-            *byte = self.storage[self.read_pos];
-            self.read_pos = (self.read_pos + 1) % N;
-        }
-        self.len -= to_read;
-        to_read
+        // The space was made above, so every byte fits.
+        self.push_slice(data)
     }
 }
 
@@ -137,30 +62,10 @@ impl<const N: usize> Write for QueueWriter<'_, N> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_ring_buffer_push_pop_basic() {
-        let mut rb: RingBuffer<16> = RingBuffer::new();
-        assert_eq!(rb.len(), 0);
-        assert!(rb.is_empty());
-        assert_eq!(rb.available_space(), 16);
-
-        let data = b"hello world";
-        let written = rb.push_slice(data);
-        assert_eq!(written, data.len());
-        assert_eq!(rb.len(), data.len());
-        assert!(!rb.is_empty());
-        assert!(!rb.is_full());
-
-        let mut out = [0u8; 16];
-        let read = rb.pop_slice(&mut out[..5]);
-        assert_eq!(read, 5);
-        assert_eq!(&out[..5], b"hello");
-        assert_eq!(rb.len(), 6);
-
-        let read = rb.pop_slice(&mut out);
-        assert_eq!(read, 6);
-        assert_eq!(&out[..6], b" world");
-        assert!(rb.is_empty());
+    fn drain<const N: usize>(ring: &mut RingBuffer<N>) -> std::vec::Vec<u8> {
+        let mut out = [0u8; N];
+        let count = ring.pop_slice(&mut out);
+        out[..count].to_vec()
     }
 
     #[test]
@@ -171,11 +76,7 @@ mod tests {
         assert_eq!(rb.push_slice_overwrite(b"678"), 3);
         assert_eq!(rb.len(), 8);
         assert!(rb.is_full());
-
-        let mut out = [0u8; 8];
-        let n = rb.pop_slice(&mut out);
-        assert_eq!(n, 8);
-        assert_eq!(&out, b"12345678");
+        assert_eq!(drain(&mut rb), b"12345678");
     }
 
     #[test]
@@ -186,41 +87,68 @@ mod tests {
         assert_eq!(rb.len(), 6);
 
         // Writing 2 bytes drops the 2 oldest bytes ('a', 'b')
-        rb.push_slice_overwrite(b"gh");
+        assert_eq!(rb.push_slice_overwrite(b"gh"), 2);
         assert_eq!(rb.len(), 6);
-
-        let mut out = [0u8; 6];
-        let n = rb.pop_slice(&mut out);
-        assert_eq!(n, 6);
-        assert_eq!(&out, b"cdefgh");
+        assert_eq!(drain(&mut rb), b"cdefgh");
 
         // Overwriting with more than capacity keeps only the tail
-        rb.push_slice_overwrite(b"123456789");
+        assert_eq!(rb.push_slice_overwrite(b"123456789"), 9);
         assert_eq!(rb.len(), 6);
-        let n = rb.pop_slice(&mut out);
-        assert_eq!(n, 6);
-        assert_eq!(&out, b"456789");
+        assert_eq!(drain(&mut rb), b"456789");
     }
 
     #[test]
-    fn test_ring_buffer_fifo_wrap_around() {
+    fn test_ring_buffer_overwrite_exactly_capacity_replaces_everything() {
         let mut rb: RingBuffer<4> = RingBuffer::new();
-        // Fill 3 bytes
+        rb.push_slice(b"ab");
+        assert_eq!(rb.push_slice_overwrite(b"wxyz"), 4);
+        assert_eq!(drain(&mut rb), b"wxyz");
+    }
+
+    #[test]
+    fn test_ring_buffer_overwrite_empty_slice_changes_nothing() {
+        let mut rb: RingBuffer<4> = RingBuffer::new();
+        rb.push_slice(b"ab");
+        assert_eq!(rb.push_slice_overwrite(b""), 0);
+        assert_eq!(drain(&mut rb), b"ab");
+    }
+
+    #[test]
+    fn test_ring_buffer_overwrite_wraps_around() {
+        let mut rb: RingBuffer<5> = RingBuffer::new();
+        rb.push_slice(b"abcde");
+        let mut out = [0u8; 3];
+        assert_eq!(rb.pop_slice(&mut out), 3);
+        // Two bytes remain and the next three fit without dropping any.
+        assert_eq!(rb.push_slice_overwrite(b"fgh"), 3);
+        assert_eq!(rb.len(), 5);
+        // Four more bytes drop the four oldest ones ('d', 'e', 'f', 'g').
+        assert_eq!(rb.push_slice_overwrite(b"ijkl"), 4);
+        assert_eq!(drain(&mut rb), b"hijkl");
+    }
+
+    /// Connected host with a full queue: the output driver leaves the queue
+    /// alone and waits (`is_full`), and a partial write never drops stored bytes.
+    #[test]
+    fn test_connected_host_full_queue_rejects_instead_of_overwriting() {
+        let mut rb: RingBuffer<4> = RingBuffer::new();
         assert_eq!(rb.push_slice(b"abc"), 3);
-        let mut out = [0u8; 2];
-        // Read 2 bytes: read_pos = 2, write_pos = 3, len = 1 ('c')
-        assert_eq!(rb.pop_slice(&mut out), 2);
-        assert_eq!(&out, b"ab");
+        // Partial transfer: only one byte fits.
+        assert_eq!(rb.push_slice(b"def"), 1);
+        assert!(rb.is_full());
+        // The driver then waits: nothing is accepted and nothing is dropped.
+        assert_eq!(rb.push_slice(b"ghi"), 0);
+        assert_eq!(drain(&mut rb), b"abcd");
+    }
 
-        // Write 3 bytes: 'd', 'e', 'f' wrapping around to 0, 1, 2
-        assert_eq!(rb.push_slice(b"def"), 3);
-        assert_eq!(rb.len(), 4);
-
-        let mut full_out = [0u8; 4];
-        let n = rb.pop_slice(&mut full_out);
-        assert_eq!(n, 4);
-        assert_eq!(&full_out, b"cdef");
-        assert!(rb.is_empty());
+    /// Disconnected host: the queue never blocks the logger and keeps the newest bytes.
+    #[test]
+    fn test_disconnected_host_keeps_the_newest_bytes() {
+        let mut rb: RingBuffer<8> = RingBuffer::new();
+        for chunk in [b"aaaa", b"bbbb", b"cccc"] {
+            assert_eq!(rb.push_slice_overwrite(chunk), 4);
+        }
+        assert_eq!(drain(&mut rb), b"bbbbcccc");
     }
 
     #[test]

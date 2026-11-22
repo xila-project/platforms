@@ -21,6 +21,8 @@
 
 use file_system::character_device::TerminalAttributes;
 
+pub use crate::ring_buffer::RingBuffer;
+
 /// Sink for receiving echo bytes emitted by the line editor.
 pub trait EchoSink {
     /// Emit echo bytes to the sink.
@@ -87,116 +89,6 @@ impl<const CAP: usize> EchoSink for EchoBuffer<CAP> {
         let to_copy = bytes.len().min(CAP - self.len);
         self.storage[self.len..self.len + to_copy].copy_from_slice(&bytes[..to_copy]);
         self.len += to_copy;
-    }
-}
-
-/// Fixed-capacity ring buffer for FIFO queuing of completed lines.
-#[derive(Debug, Clone, Copy)]
-pub struct RingBuffer<const N: usize> {
-    storage: [u8; N],
-    read_pos: usize,
-    write_pos: usize,
-    len: usize,
-}
-
-impl<const N: usize> Default for RingBuffer<N> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<const N: usize> RingBuffer<N> {
-    /// Create an empty `RingBuffer`.
-    pub const fn new() -> Self {
-        Self {
-            storage: [0; N],
-            read_pos: 0,
-            write_pos: 0,
-            len: 0,
-        }
-    }
-
-    /// Total capacity in bytes.
-    pub const fn capacity(&self) -> usize {
-        N
-    }
-
-    /// Current number of stored bytes.
-    pub const fn len(&self) -> usize {
-        self.len
-    }
-
-    /// Whether the ring buffer is empty.
-    pub const fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
-    /// Whether the ring buffer is completely full.
-    pub const fn is_full(&self) -> bool {
-        self.len == N
-    }
-
-    /// Remaining available space in bytes.
-    pub const fn available_space(&self) -> usize {
-        N - self.len
-    }
-
-    /// Drop the oldest `count` bytes from the front.
-    pub fn drop_oldest(&mut self, count: usize) {
-        let to_drop = count.min(self.len);
-        self.read_pos = (self.read_pos + to_drop) % N;
-        self.len -= to_drop;
-    }
-
-    /// Push a single byte into the ring buffer.
-    ///
-    /// Returns `true` if pushed, `false` if full.
-    pub fn push_byte(&mut self, byte: u8) -> bool {
-        if self.is_full() {
-            return false;
-        }
-        self.storage[self.write_pos] = byte;
-        self.write_pos = (self.write_pos + 1) % N;
-        self.len += 1;
-        true
-    }
-
-    /// Push a slice of bytes into the ring buffer, up to available space.
-    ///
-    /// Returns the number of bytes pushed.
-    pub fn push_slice(&mut self, data: &[u8]) -> usize {
-        let to_push = data.len().min(self.available_space());
-        for &byte in &data[..to_push] {
-            self.storage[self.write_pos] = byte;
-            self.write_pos = (self.write_pos + 1) % N;
-        }
-        self.len += to_push;
-        to_push
-    }
-
-    /// Pop a single byte from the front of the ring buffer.
-    pub fn pop_byte(&mut self) -> Option<u8> {
-        if self.is_empty() {
-            None
-        } else {
-            let byte = self.storage[self.read_pos];
-            self.read_pos = (self.read_pos + 1) % N;
-            self.len -= 1;
-            Some(byte)
-        }
-    }
-
-    /// Pop up to `out.len()` bytes into `out`.
-    ///
-    /// Returns the number of bytes popped.
-    pub fn pop_slice(&mut self, out: &mut [u8]) -> usize {
-        let to_read = out.len().min(self.len);
-        for byte in &mut out[..to_read] {
-            *byte = self.storage[self.read_pos];
-            self.read_pos = (self.read_pos + 1) % N;
-        }
-        self.len -= to_read;
-        to_read
     }
 }
 
