@@ -6,7 +6,9 @@
 //!   panic messages use that controller.
 //! - PSRAM: added to the heap, and checked at boot by [`psram_self_test`].
 //! - Flash: 16 MB, partitioned by `partitions.csv`.
-//! - Display, backlight and touch: not driven yet.
+//! - Screen: a 480 × 320 ST7796 panel on the 8080 bus, its backlight and an
+//!   FT6336U touch panel, in [`screen`]. The graphical shell runs on it, and
+//!   the command-line shell on the console, as two sessions.
 
 use core::{fmt::Write, panic::PanicInfo};
 
@@ -21,6 +23,7 @@ use esp_storage::FlashStorage;
 use firmware::{Board, ExternalMemory, MemoryReport, StoragePartition, parse_decimal, session};
 
 mod psram_self_test;
+mod screen;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -53,6 +56,28 @@ fn main() -> ! {
 
     let console = UsbSerialJtag::new(peripherals.USB_DEVICE);
 
+    let display = screen::start(screen::Pins {
+        lcd_cam: peripherals.LCD_CAM,
+        dma: peripherals.DMA_CH0,
+        data: (
+            peripherals.GPIO9,
+            peripherals.GPIO46,
+            peripherals.GPIO3,
+            peripherals.GPIO8,
+            peripherals.GPIO18,
+            peripherals.GPIO17,
+            peripherals.GPIO16,
+            peripherals.GPIO15,
+        ),
+        write_clock: peripherals.GPIO47,
+        command_data: peripherals.GPIO0,
+        reset: peripherals.GPIO4,
+        backlight: peripherals.GPIO45,
+        i2c: peripherals.I2C0,
+        touch_data: peripherals.GPIO6,
+        touch_clock: peripherals.GPIO5,
+    });
+
     firmware::run(Board {
         name: "WT32-SC01 Plus",
         console: console.into(),
@@ -70,8 +95,9 @@ fn main() -> ! {
             }),
         },
         memory_check: Some(psram_self_test::run),
-        system_check: None,
-        sessions: &[session::CONSOLE],
+        system_check: Some(screen::log_report),
+        display: Some(display),
+        sessions: &[session::CONSOLE, session::GRAPHICAL],
     })
 }
 

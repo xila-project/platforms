@@ -7,7 +7,11 @@
 //! Allocate cache-off data during normal execution and keep the ISR code and any
 //! transitively accessed state accessible during flash operations.
 
-use core::{mem::MaybeUninit, ptr::NonNull};
+use core::{
+    mem::MaybeUninit,
+    ptr::NonNull,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use memory::{CapabilityFlags, Layout, ManagerTrait, RegionDescriptor, RegionManager, Statistics};
 
@@ -102,6 +106,7 @@ const fn default_descriptors() -> [RegionDescriptor; REGION_COUNT] {
 /// [`Self::init_psram`] or [`Self::init_psram_from_hal`].
 pub struct MemoryManager {
     inner: RegionManager<REGION_COUNT>,
+    internal_only: AtomicBool,
 }
 
 impl Default for MemoryManager {
@@ -120,6 +125,7 @@ impl MemoryManager {
     pub const fn with_large_allocation_threshold(threshold: Option<usize>) -> Self {
         Self {
             inner: RegionManager::new(default_descriptors(), threshold),
+            internal_only: AtomicBool::new(false),
         }
     }
 
@@ -187,6 +193,24 @@ impl MemoryManager {
         unsafe { self.init_psram(start, size) }
     }
 
+    /// While set, every allocation goes to internal SRAM, as if it asked for
+    /// [`CapabilityFlags::AlwaysAccessible`], whatever its size. For buffers
+    /// that another library allocates and DMA then reads, such as LVGL's draw
+    /// buffers: internal SRAM needs no cache maintenance and keeps up with
+    /// the peripheral. Allocations of other tasks meanwhile are affected too,
+    /// so keep the window short.
+    pub fn set_internal_only(&self, internal_only: bool) {
+        self.internal_only.store(internal_only, Ordering::Release);
+    }
+
+    fn effective_capabilities(&self, capabilities: CapabilityFlags) -> CapabilityFlags {
+        if self.internal_only.load(Ordering::Acquire) {
+            capabilities | CapabilityFlags::AlwaysAccessible
+        } else {
+            capabilities
+        }
+    }
+
     /// Returns per-region and aggregate heap statistics.
     pub fn get_statistics(&self) -> Statistics<REGION_COUNT> {
         self.inner.get_statistics()
@@ -199,6 +223,7 @@ impl ManagerTrait for MemoryManager {
         capabilities: CapabilityFlags,
         layout: Layout,
     ) -> Option<NonNull<u8>> {
+        let capabilities = self.effective_capabilities(capabilities);
         unsafe { self.inner.allocate(capabilities, layout) }
     }
 
@@ -213,6 +238,7 @@ impl ManagerTrait for MemoryManager {
         old_layout: Layout,
         new_layout: Layout,
     ) -> Option<NonNull<u8>> {
+        let capabilities = self.effective_capabilities(capabilities);
         unsafe {
             self.inner
                 .reallocate(capabilities, old_pointer, old_layout, new_layout)

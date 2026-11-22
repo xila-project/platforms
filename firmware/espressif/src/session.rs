@@ -26,6 +26,15 @@ pub struct Session {
     pub shell: &'static str,
 }
 
+/// The graphical shell on the screen. It reads no terminal.
+pub const GRAPHICAL: Session = Session {
+    name: "Graphical session",
+    input: "/devices/standard_io/null",
+    output: "/devices/standard_io/null",
+    error: "/devices/standard_io/null",
+    shell: crate::GRAPHICAL_SHELL_PATH,
+};
+
 /// The command-line shell on the console.
 pub const CONSOLE: Session = Session {
     name: "Console session",

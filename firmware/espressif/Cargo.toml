@@ -27,8 +27,15 @@ embedded-storage = "0.3"
 esp-hal = { version = "=1.2.2", features = ["unstable"] }
 esp-storage = { version = "0.10", features = ["embedded-storage"] }
 xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
+graphical_shell = { package = "xila-graphical-shell", git = "https://github.com/xila-project/applications", branch = "main", optional = true }
 
 [features]
+# Xila's graphics on the board's screen, and the graphical shell.
+graphics = [
+  "dep:graphical_shell",
+  "drivers_shared/touch-ft6336",
+  "xila/graphics",
+]
 # Developer-only handler that runs raw ELF files from the file system as native
 # executables, with their images in `.dram2_uninit` (ESP32-C6 and ESP32-P4 only).
 # It does not sandbox them.

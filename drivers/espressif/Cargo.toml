@@ -62,6 +62,8 @@ console = [
   "dep:log",
   "dep:shared",
 ]
+# 8080 parallel display bus over LCD_CAM with DMA (ESP32-S3), for `mipidsi`.
+lcd-i8080 = ["dep:drivers_shared", "drivers_shared/display-mipidsi"]
 # Executable memory for the native loader, on the chips listed in
 # `executable_memory`; elsewhere the feature adds nothing.
 executable-memory = ["dep:native_loader"]
