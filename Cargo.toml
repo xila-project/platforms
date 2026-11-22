@@ -65,6 +65,9 @@ task = { package = "xila-task", git = "https://github.com/xila-project/core", br
 users = { package = "xila-users", git = "https://github.com/xila-project/core", branch = "main" }
 memory = { package = "xila-memory", git = "https://github.com/xila-project/core", branch = "main" }
 file_system = { package = "xila-file-system", git = "https://github.com/xila-project/core", branch = "main" }
+io_error = { package = "xila-io-error", git = "https://github.com/xila-project/core", branch = "main", features = [
+  "std",
+] }
 log = { package = "xila-log", git = "https://github.com/xila-project/core", branch = "main" }
 shared = { package = "xila-shared", git = "https://github.com/xila-project/core", branch = "main" }
 synchronization = { package = "xila-synchronization", git = "https://github.com/xila-project/core", branch = "main" }
