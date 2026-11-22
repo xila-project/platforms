@@ -16,7 +16,8 @@ use xila::{
 };
 
 // `START` and `LENGTH` come from the LittleFS partition of the partition table
-// of the chip (`partitions_4mb.csv` or `partitions_16mb.csv`), read by `build.rs`.
+// of the board (`partitions_4mb.csv`, or `partitions_16mb.csv` on the ESP32-P4
+// and the WT32-SC01 Plus), read by `build.rs`.
 include!(concat!(env!("OUT_DIR"), "/storage_partition.rs"));
 const BLOCK: u32 = FlashStorage::ERASE_SIZE as u32;
 

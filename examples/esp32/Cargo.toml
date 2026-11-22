@@ -23,6 +23,10 @@ esp32s3 = [
   "esp-println/esp32s3",
   "esp-storage/esp32s3",
 ]
+# Wireless-Tag WT32-SC01 Plus (ESP32-S3, 16 MB flash, 2 MB quad SPI PSRAM).
+# The console uses the chip's USB Serial/JTAG controller: the board's USB port
+# has no USB to UART bridge. Flash it with `partitions_16mb.csv`.
+wt32-sc01-plus = ["esp32s3"]
 # Draws through the virtual RGB panel that only Espressif's QEMU provides.
 qemu-display = ["esp32s3", "xila/graphics_rendering_rgb565"]
 # Developer-only handler that runs raw ELF files from the file system as native

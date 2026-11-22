@@ -25,6 +25,7 @@ shared = { workspace = true, optional = true }
 static_cell = { version = "2", optional = true }
 embedded-hal = { workspace = true, optional = true }
 embedded-io = { workspace = true, optional = true }
+embedded-io-async = { workspace = true, optional = true }
 esp-hal = { version = "=1.2.2", default-features = false, features = [
   "unstable",
 ], optional = true }
@@ -55,6 +56,7 @@ uart = ["dep:embedded-io", "dep:peripherals", "peripherals/uart"]
 console = [
   "dep:drivers_shared",
   "dep:embassy-futures",
+  "dep:embedded-io-async",
   "dep:embassy-sync",
   "dep:file_system",
   "dep:log",
