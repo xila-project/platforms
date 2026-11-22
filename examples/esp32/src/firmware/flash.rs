@@ -15,9 +15,9 @@ use xila::{
     synchronization::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex},
 };
 
-// Keep in sync with the dedicated smoke-test partition table.
-const START: u32 = 0x310000;
-const LENGTH: u32 = 0x0f0000;
+// `START` and `LENGTH` come from the LittleFS partition of the partition table
+// of the chip (`partitions_4mb.csv` or `partitions_16mb.csv`), read by `build.rs`.
+include!(concat!(env!("OUT_DIR"), "/storage_partition.rs"));
 const BLOCK: u32 = FlashStorage::ERASE_SIZE as u32;
 
 pub(super) struct LittleFsPartition(Mutex<CriticalSectionRawMutex, RefCell<FlashStorage<'static>>>);

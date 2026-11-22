@@ -1,3 +1,0 @@
-# Name, Type, SubType, Offset, Size, Flags
-factory, app, factory, 0x10000, 0x300000,
-storage, data, littlefs, 0x310000, 0x0f0000,

@@ -1,9 +1,49 @@
 use std::{
-    env,
+    env, fs,
+    path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+/// Reads the LittleFS partition from the partition table of the selected
+/// chip, so that the firmware and the flashed table cannot disagree.
+fn write_storage_partition() {
+    // The ESP32-P4 board has 16 MB of flash, the other chips 4 MB. Keep in sync
+    // with `--flash-size` in `tools/dev/build_espressif_image.sh`.
+    let table = if env::var_os("CARGO_FEATURE_ESP32P4").is_some() {
+        "partitions_16mb.csv"
+    } else {
+        "partitions_4mb.csv"
+    };
+    println!("cargo:rerun-if-changed={table}");
+    let content = fs::read_to_string(table).expect("Cannot read the partition table");
+    let number = |field: &str| {
+        let field = field.trim();
+        match field
+            .strip_prefix("0x")
+            .or_else(|| field.strip_prefix("0X"))
+        {
+            Some(hexadecimal) => u32::from_str_radix(hexadecimal, 16),
+            None => field.parse(),
+        }
+        .expect("Invalid number in the partition table")
+    };
+    let (offset, size) = content
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .map(|line| line.split(',').map(str::trim).collect::<Vec<_>>())
+        .find(|fields| fields.get(2) == Some(&"littlefs"))
+        .map(|fields| (number(fields[3]), number(fields[4])))
+        .unwrap_or_else(|| panic!("{table} has no littlefs partition"));
+    let output = PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("storage_partition.rs");
+    fs::write(
+        output,
+        format!("const START: u32 = {offset:#x};\nconst LENGTH: u32 = {size:#x};\n"),
+    )
+    .unwrap();
+}
+
 fn main() {
+    write_storage_partition();
     // The chip has no clock that survives a power cycle: the firmware starts
     // from the date it was built. `SOURCE_DATE_EPOCH` keeps builds reproducible.
     println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");

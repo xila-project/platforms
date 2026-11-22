@@ -18,7 +18,8 @@ Only chip revisions **v3.0 and later** are supported by `esp-hal` 1.2.2.
 The image assumes **16 MiB of flash**, as on the ESP32-P4X-Function-EV-Board (chip revision v3.1 or later, 32 MiB of PSRAM). The older ESP32-P4-Function-EV-Board carries pre-v3 silicon, which this image refuses to boot.
 Check the chip revision and flash capacity on your board before flashing.
 The firmware adds detected external pseudo-static memory (PSRAM) to the
-internal heap and uses the existing LittleFS partition in `partitions.csv`.
+internal heap and uses the existing LittleFS partition of its partition table: `partitions_4mb.csv` (ESP32-S3 and ESP32-C6) or
+`partitions_16mb.csv` (ESP32-P4).
 Because [`esp-hal` 1.2.2 cannot enable the onboard ESP32-P4 entropy source][entropy],
 nonempty reads of `/devices/random/source` return `DeviceUnavailable`.
 The firmware skips default account creation on a fresh file system. A fresh
@@ -47,7 +48,7 @@ the build task:
 ```sh
 mise run run:espflash -- flash --chip esp32p4 --port "$FLASH_PORT" \
   --flash-size 16mb --flash-mode dio \
-  --partition-table examples/esp32/partitions.csv --partition-table-offset 0x8000 \
+  --partition-table examples/esp32/partitions_16mb.csv --partition-table-offset 0x8000 \
   target/riscv32imafc-unknown-none-elf/release-embedded/esp32_example
 ```
 
