@@ -50,7 +50,7 @@ pub(super) fn render() {
     assert_eq!(
         unsafe { ptr::read_volatile(QEMU_SIGNATURE) },
         0x5145_4d55,
-        "the qemu-display feature requires Espressif QEMU's virtual RGB panel"
+        "the esp32-s3-qemu board requires Espressif QEMU's virtual RGB panel"
     );
     write_register(SIZE, (WIDTH << 16) | HEIGHT);
     write_register(BITS_PER_PIXEL, 16);

@@ -1,63 +1,29 @@
-//! Wireless-Tag WT32-SC01 Plus: everything this board does differently from
-//! the generic ESP32-S3 firmware. Keep the board's specifics in this module
-//! only, so that they move to the board's own crate as one piece.
-//!
-//! - Console: the USB-C port is wired to the chip's USB Serial/JTAG controller
-//!   (303a:1001), with no USB to UART bridge, so the console, the logger and
-//!   panic messages use that controller.
-//! - PSRAM: the WT32-S3-WROVER-N16R2 module carries 2 MB of quad SPI PSRAM.
-//! - Flash: 16 MB, partitioned by `partitions_16mb.csv`.
-//! - Display, backlight and touch: not driven yet.
+//! The PSRAM self-test: an ordinary large allocation, from the allocator down
+//! to the chip.
 
-use core::{alloc::Layout, fmt::Write, ops::Range, panic::PanicInfo, ptr::NonNull};
+use core::{alloc::Layout, ops::Range, ptr::NonNull};
 
-use drivers_espressif::{console::ConsoleRunner, memory::MemoryManager};
+use drivers_espressif::memory::MemoryManager;
+use firmware::MemoryReport;
 use xila::{
     log,
     memory::{CapabilityFlags, ManagerTrait},
 };
 
-use esp_hal::{
-    Blocking,
-    peripherals::USB_DEVICE,
-    psram::{PsramConfig, PsramMode},
-    usb::usb_serial_jtag::UsbSerialJtag,
-};
-
-/// The board's name, logged at boot.
-pub(super) const NAME: &str = "WT32-SC01 Plus";
-
-/// The console port.
-pub(super) type ConsolePort = UsbSerialJtag<'static, Blocking>;
-
-pub(super) fn console_port(usb_device: USB_DEVICE<'static>) -> ConsolePort {
-    UsbSerialJtag::new(usb_device)
-}
-
-pub(super) fn console_runner(port: ConsolePort) -> ConsoleRunner {
-    ConsoleRunner::new_usb_serial_jtag(port)
-}
-
-/// Quad SPI PSRAM. Probing for octal PSRAM first, as the automatic mode does,
-/// would drive pins the module does not use for it.
-pub(super) fn psram_configuration() -> PsramConfig {
-    PsramConfig {
-        mode: PsramMode::QuadSpi,
-        ..PsramConfig::default()
+/// Runs [`check`] on the board's PSRAM, as its memory check, when the heap
+/// uses it.
+pub(super) fn run(report: &MemoryReport) {
+    if let Some(external) = report.external
+        && external.registered
+    {
+        check(
+            firmware::heap(),
+            external.start..external.start + external.size,
+        );
     }
 }
 
-/// Writes the panic message to the console. esp-println writes to UART0,
-/// which this board does not expose.
-pub(super) fn write_panic(information: &PanicInfo<'_>) {
-    // SAFETY: the firmware has stopped; nothing else uses the controller again.
-    let device = unsafe { USB_DEVICE::steal() };
-    let mut console = UsbSerialJtag::new(device);
-    let _ = write!(console, "\r\nXila panic: {information}\r\n");
-    let _ = console.flush_tx();
-}
-
-/// Size of the buffer that [`psram_self_test`] checks.
+/// Size of the buffer that [`run`] checks.
 const SELF_TEST_SIZE: usize = 1024 * 1024;
 
 /// The pattern word at `address`: it differs between neighbouring words and
@@ -127,7 +93,7 @@ fn log_psram_region(heap: &MemoryManager, stage: &str) -> usize {
 /// pattern and its inverse. The buffer is larger than the data cache, so most
 /// of it is read back from the chip, not from the cache. Logs the region
 /// before, during and after, then the result.
-pub(super) fn psram_self_test(heap: &MemoryManager, psram: Range<usize>) {
+fn check(heap: &MemoryManager, psram: Range<usize>) {
     let used_before = log_psram_region(heap, "before");
     let layout = Layout::from_size_align(SELF_TEST_SIZE, 64).expect("valid self-test layout");
     // SAFETY: the layout has a non-zero size.

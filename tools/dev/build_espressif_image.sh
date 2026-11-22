@@ -1,21 +1,27 @@
 #!/usr/bin/env bash
-# Builds the ESP32 example and merges the bootloader, partition table and
-# application into one flash image: target/espressif-emulator/BOARD-flash.bin.
-#
-#   tools/dev/build_espressif_image.sh ESPFLASH_VERSION RUST_VERSION ESP_GCC_VERSION [esp32s3|esp32c6|esp32p4|wt32-sc01-plus]
-#
-# The chip names build the emulator or development board images; the other
-# names are boards. Each build also copies the firmware to
+# Builds an Espressif board crate of examples/boards and merges the bootloader,
+# the board's partition table and the firmware into one flash image:
+# target/espressif-emulator/BOARD-flash.bin, next to a copy of the firmware,
 # target/espressif-emulator/BOARD.elf, for `espflash flash`.
 #
-# S3 boards need the `esp` toolchain from `mise run setup:espressif-rust`.
-# C6 and P4 need the stable RISC-V targets and Clang for LittleFS.
+#   tools/dev/build_espressif_image.sh ESPFLASH_VERSION RUST_VERSION ESP_GCC_VERSION BOARD
+#
+# BOARD is a folder of examples/boards: esp32-s3-qemu, esp32-c6-qemu,
+# esp32-p4-function-ev-board or wt32-sc01-plus.
+#
+# ESP32-S3 boards need the `esp` toolchain from `mise run setup:espressif-rust`.
+# RISC-V boards need the stable RISC-V targets and Clang for LittleFS.
 set -euo pipefail
 
 espflash_version=$1
 rust_version=$2
 esp_gcc_version=$3
-board=${4:-esp32s3}
+board=$4
+directory="examples/boards/$board"
+test -f "$directory/Cargo.toml" || { echo "Unknown Espressif board: $board" >&2; exit 2; }
+package="xila-board-$board"
+binary=${board//-/_}
+partition_table="$directory/partitions.csv"
 root="$PWD/target/espressif-emulator"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
 mkdir -p "$root"
@@ -41,28 +47,28 @@ build_esp32s3() {
     # Use Espressif's libclang and keep bindgen off the host's C library headers.
     export LIBCLANG_PATH="${clang_libraries[0]}"
     export BINDGEN_EXTRA_CLANG_ARGS_xtensa_esp32s3_none_elf=-ffreestanding
-    rustup run esp cargo "${build_args[@]}" --target "$target" --features "$1" -Zbuild-std=core,alloc
+    rustup run esp cargo "${build_args[@]}" --target "$target" -Zbuild-std=core,alloc
 }
 
 # rustup runs the esp toolchain directly: the mise Cargo wrapper is host-only.
-build_args=(build --locked -p xila-esp32-example --profile release-embedded)
+build_args=(build --locked -p "$package" --profile release-embedded)
+# The flash size must match the board's partition table.
 case "$board" in
-    esp32s3)
+    esp32-s3-qemu)
         chip=esp32s3
         target=xtensa-esp32s3-none-elf
         flash_mode=dio
         flash_size=4mb
-        build_esp32s3 qemu-display
+        build_esp32s3
         ;;
     wt32-sc01-plus)
-        # Wireless-Tag WT32-SC01 Plus: ESP32-S3 with 16 MB of flash.
         chip=esp32s3
         target=xtensa-esp32s3-none-elf
         flash_mode=dio
         flash_size=16mb
-        build_esp32s3 wt32-sc01-plus
+        build_esp32s3
         ;;
-    esp32c6)
+    esp32-c6-qemu)
         chip=esp32c6
         target=riscv32imac-unknown-none-elf
         # platforms#130: QEMU rounds down the ROM's DIO address and dummy
@@ -71,28 +77,22 @@ case "$board" in
         flash_mode=qio
         flash_size=4mb
         CC_riscv32imac_unknown_none_elf=clang \
-            rustup run "$rust_version" cargo "${build_args[@]}" --target "$target" --features qemu-esp32c6
+            rustup run "$rust_version" cargo "${build_args[@]}" --target "$target"
         ;;
-    esp32p4)
+    esp32-p4-function-ev-board)
         chip=esp32p4
         target=riscv32imafc-unknown-none-elf
         flash_mode=dio
-        # This is the flash capacity of the ESP32-P4X-Function-EV-Board.
         flash_size=16mb
         # LittleFS (littlefs2-sys) takes its compiler flags from Core
         # (core#801, core#808), which exports the single-float ABI of the target.
         CC_riscv32imafc_unknown_none_elf=clang \
-            rustup run "$rust_version" cargo "${build_args[@]}" --target "$target" --features esp32p4
+            rustup run "$rust_version" cargo "${build_args[@]}" --target "$target"
         ;;
-    *) echo "Unsupported ESP32 chip or board: $board" >&2; exit 2 ;;
+    *) echo "No image settings for the Espressif board $board." >&2; exit 2 ;;
 esac
 
-# Every board of a chip builds to the same path: keep a copy per board.
-cp "$CARGO_TARGET_DIR/$target/release-embedded/esp32_example" "$root/$board.elf"
-
-# One partition table per flash size; the firmware reads the same file in build.rs.
-partition_table="examples/esp32/partitions_$flash_size.csv"
-test -f "$partition_table" || { echo "Missing partition table $partition_table." >&2; exit 1; }
+cp "$CARGO_TARGET_DIR/$target/release-embedded/$binary" "$root/$board.elf"
 
 report="$root/$board-save-image.log"
 if ! "$root/tools/espflash-$espflash_version/espflash" save-image --skip-update-check \

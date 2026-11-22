@@ -9,8 +9,8 @@ use core::{mem::MaybeUninit, ptr::addr_of_mut};
 use drivers_espressif::executable_memory::ExecutableMemory;
 use xila::executable::{ExecutableFormat, NativeFormat};
 
-#[cfg(not(any(feature = "esp32c6", feature = "esp32p4")))]
-compile_error!("The `native-dev` feature needs the ESP32-C6 or the ESP32-P4.");
+// `drivers_espressif::executable_memory` exists only on the chips that can
+// execute from data RAM: the ESP32-C6 and the ESP32-P4 among the boards here.
 
 /// Size of the arena: `.dram2_uninit` holds 64 KiB on the ESP32-C6 and 68 KiB on
 /// the ESP32-P4.
@@ -46,9 +46,20 @@ pub fn initialize() {
     );
 }
 
+/// Runs [`self_test`] and logs the result, as a board's memory check.
+pub fn log_self_test(_: &crate::MemoryReport) {
+    match self_test() {
+        Ok(address) => xila::log::information!(
+            "Xila: native executable memory self-test passed at {address:#x}"
+        ),
+        Err(error) => {
+            xila::log::error!("Xila: native executable memory self-test failed: {error}")
+        }
+    }
+}
+
 /// Write `li a0, 42; ret` into the arena, finalize it and call it, which proves
 /// that the CPU may execute from the arena. Returns the address of the code.
-#[cfg(feature = "qemu-esp32c6")]
 pub fn self_test() -> Result<usize, &'static str> {
     use core::alloc::Layout;
     use xila::executable::native_loader::{ExecutableMemory as _, Region};

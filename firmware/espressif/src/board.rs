@@ -1,0 +1,81 @@
+//! The board description that a board crate hands to [`crate::run`].
+
+use drivers_espressif::{console::ConsolePort, random::RandomDevice};
+use esp_storage::FlashStorage;
+
+use crate::session::Session;
+
+/// Everything the firmware needs to know about a board. The board crate
+/// initializes the peripherals and moves them in here.
+pub struct Board {
+    /// The board's name, logged at boot.
+    pub name: &'static str,
+    /// The console: a UART or the USB Serial/JTAG controller.
+    pub console: ConsolePort,
+    /// The flash chip that holds the storage partition.
+    pub flash_storage: FlashStorage<'static>,
+    /// The LittleFS partition, from the board's partition table.
+    pub storage: StoragePartition,
+    /// `/devices/random/source`.
+    pub random_device: RandomDevice,
+    /// Whether `random_device` is a secure entropy source. Without one, the
+    /// firmware does not create the default account.
+    pub has_entropy_source: bool,
+    /// Whether to check at boot that the random device returns changing values.
+    pub check_random_device: bool,
+    /// The memory the board gave the heap, for the boot report.
+    pub memory: MemoryReport,
+    /// A board check that runs after the memory report, for example a PSRAM
+    /// or executable memory self-test.
+    pub memory_check: Option<fn(&MemoryReport)>,
+    /// A board check that runs once the executables are mounted, before the
+    /// heap report, for example a test frame on an emulated display.
+    pub system_check: Option<fn()>,
+    /// The sessions to start, each on its own terminal.
+    pub sessions: &'static [Session],
+}
+
+/// The memory the board gave the heap.
+#[derive(Clone, Copy, Debug)]
+pub struct MemoryReport {
+    /// The chip's internal SRAM, of which [`crate::HEAP_SIZE`] is reserved for
+    /// the heap; the rest holds the stacks, static data and code that runs from
+    /// RAM.
+    pub internal_sram_size: usize,
+    /// The external PSRAM, on boards that set it up, even when none was found.
+    pub external: Option<ExternalMemory>,
+}
+
+/// External PSRAM as esp-hal mapped it.
+#[derive(Clone, Copy, Debug)]
+pub struct ExternalMemory {
+    /// Start address of the mapping.
+    pub start: usize,
+    /// Size of the mapping in bytes; zero when no PSRAM was found.
+    pub size: usize,
+    /// Whether the heap uses it.
+    pub registered: bool,
+}
+
+/// A data partition in the flash, in bytes.
+#[derive(Clone, Copy, Debug)]
+pub struct StoragePartition {
+    pub offset: u32,
+    pub length: u32,
+}
+
+/// Parses a decimal number at compile time, for the values that build scripts
+/// pass through the environment. Fails the build on anything else.
+pub const fn parse_decimal(text: &str) -> u64 {
+    let digits = text.as_bytes();
+    assert!(!digits.is_empty(), "expected a decimal number");
+    let mut value: u64 = 0;
+    let mut index = 0;
+    while index < digits.len() {
+        let digit = digits[index];
+        assert!(digit.is_ascii_digit(), "expected a decimal number");
+        value = value * 10 + (digit - b'0') as u64;
+        index += 1;
+    }
+    value
+}

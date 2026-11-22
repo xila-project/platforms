@@ -1,0 +1,38 @@
+[package]
+name = "xila-firmware-espressif"
+version.workspace = true
+edition = "2024"
+rust-version.workspace = true
+
+# The firmware shared by the Espressif board crates in `examples/boards`. It
+# selects no chip: the board crate enables exactly one chip feature of esp-hal,
+# esp-storage and `xila-drivers-espressif`, which then apply here too. On host
+# targets this crate is empty.
+[target.'cfg(all(target_os = "none", any(target_arch = "xtensa", target_arch = "riscv32")))'.dependencies]
+# Not the workspace entries: these boards have no network, and a workspace
+# member cannot turn off default features the workspace entry leaves on.
+command_line_shell = { package = "xila-command-line-shell", git = "https://github.com/xila-project/applications", branch = "main", default-features = false }
+critical-section = { workspace = true }
+drivers_core = { workspace = true }
+drivers_espressif = { package = "xila-drivers-espressif", path = "../../drivers/espressif", default-features = false, features = [
+  "console",
+  "executor",
+  "power",
+  "random",
+  "time",
+] }
+drivers_peripherals = { workspace = true }
+drivers_shared = { package = "xila-drivers-shared", path = "../../drivers/shared", default-features = false }
+embedded-storage = "0.3"
+esp-hal = { version = "=1.2.2", features = ["unstable"] }
+esp-storage = { version = "0.10", features = ["embedded-storage"] }
+xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
+
+[features]
+# Developer-only handler that runs raw ELF files from the file system as native
+# executables, with their images in `.dram2_uninit` (ESP32-C6 and ESP32-P4 only).
+# It does not sandbox them.
+native-dev = ["xila/native-dev", "drivers_espressif/executable-memory"]
+
+[lib]
+name = "firmware_espressif"

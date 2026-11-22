@@ -480,8 +480,8 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         job = ci['jobs']['espressif-emulator']
         matrix = job['strategy']['matrix']['include']
         self.assertEqual({row['chip']: row['task'] for row in matrix}, {
-            'esp32s3': 'test:espressif-emulator',
-            'esp32c6': 'test:esp32c6-emulator',
+            'esp32s3': 'test:esp32-s3-qemu',
+            'esp32c6': 'test:esp32-c6-qemu',
         })
         # Advisory while the emulator check settles: it is not part of the gate.
         self.assertNotIn('espressif-emulator', ci['jobs']['required']['needs'])
@@ -493,11 +493,25 @@ class PlatformWorkflowPolicy(unittest.TestCase):
                 self.assertTrue(step['run'].startswith('mise run '), step['name'])
         mise = tomllib.loads(read('mise.toml'))
         for task in ('setup:espressif-rust', 'setup:espressif-emulator',
-                     'build:esp32s3-image', 'setup:esp32c6-emulator',
-                     'build:esp32c6-image', *(row['task'] for row in matrix)):
+                     'build:esp32-s3-qemu', 'setup:esp32c6-emulator',
+                     'build:esp32-c6-qemu', *(row['task'] for row in matrix)):
             self.assertIn(task, mise['tasks'])
         for pin in ('esp_qemu_version', 'espflash_version', 'espup_version'):
             self.assertNotIn('latest', mise['vars'][pin])
+
+    def test_every_espressif_board_has_a_build_task_and_a_ci_job(self):
+        boards = {path.parent.name for path in (ROOT / 'examples/boards').glob('*/Cargo.toml')}
+        mise = tomllib.loads(read('mise.toml'))
+        for board in boards:
+            self.assertIn(f'build:{board}', mise['tasks'])
+        ci = yaml.safe_load(read('.github/workflows/ci.yml'))
+        emulated = {row['task'].removeprefix('test:')
+                    for row in ci['jobs']['espressif-emulator']['strategy']['matrix']['include']}
+        built = {row['board'] for row in ci['jobs']['espressif-boards']['strategy']['matrix']['include']}
+        # Each board is checked in CI once: booted in QEMU or built.
+        self.assertEqual(emulated | built, boards)
+        self.assertFalse(emulated & built)
+        self.assertNotIn('espressif-boards', ci['jobs']['required']['needs'])
 
     def test_xila_checkouts_use_locked_revisions(self):
         # Checkouts of Core, Applications and package_manager follow Cargo.lock

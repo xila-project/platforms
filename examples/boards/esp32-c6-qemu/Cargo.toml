@@ -1,0 +1,27 @@
+[package]
+name = "xila-board-esp32-c6-qemu"
+version.workspace = true
+edition = "2024"
+rust-version.workspace = true
+description = "Espressif QEMU's ESP32-C6 machine: the emulator smoke test."
+
+# The board selects the chip: exactly one chip feature of each Espressif crate.
+[target.'cfg(all(target_os = "none", target_arch = "riscv32"))'.dependencies]
+drivers_espressif = { package = "xila-drivers-espressif", path = "../../../drivers/espressif", default-features = false, features = [
+  "esp32c6",
+] }
+esp-bootloader-esp-idf = { version = "0.6", features = ["esp32c6"] }
+esp-hal = { version = "=1.2.2", features = ["esp32c6", "unstable"] }
+esp-println = { version = "0.18", default-features = false, features = [
+  "esp32c6",
+  "uart",
+] }
+esp-storage = { version = "0.10", features = ["esp32c6"] }
+firmware = { package = "xila-firmware-espressif", path = "../../../firmware/espressif", features = [
+  "native-dev",
+] }
+xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
+
+[[bin]]
+name = "esp32_c6_qemu"
+path = "src/main.rs"

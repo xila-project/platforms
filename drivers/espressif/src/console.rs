@@ -449,6 +449,48 @@ enum Transport {
     UsbSerialJtag(esp_hal::usb::usb_serial_jtag::UsbSerialJtag<'static, Async>),
 }
 
+/// A configured console port, before the console task takes it. Unlike the
+/// runner, it can be handed between contexts before the executor starts.
+pub enum ConsolePort {
+    /// A UART.
+    Uart(Uart<'static, Blocking>),
+    /// The chip's USB Serial/JTAG controller, for boards whose USB port has no
+    /// USB to UART bridge.
+    #[cfg(any(
+        feature = "esp32c3",
+        feature = "esp32c5",
+        feature = "esp32c6",
+        feature = "esp32c61",
+        feature = "esp32h2",
+        feature = "esp32p4",
+        feature = "esp32s3",
+        feature = "esp32s31",
+    ))]
+    UsbSerialJtag(esp_hal::usb::usb_serial_jtag::UsbSerialJtag<'static, Blocking>),
+}
+
+impl From<Uart<'static, Blocking>> for ConsolePort {
+    fn from(serial: Uart<'static, Blocking>) -> Self {
+        Self::Uart(serial)
+    }
+}
+
+#[cfg(any(
+    feature = "esp32c3",
+    feature = "esp32c5",
+    feature = "esp32c6",
+    feature = "esp32c61",
+    feature = "esp32h2",
+    feature = "esp32p4",
+    feature = "esp32s3",
+    feature = "esp32s31",
+))]
+impl From<esp_hal::usb::usb_serial_jtag::UsbSerialJtag<'static, Blocking>> for ConsolePort {
+    fn from(controller: esp_hal::usb::usb_serial_jtag::UsbSerialJtag<'static, Blocking>) -> Self {
+        Self::UsbSerialJtag(controller)
+    }
+}
+
 /// Owns the console port for the duration of the console task.
 pub struct ConsoleRunner(Transport);
 
@@ -462,32 +504,28 @@ fn claim_console() {
 }
 
 impl ConsoleRunner {
-    /// Takes ownership of an already configured serial port.
+    /// Takes ownership of an already configured console port: a UART, or the
+    /// USB Serial/JTAG controller on the chips that have one.
     ///
     /// Call once, on the core that will run the console.
-    pub fn new(serial: Uart<'static, Blocking>) -> Self {
+    pub fn new(port: impl Into<ConsolePort>) -> Self {
         claim_console();
-        Self(Transport::Uart(serial.into_async()))
-    }
-
-    /// Takes ownership of the chip's USB Serial/JTAG controller.
-    ///
-    /// Call once, on the core that will run the console.
-    #[cfg(any(
-        feature = "esp32c3",
-        feature = "esp32c5",
-        feature = "esp32c6",
-        feature = "esp32c61",
-        feature = "esp32h2",
-        feature = "esp32p4",
-        feature = "esp32s3",
-        feature = "esp32s31",
-    ))]
-    pub fn new_usb_serial_jtag(
-        controller: esp_hal::usb::usb_serial_jtag::UsbSerialJtag<'static, Blocking>,
-    ) -> Self {
-        claim_console();
-        Self(Transport::UsbSerialJtag(controller.into_async()))
+        Self(match port.into() {
+            ConsolePort::Uart(serial) => Transport::Uart(serial.into_async()),
+            #[cfg(any(
+                feature = "esp32c3",
+                feature = "esp32c5",
+                feature = "esp32c6",
+                feature = "esp32c61",
+                feature = "esp32h2",
+                feature = "esp32p4",
+                feature = "esp32s3",
+                feature = "esp32s31",
+            ))]
+            ConsolePort::UsbSerialJtag(controller) => {
+                Transport::UsbSerialJtag(controller.into_async())
+            }
+        })
     }
 
     /// Pumps input and output until the firmware stops.
