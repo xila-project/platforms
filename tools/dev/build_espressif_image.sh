@@ -7,9 +7,9 @@
 #   tools/dev/build_espressif_image.sh ESPFLASH_VERSION RUST_VERSION ESP_GCC_VERSION BOARD [elf] [CARGO_ARGUMENTS...]
 #
 # BOARD is a folder of examples/boards: esp32-s3-qemu, esp32-c6-qemu,
-# esp32-p4-function-ev-board or wt32-sc01-plus.
+# esp32-p4-function-ev-board, wt32-sc01 or wt32-sc01-plus.
 #
-# ESP32-S3 boards need the `esp` toolchain from `mise run setup:espressif-rust`.
+# Xtensa boards need the `esp` toolchain from `mise run setup:espressif-rust`.
 # RISC-V boards need the stable RISC-V targets and Clang for LittleFS.
 set -euo pipefail
 
@@ -35,8 +35,8 @@ root="$PWD/target/espressif-emulator"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
 mkdir -p "$root"
 
-build_esp32s3() {
-    local compiler esp_root gcc_bin
+build_xtensa() {
+    local compiler esp_root gcc_bin target_environment
     compiler=$(rustup which --toolchain esp rustc)
     case "$("$compiler" --version)" in
         *"($rust_version.0)") ;;
@@ -44,18 +44,19 @@ build_esp32s3() {
     esac
     esp_root=${compiler%/bin/rustc}
     gcc_bin="$esp_root/xtensa-esp-elf/esp-$esp_gcc_version/xtensa-esp-elf/bin"
-    test -x "$gcc_bin/xtensa-esp32s3-elf-gcc" || {
+    test -x "$gcc_bin/xtensa-$chip-elf-gcc" || {
         echo "Expected Xtensa GCC $esp_gcc_version in $gcc_bin." >&2; exit 1
     }
     local clang_libraries=("$esp_root"/xtensa-esp32-elf-clang/*/esp-clang/lib)
 
     # Call8 cannot reach the ROM's memcpy from flash, so use long C calls.
     export PATH="$gcc_bin:$PATH"
-    export CC_xtensa_esp32s3_none_elf=xtensa-esp32s3-elf-gcc
-    export CFLAGS_xtensa_esp32s3_none_elf=-mlongcalls
+    target_environment=${target//-/_}
     # Use Espressif's libclang and keep bindgen off the host's C library headers.
     export LIBCLANG_PATH="${clang_libraries[0]}"
-    export BINDGEN_EXTRA_CLANG_ARGS_xtensa_esp32s3_none_elf=-ffreestanding
+    export "CC_$target_environment=xtensa-$chip-elf-gcc"
+    export "CFLAGS_$target_environment=-mlongcalls"
+    export "BINDGEN_EXTRA_CLANG_ARGS_$target_environment=-ffreestanding"
     # bindgen passes no `--target` for host builds, such as the LVGL bindings
     # that the WebAssembly runtime's build script reads, and Espressif's
     # libclang defaults to a 32-bit target: name the host explicitly.
@@ -76,7 +77,14 @@ case "$board" in
         target=xtensa-esp32s3-none-elf
         flash_mode=dio
         flash_size=4mb
-        build_esp32s3
+        build_xtensa
+        ;;
+    wt32-sc01)
+        chip=esp32
+        target=xtensa-esp32-none-elf
+        flash_mode=dio
+        flash_size=4mb
+        build_xtensa
         ;;
     wt32-sc01-plus)
         chip=esp32s3
@@ -86,7 +94,7 @@ case "$board" in
         flash_mode=qio
         flash_frequency_arguments=(--flash-freq 80mhz)
         flash_size=16mb
-        build_esp32s3
+        build_xtensa
         ;;
     esp32-c6-qemu)
         chip=esp32c6

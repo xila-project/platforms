@@ -26,6 +26,7 @@ mod flash;
 pub mod graphics;
 #[cfg(feature = "native-dev")]
 pub mod native;
+pub mod psram_self_test;
 pub mod session;
 
 use alloc::boxed::Box;
@@ -101,6 +102,23 @@ pub fn initialize_heap() -> &'static MemoryManager {
     assert!(
         unsafe { heap.init_internal(addr_of_mut!(HEAP).cast(), HEAP_SIZE) },
         "The heap was already initialized"
+    );
+    heap
+}
+
+/// Uses a board-provided internal SRAM reservation in place of the default.
+///
+/// # Safety
+///
+/// The reservation must be in DMA-capable internal data SRAM that remains
+/// accessible during flash operations. Call once, before starting firmware.
+pub unsafe fn initialize_heap_from_slice(
+    reservation: &'static mut [MaybeUninit<u8>],
+) -> &'static MemoryManager {
+    let heap = &__DRIVERS_ESPRESSIF_MEMORY_ALLOCATOR;
+    assert!(
+        unsafe { heap.init_internal_from_slice(reservation) },
+        "Could not initialize the internal heap"
     );
     heap
 }
@@ -538,22 +556,25 @@ async fn start(task_manager: &'static task::Manager) {
     }
 
     let heap = &__DRIVERS_ESPRESSIF_MEMORY_ALLOCATOR;
+    let statistics = heap.get_statistics();
+    let internal_budget = statistics.region_stats[0]
+        .as_ref()
+        .map_or(0, |region| region.size);
     log::information!(
         "Xila heap: {} bytes used, {} free, {} total ({}-byte budget)",
         heap.get_used(),
         heap.get_free(),
         heap.get_total_size(),
-        HEAP_SIZE
+        internal_budget
     );
     if memory.external.is_some() {
-        let statistics = heap.get_statistics();
         // Region 0 is the static internal heap reservation, region 1 the
         // external PSRAM.
         for (index, region) in statistics.region_stats.iter().enumerate() {
             if let Some(region) = region {
                 if index == 0 {
                     log::information!(
-                        "Xila heap region 0 (internal heap reservation of {HEAP_SIZE} bytes, \
+                        "Xila heap region 0 (internal heap reservation of {internal_budget} bytes, \
                          out of the chip's {} bytes of SRAM): \
                          {} bytes used, {} free, {} total",
                         memory.internal_sram_size,

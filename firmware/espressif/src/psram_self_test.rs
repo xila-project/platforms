@@ -4,26 +4,12 @@
 use core::{alloc::Layout, ops::Range, ptr::NonNull};
 
 use drivers_espressif::memory::MemoryManager;
-use firmware::MemoryReport;
 use xila::{
     log,
     memory::{CapabilityFlags, ManagerTrait},
 };
 
-/// Runs [`check`] on the board's PSRAM, as its memory check, when the heap
-/// uses it.
-pub(super) fn run(report: &MemoryReport) {
-    if let Some(external) = report.external
-        && external.registered
-    {
-        check(
-            firmware::heap(),
-            external.start..external.start + external.size,
-        );
-    }
-}
-
-/// Size of the buffer that [`run`] checks.
+/// Size of the buffer that [`check`] checks.
 const SELF_TEST_SIZE: usize = 1024 * 1024;
 
 /// The pattern word at `address`: it differs between neighbouring words and
@@ -65,7 +51,12 @@ const PSRAM_REGION: usize = 1;
 
 /// Logs the PSRAM region of the heap at `stage` and returns its used bytes.
 fn log_psram_region(heap: &MemoryManager, stage: &str) -> usize {
-    match &heap.get_statistics().region_stats[PSRAM_REGION] {
+    match heap
+        .get_statistics()
+        .region_stats
+        .get(PSRAM_REGION)
+        .and_then(Option::as_ref)
+    {
         Some(region) => {
             log::information!(
                 "Xila: PSRAM self-test, heap region {PSRAM_REGION} {stage}: \
@@ -93,7 +84,7 @@ fn log_psram_region(heap: &MemoryManager, stage: &str) -> usize {
 /// pattern and its inverse. The buffer is larger than the data cache, so most
 /// of it is read back from the chip, not from the cache. Logs the region
 /// before, during and after, then the result.
-fn check(heap: &MemoryManager, psram: Range<usize>) {
+pub fn check(heap: &MemoryManager, psram: Range<usize>) {
     let used_before = log_psram_region(heap, "before");
     let layout = Layout::from_size_align(SELF_TEST_SIZE, 64).expect("valid self-test layout");
     // SAFETY: the layout has a non-zero size.

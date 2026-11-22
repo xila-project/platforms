@@ -7,7 +7,7 @@
 //! - Clocks: the CPU runs at 240 MHz, and the flash, in quad I/O mode, and
 //!   the PSRAM at 80 MHz. Enable the `boot-benchmark` feature to log their
 //!   speed once at boot.
-//! - PSRAM: added to the heap, and checked at boot by [`psram_self_test`].
+//! - PSRAM: added to the heap, and checked at boot by [`firmware::psram_self_test`].
 //! - Flash: 16 MB, partitioned by `partitions.csv`.
 //! - Screen: a 480 × 320 ST7796 panel on the 8080 bus, its backlight and an
 //!   FT6336U touch panel, in [`screen`]. The graphical shell runs on it, and
@@ -31,7 +31,6 @@ use firmware::{Board, ExternalMemory, MemoryReport, StoragePartition, parse_deci
 
 #[cfg(feature = "boot-benchmark")]
 mod boot_benchmark;
-mod psram_self_test;
 mod screen;
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -143,7 +142,7 @@ fn main() -> ! {
 /// The board's memory check: the PSRAM self-test, followed by the boot
 /// benchmark when the `boot-benchmark` feature is enabled.
 fn check_memory(report: &MemoryReport) {
-    psram_self_test::run(report);
+    firmware::psram_self_test::run(report);
     #[cfg(feature = "boot-benchmark")]
     boot_benchmark::run(report);
 }

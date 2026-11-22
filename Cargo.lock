@@ -2032,6 +2032,7 @@ dependencies = [
  "esp-metadata-generated",
  "esp-rom-sys",
  "esp-sync",
+ "esp32",
  "esp32c6",
  "esp32p4",
  "esp32s3 0.36.0",
@@ -6489,6 +6490,20 @@ dependencies = [
  "esp-hal",
  "esp-println",
  "esp-storage",
+ "xila",
+ "xila-drivers-espressif",
+ "xila-firmware-espressif",
+]
+
+[[package]]
+name = "xila-board-wt32-sc01"
+version = "0.1.0"
+dependencies = [
+ "esp-bootloader-esp-idf",
+ "esp-hal",
+ "esp-println",
+ "esp-storage",
+ "static_cell",
  "xila",
  "xila-drivers-espressif",
  "xila-firmware-espressif",
