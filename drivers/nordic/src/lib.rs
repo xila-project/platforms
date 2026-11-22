@@ -1,9 +1,9 @@
 #![no_std]
 #![cfg(any(all(target_arch = "arm", target_os = "none"), test))]
 
+pub mod executable_memory;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 pub mod executor;
-pub mod executable_memory;
 pub mod flash;
 pub mod gpio;
 pub mod memory;
