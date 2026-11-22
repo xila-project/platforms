@@ -25,8 +25,13 @@ esp32s3 = [
 ]
 # Draws through the virtual RGB panel that only Espressif's QEMU provides.
 qemu-display = ["esp32s3", "xila/graphics_rendering_rgb565"]
-# The pinned QEMU machine lacks the ESP32-C6 random register.
-qemu-esp32c6 = ["esp32c6"]
+# Developer-only handler that runs raw ELF files from the file system as native
+# executables, with their images in `.dram2_uninit` (ESP32-C6 and ESP32-P4 only).
+# It does not sandbox them.
+native-dev = ["xila/native-dev", "drivers_espressif/executable-memory"]
+# The pinned QEMU machine lacks the ESP32-C6 random register. The build also runs
+# a native code self-test from the executable arena at boot.
+qemu-esp32c6 = ["esp32c6", "native-dev"]
 
 [target.'cfg(all(target_os = "none", any(target_arch = "xtensa", target_arch = "riscv32")))'.dependencies]
 # Not the workspace entries: these boards have no network, and a workspace

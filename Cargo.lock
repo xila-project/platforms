@@ -6351,6 +6351,7 @@ dependencies = [
  "xila-file-system",
  "xila-log",
  "xila-memory",
+ "xila-native-loader",
  "xila-peripherals",
  "xila-shared",
  "xila-task",
@@ -6434,6 +6435,7 @@ dependencies = [
  "xila-file-system",
  "xila-log",
  "xila-memory",
+ "xila-native-loader",
  "xila-shared",
  "xila-synchronization",
  "xila-task",
@@ -6507,6 +6509,7 @@ dependencies = [
  "xila-little-fs",
  "xila-log",
  "xila-memory",
+ "xila-native-loader",
  "xila-network",
  "xila-peripherals",
  "xila-shared",
@@ -6576,8 +6579,10 @@ dependencies = [
  "xila-graphics",
  "xila-lifecycle",
  "xila-log",
+ "xila-native-loader",
  "xila-network",
  "xila-shared",
+ "xila-stackful",
  "xila-synchronization",
  "xila-task",
  "xila-time",
@@ -6800,6 +6805,17 @@ dependencies = [
  "xila-settings",
  "xila-terminal",
  "xila-wasm",
+]
+
+[[package]]
+name = "xila-native-loader"
+version = "0.1.0"
+source = "git+https://github.com/xila-project/core?branch=main#22dd5b8e40060bfbd9d7519c0608918a7ab26f83"
+dependencies = [
+ "xila-abi-application",
+ "xila-stackful",
+ "xila-task",
+ "xila-version",
 ]
 
 [[package]]

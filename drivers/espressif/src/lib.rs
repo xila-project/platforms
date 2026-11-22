@@ -8,6 +8,10 @@
 //! provide the shell's runtime drivers. Initialize the time driver before
 //! starting the executor. Run the executor, console and timer on the same core.
 //!
+//! The optional `executable-memory` feature provides executable memory for the
+//! native loader on the ESP32-C5, C6, C61, H2 and P4. The other chips cannot run
+//! native images: the `executable_memory` module documents why.
+//!
 //! # Firmware requirements
 //!
 //! - **Critical section**: the drivers and memory manager use `critical-section`,
@@ -64,6 +68,17 @@ const _: () = assert!(
 pub mod chips;
 #[cfg(feature = "console")]
 pub mod console;
+#[cfg(all(
+    feature = "executable-memory",
+    any(
+        feature = "esp32c5",
+        feature = "esp32c6",
+        feature = "esp32c61",
+        feature = "esp32h2",
+        feature = "esp32p4",
+    )
+))]
+pub mod executable_memory;
 #[cfg(feature = "executor")]
 pub mod executor;
 pub mod memory;

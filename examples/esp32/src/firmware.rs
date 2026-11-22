@@ -29,6 +29,8 @@ use xila::{
 #[cfg(feature = "qemu-display")]
 mod display;
 mod flash;
+#[cfg(feature = "native-dev")]
+mod native;
 
 #[cfg(not(any(feature = "esp32s3", feature = "esp32c6", feature = "esp32p4")))]
 compile_error!("Select one target chip feature: esp32s3, esp32c6 or esp32p4.");
@@ -148,6 +150,15 @@ async fn run(task_manager: &'static task::Manager) {
         .expect("Failed to spawn the serial console");
 
     log::information!("Xila ESP32 startup");
+    #[cfg(feature = "native-dev")]
+    native::initialize();
+    #[cfg(feature = "qemu-esp32c6")]
+    match native::self_test() {
+        Ok(address) => {
+            log::information!("Xila: native executable memory self-test passed at {address:#x}")
+        }
+        Err(error) => log::error!("Xila: native executable memory self-test failed: {error}"),
+    }
     #[cfg(feature = "esp32p4")]
     {
         let (size, registered) = hardware.external_memory;
@@ -322,12 +333,16 @@ async fn run(task_manager: &'static task::Manager) {
 
     // - Executables.
     let executable_context: &'static executable::ExecutableContext =
-        Box::leak(Box::new(executable::ExecutableContext::new(
-            task_manager,
-            users_manager,
-            virtual_file_system,
-            time_manager,
-        )));
+        Box::leak(Box::new(executable::ExecutableContext {
+            #[cfg(feature = "native-dev")]
+            formats: native::FORMATS,
+            ..executable::ExecutableContext::new(
+                task_manager,
+                users_manager,
+                virtual_file_system,
+                time_manager,
+            )
+        }));
     mount_executables!(
         executable_context,
         virtual_file_system,

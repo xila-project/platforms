@@ -29,6 +29,7 @@ esp-hal = { version = "=1.2.2", default-features = false, features = [
   "unstable",
 ], optional = true }
 memory = { workspace = true }
+native_loader = { workspace = true, optional = true }
 peripherals = { workspace = true, optional = true }
 task = { workspace = true, optional = true }
 virtual_file_system = { workspace = true, optional = true }
@@ -59,6 +60,9 @@ console = [
   "dep:log",
   "dep:shared",
 ]
+# Executable memory for the native loader, on the chips listed in
+# `executable_memory`; elsewhere the feature adds nothing.
+executable-memory = ["dep:native_loader"]
 executor = ["dep:embassy-executor", "dep:static_cell"]
 power = ["dep:peripherals", "peripherals/power"]
 random = ["dep:file_system", "dep:static_cell"]

@@ -10,6 +10,8 @@ use std::{
 };
 use xila::file_system::PathOwned;
 
+#[path = "../native_executables.rs"]
+mod native_executables;
 #[path = "../storage.rs"]
 mod storage;
 
@@ -444,7 +446,7 @@ async fn run_runtime(
         virtual_file_system: vfs,
         graphics_manager: None,
         network_manager: None,
-        formats: &[],
+        formats: native_executables::FORMATS,
         time_manager,
     }));
     xila::executable::mount_executables!(

@@ -12,6 +12,10 @@ default = []
 # within a minute, so that a firmware whose console does not work stays
 # reachable without the reset button.
 bring-up = []
+# Developer-only handler that runs raw ELF files from the file system as native
+# executables, with their images in the SRAM heap. It does not sandbox them.
+# The firmware does not fit its 448 KiB of flash with it yet (about 51 KiB over).
+native-dev = ["xila/native-dev"]
 
 [target.'cfg(all(target_arch = "arm", target_os = "none"))'.dependencies]
 # Not the workspace entries: this board has no network, and a workspace member

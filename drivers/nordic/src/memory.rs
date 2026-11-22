@@ -4,6 +4,10 @@ use memory::{CapabilityFlags, Layout, ManagerTrait};
 use synchronization::blocking_mutex::CriticalSectionMutex;
 
 /// Fixed-region memory manager for Cortex-M bare-metal using `linked_list_allocator`.
+///
+/// The nRF52840 SRAM is addressed identically for instructions and data, so every
+/// block is executable (see [`crate::executable_memory`]), DMA-capable and always
+/// accessible.
 pub struct MemoryManager {
     heap: CriticalSectionMutex<RefCell<Heap>>,
 }
@@ -50,7 +54,9 @@ impl ManagerTrait for MemoryManager {
         capabilities: CapabilityFlags,
         layout: Layout,
     ) -> Option<NonNull<u8>> {
-        let supported = CapabilityFlags::DirectMemoryAccess | CapabilityFlags::AlwaysAccessible;
+        let supported = CapabilityFlags::Executable
+            | CapabilityFlags::DirectMemoryAccess
+            | CapabilityFlags::AlwaysAccessible;
         if !supported.contains(capabilities) {
             return None;
         }
@@ -108,6 +114,8 @@ mod tests {
 
     memory::implement_memory_manager_tests!(
         [#[test]], test_manager(),
-        capabilities = CapabilityFlags::DirectMemoryAccess | CapabilityFlags::AlwaysAccessible
+        capabilities = CapabilityFlags::Executable
+            | CapabilityFlags::DirectMemoryAccess
+            | CapabilityFlags::AlwaysAccessible
     );
 }
