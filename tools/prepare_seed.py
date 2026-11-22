@@ -3,9 +3,10 @@
 
 The JSON lockfile pins each application by identity, version and SHA-256, and
 either an HTTPS `url` or a local `archive` path (relative to the lockfile).
-Each archive is verified (digest, identity, ABI and, when the lockfile has a
-`publisher_key`, its publisher signature) and extracted as a complete bundle
-to <output>/<package-id>/, ready for `fs_image --bundles-dir`.
+Each archive is verified (digest, identity, Xila version compatibility and,
+when the lockfile has a `publisher_key`, its publisher signature) and extracted
+as a complete bundle to <output>/<package-id>/, ready for
+`fs_image --bundles-dir`.
 """
 import argparse
 import base64
@@ -33,7 +34,7 @@ def fetch(item: dict, lockfile: Path, destination: Path) -> Path:
     return destination
 
 
-def prepare(profile: str, lockfile: Path, output: Path, tool: Path, max_abi: int) -> None:
+def prepare(profile: str, lockfile: Path, output: Path, tool: Path) -> None:
     if profile not in ("native", "browser"):
         raise ValueError("profile must be native or browser")
     names = (ROOT / "tools/fs_image/profiles" / f"{profile}.txt").read_text().splitlines()
@@ -62,7 +63,7 @@ def prepare(profile: str, lockfile: Path, output: Path, tool: Path, max_abi: int
                 raise ValueError(f"invalid pinned checksum for {name}")
             archive = fetch(item, lockfile, stage / f"{identifier}.xpk")
             subprocess.run([str(tool.resolve(strict=True)), str(archive), item["sha256"], item["name"],
-                            item["version"], str(max_abi), str(stage / identifier), *public_key], check=True)
+                            item["version"], str(stage / identifier), *public_key], check=True)
         # Creating the output directory first refuses to replace any existing files.
         output.mkdir()
         try:
@@ -80,12 +81,9 @@ def main() -> None:
     parser.add_argument("--lockfile", type=Path, default=ROOT / "tools/fs_image/profiles/bundles.lock.json")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--tool", type=Path, required=True)
-    parser.add_argument("--max-abi", type=int, required=True)
     args = parser.parse_args()
-    if args.max_abi < 0:
-        parser.error("--max-abi must be nonnegative")
     try:
-        prepare(args.profile, args.lockfile, args.output, args.tool, args.max_abi)
+        prepare(args.profile, args.lockfile, args.output, args.tool)
     except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"{error}\n")
 

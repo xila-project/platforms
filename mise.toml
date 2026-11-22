@@ -71,7 +71,7 @@ if [ -z "$bundles" ]; then
   rm -rf "$bundles"
   cargo build --locked -p xila-prepare-applications
   python3 tools/prepare_seed.py --profile native --output "$bundles" \
-    --tool "${CARGO_TARGET_DIR:-target}/debug/xila-prepare-applications" --max-abi 1
+    --tool "${CARGO_TARGET_DIR:-target}/debug/xila-prepare-applications"
 fi
 cargo run --locked -p xila-fs-image -- target/seed/native/seed.img 16777216 --bundle native --bundles-dir "$bundles"
 '''
@@ -87,7 +87,7 @@ if [ -z "$bundles" ]; then
   rm -rf "$bundles"
   cargo build --locked -p xila-prepare-applications
   python3 tools/prepare_seed.py --profile browser --output "$bundles" \
-    --tool "${CARGO_TARGET_DIR:-target}/debug/xila-prepare-applications" --max-abi 1
+    --tool "${CARGO_TARGET_DIR:-target}/debug/xila-prepare-applications"
 fi
 cargo run --locked -p xila-fs-image -- target/seed/browser/seed.img 16777216 --bundle wasm --bundles-dir "$bundles"
 '''
