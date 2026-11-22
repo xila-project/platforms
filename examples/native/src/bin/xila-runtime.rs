@@ -139,6 +139,32 @@ fn parse_mount(value: &str) -> Result<MountSpec, String> {
     })
 }
 
+/// Options of the Wasm host that take a separate value.
+const WASM_OPTIONS_WITH_VALUE: [&str; 3] = ["-s", "--stack-size", "--instruction-limit"];
+
+/// Separates the Wasm host options and the module path from the guest arguments with `--`,
+/// as the Wasm host expects. Host options such as `--developer-mode` may precede the path.
+fn separate_guest_arguments(arguments: &mut Vec<String>) {
+    let mut index = 0;
+    while index < arguments.len() {
+        let argument = arguments[index].as_str();
+        if argument == "--" {
+            return;
+        }
+        if !argument.starts_with('-') {
+            if arguments.get(index + 1).is_some_and(|next| next != "--") {
+                arguments.insert(index + 1, "--".to_string());
+            }
+            return;
+        }
+        index += if WASM_OPTIONS_WITH_VALUE.contains(&argument) {
+            2
+        } else {
+            1
+        };
+    }
+}
+
 fn parse_u16(value: &str, name: &str) -> Result<u16, String> {
     value
         .parse()
@@ -499,8 +525,8 @@ async fn run_runtime(
     .await
     .map_err(|error| format!("cannot open host standard streams: {error:?}"))?;
     let mut executable_arguments = config.arguments;
-    if config.executable == "/applications/executables/wasm" && executable_arguments.len() > 1 {
-        executable_arguments.insert(1, "--".to_string());
+    if config.executable == "/applications/executables/wasm" {
+        separate_guest_arguments(&mut executable_arguments);
     }
     let executable_path = PathOwned::new(config.executable.clone())
         .ok_or_else(|| format!("invalid Xila executable path: {}", config.executable))?;
@@ -591,6 +617,43 @@ mod tests {
                 String::from("a"),
                 String::from("b")
             ]
+        );
+    }
+
+    #[test]
+    fn separates_wasm_host_options_from_guest_arguments() {
+        let separated = |arguments: &[&str]| {
+            let mut arguments: Vec<String> =
+                arguments.iter().map(|value| value.to_string()).collect();
+            separate_guest_arguments(&mut arguments);
+            arguments
+        };
+        assert_eq!(separated(&["/app.wasm"]), ["/app.wasm"]);
+        assert_eq!(separated(&["/app.wasm", "a"]), ["/app.wasm", "--", "a"]);
+        assert_eq!(
+            separated(&["--developer-mode", "/app.wasm", "a", "b"]),
+            ["--developer-mode", "/app.wasm", "--", "a", "b"]
+        );
+        assert_eq!(
+            separated(&[
+                "--instruction-limit",
+                "42",
+                "--developer-mode",
+                "/app.wasm",
+                "a"
+            ]),
+            [
+                "--instruction-limit",
+                "42",
+                "--developer-mode",
+                "/app.wasm",
+                "--",
+                "a"
+            ]
+        );
+        assert_eq!(
+            separated(&["--developer-mode", "/app.wasm", "--", "a"]),
+            ["--developer-mode", "/app.wasm", "--", "a"]
         );
     }
 

@@ -51,14 +51,17 @@ in the dock. Select
 
 The example mounts the Wasmi-backed runtime at `/applications/executables/wasm`, with the same
 graphics bindings as the native example. For other guests that are already
-present in Xila's virtual filesystem:
+present in Xila's virtual filesystem and are not part of an installed package, pass
+`--developer-mode`; without it the runtime refuses executables that are not
+verified against an installed package manifest. Never pass it for installed
+bundles.
 
 ```text
-/applications/executables/wasm /path/to/guest.wasm
+/applications/executables/wasm --developer-mode /path/to/guest.wasm
 ```
 
 WASI Preview 1 command guests should export `_start: () -> ()`. Use
-`/applications/executables/wasm --install /path/to/guest.wasm` to call `__install: () -> ()`
+`/applications/executables/wasm --developer-mode --install /path/to/guest.wasm` to call `__install: () -> ()`
 instead. Graphical guests must use compatible Xila graphics bindings; see the
 [runtime documentation](../../executables/wasm/README.md) for supported APIs and
 limits.
