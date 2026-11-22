@@ -17,9 +17,9 @@ use crate::devices::graphics::get_window_size;
 /// Target height in rows of a single browser partial-rendering tile.
 pub const DRAW_BUFFER_TILE_ROWS: usize = 64;
 
-/// Minimum browser draw buffer capacity in pixels so resizing from a small
-/// initial viewport to a wide desktop viewport still fits complete scanlines.
-pub const MINIMUM_DRAW_BUFFER_PIXELS: usize = 4096;
+/// LVGL keeps the startup allocation when the viewport changes. Reserve at
+/// least one row at the widest resolution representable by `Point`.
+pub const MINIMUM_DRAW_BUFFER_PIXELS: usize = i16::MAX as usize;
 
 /// Maximum browser draw buffer capacity in pixels (128 Ki pixels, or 512 KiB
 /// at 4 bytes per pixel in XRGB8888), bounding both the graphics draw buffer
@@ -148,16 +148,12 @@ impl Inner {
             .checked_mul(size_of::<RenderingColor>())
             .ok_or("Drawing area byte length overflowed")?;
 
-        if self.conversion_buffer.capacity() < bytes_needed {
-            self.conversion_buffer.clear();
-            self.conversion_buffer.reserve_exact(bytes_needed);
+        if self.conversion_buffer.len() < bytes_needed {
+            self.conversion_buffer
+                .reserve_exact(bytes_needed - self.conversion_buffer.len());
+            self.conversion_buffer.resize(bytes_needed, 0);
         }
-        unsafe {
-            self.conversion_buffer.set_len(bytes_needed);
-        }
-
-        let destination =
-            unsafe { slice::from_raw_parts_mut(self.conversion_buffer.as_mut_ptr(), bytes_needed) };
+        let destination = &mut self.conversion_buffer[..bytes_needed];
 
         let source = unsafe { slice::from_raw_parts(buffer.as_ptr() as *const u8, bytes_needed) };
 
@@ -167,7 +163,7 @@ impl Inner {
 
         // now conversion_buffer is ready as &[u8]
         let image_data = ImageData::new_with_u8_clamped_array_and_sh(
-            Clamped(&self.conversion_buffer),
+            Clamped(destination),
             width as _,
             height as _,
         )
@@ -332,6 +328,15 @@ mod color_conversion_tests {
     }
 
     #[wasm_bindgen_test]
+    fn draw_buffer_can_hold_a_full_row_after_viewport_growth() {
+        let initial_resolution = graphics::Point::new(64, 48);
+        let wide_resolution = graphics::Point::new(5120, 1440);
+        assert!(
+            super::draw_buffer_pixel_count(&initial_resolution) >= wide_resolution.get_x() as usize
+        );
+    }
+
+    #[wasm_bindgen_test]
     fn draw_buffer_pixel_count_uses_bounded_row_tiles() {
         use super::{
             DRAW_BUFFER_TILE_ROWS, MAXIMUM_DRAW_BUFFER_PIXELS, MINIMUM_DRAW_BUFFER_PIXELS,
@@ -361,7 +366,7 @@ mod color_conversion_tests {
         );
         assert_eq!(
             draw_buffer_pixel_count(&Point::new(390, 844)),
-            390 * DRAW_BUFFER_TILE_ROWS
+            MINIMUM_DRAW_BUFFER_PIXELS
         );
         assert_eq!(draw_buffer_pixel_count(&Point::new(1280, 32)), 1280 * 32);
         assert_eq!(

@@ -140,7 +140,7 @@ jobs:
         run: mise run ci:browser-node-tests
       - name: "Test | Browser HTTP client device"
         run: mise run test:browser-http
-      - name: "Test | Browser driver library in Chrome"
+      - name: "Test | Browser drivers in Chrome"
         run: mise run test:browser-drivers
   espressif-emulator:
     # Advisory while the emulator check settles: not in the `required` gate.

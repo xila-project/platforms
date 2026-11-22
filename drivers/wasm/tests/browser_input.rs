@@ -420,6 +420,59 @@ async fn partial_row_tiles_compose_complete_frame_and_reject_short_buffers() {
     canvas.remove();
 }
 
+#[wasm_bindgen_test]
+async fn lvgl_partial_display_redraws_after_viewport_rotation() {
+    use drivers_wasm::devices::graphics::draw_buffer_pixel_count;
+    use graphics::{Display, lvgl};
+
+    let canvas = canvas();
+    canvas.set_width(83);
+    canvas.set_height(803);
+    let device = Box::leak(Box::new(
+        CanvasScreenDevice::new(canvas.clone()).await.unwrap(),
+    ));
+    let context: web_sys::CanvasRenderingContext2d = canvas
+        .get_context("2d")
+        .unwrap()
+        .unwrap()
+        .dyn_into()
+        .unwrap();
+    let pixel = |x, y| context.get_image_data(x, y, 1.0, 1.0).unwrap().data().0;
+
+    unsafe {
+        lvgl::lv_init();
+        let display =
+            Display::new(device, draw_buffer_pixel_count(&Point::new(83, 803)), false).unwrap();
+        let raw_display = display.get_lvgl_display();
+        let screen = display.get_object();
+        lvgl::lv_obj_remove_style_all(screen);
+        lvgl::lv_obj_set_style_bg_opa(screen, lvgl::LV_OPA_COVER, 0);
+        lvgl::lv_obj_set_style_bg_color(screen, lvgl::lv_color_hex(0x123456), 0);
+        lvgl::lv_refr_now(raw_display);
+        assert_eq!(pixel(82.0, 802.0), [0x12, 0x34, 0x56, 255]);
+
+        // A browser orientation change swaps the dimensions of the canvas.
+        canvas.set_width(803);
+        canvas.set_height(83);
+        lvgl::lv_display_set_resolution(raw_display, 803, 83);
+        lvgl::lv_refr_now(raw_display);
+        assert_eq!(pixel(802.0, 82.0), [0x12, 0x34, 0x56, 255]);
+
+        let rectangle = lvgl::lv_obj_create(screen);
+        lvgl::lv_obj_remove_style_all(rectangle);
+        lvgl::lv_obj_set_pos(rectangle, 9, 77);
+        lvgl::lv_obj_set_size(rectangle, 17, 5);
+        lvgl::lv_obj_set_style_bg_opa(rectangle, lvgl::LV_OPA_COVER, 0);
+        lvgl::lv_obj_set_style_bg_color(rectangle, lvgl::lv_color_hex(0xabcdef), 0);
+        lvgl::lv_refr_now(raw_display);
+        assert_eq!(pixel(9.0, 77.0), [0xab, 0xcd, 0xef, 255]);
+        assert_eq!(pixel(25.0, 81.0), [0xab, 0xcd, 0xef, 255]);
+        assert_eq!(pixel(26.0, 81.0), [0x12, 0x34, 0x56, 255]);
+        assert_eq!(pixel(25.0, 82.0), [0x12, 0x34, 0x56, 255]);
+    }
+    canvas.remove();
+}
+
 fn mouse(canvas: &web_sys::EventTarget, kind: &str, x: i32, y: i32, buttons: u16) {
     let options = MouseEventInit::new();
     options.set_client_x(x);
