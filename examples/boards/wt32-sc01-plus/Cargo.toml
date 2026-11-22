@@ -22,6 +22,7 @@ esp-storage = { version = "0.10", features = ["esp32s3"] }
 firmware = { package = "xila-firmware-espressif", path = "../../../firmware/espressif", features = [
   "graphics",
   "wasm",
+  "wifi",
 ] }
 # `Display::set_pixels_raw` (almindor/mipidsi#205) is not released yet: switch
 # to the next crates.io release once it is out.

@@ -47,7 +47,12 @@ pub use board::{Board, Display, ExternalMemory, MemoryReport, StoragePartition, 
 pub use drivers_espressif;
 
 /// The static internal heap reservation.
+#[cfg(not(feature = "wifi"))]
 pub const HEAP_SIZE: usize = 256 * 1024;
+// The radio and scheduler add internal code and data. Leave room for the
+// executor's main stack in the shared instruction/data SRAM bank.
+#[cfg(feature = "wifi")]
+pub const HEAP_SIZE: usize = 216 * 1024;
 static mut HEAP: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
 
 /// LittleFS cache: a divisor of the 4096-byte flash page.
@@ -95,6 +100,17 @@ pub fn initialize_heap() -> &'static MemoryManager {
 /// The allocator behind the global heap.
 pub fn heap() -> &'static MemoryManager {
     &__DRIVERS_ESPRESSIF_MEMORY_ALLOCATOR
+}
+
+#[cfg(feature = "wifi")]
+static WIFI: Mutex<RefCell<Option<drivers_espressif::wifi::Peripherals>>> =
+    Mutex::new(RefCell::new(None));
+
+/// Starts Xila and makes the board's optional ESP32-S3 radio available after mounting storage.
+#[cfg(feature = "wifi")]
+pub fn run_with_wifi(board: Board, peripherals: drivers_espressif::wifi::Peripherals) -> ! {
+    critical_section::with(|section| WIFI.borrow(section).replace(Some(peripherals)));
+    run(board)
 }
 
 /// Starts Xila on `board`. Call it from the board's entry point, after
@@ -353,6 +369,29 @@ async fn start(task_manager: &'static task::Manager) {
     if display.is_some() {
         log::warning!("Xila: the board has a screen, but the firmware has no graphics");
     }
+    #[cfg(feature = "wifi")]
+    let network_manager = {
+        let peripherals = critical_section::with(|section| WIFI.borrow(section).take());
+        match peripherals {
+            Some(peripherals) => match drivers_espressif::wifi::initialize(
+                peripherals,
+                heap(),
+                task_manager,
+                virtual_file_system,
+                time_manager,
+                random_device,
+            )
+            .await
+            {
+                Ok(manager) => manager,
+                Err(error) => {
+                    log::warning!("Wi-Fi: startup failed ({error:?})");
+                    None
+                }
+            },
+            None => None,
+        }
+    };
 
     // - Executables.
     let executable_context: &'static executable::ExecutableContext =
@@ -361,6 +400,8 @@ async fn start(task_manager: &'static task::Manager) {
             formats: native::FORMATS,
             #[cfg(feature = "graphics")]
             graphics_manager,
+            #[cfg(feature = "wifi")]
+            network_manager,
             ..executable::ExecutableContext::new(
                 task_manager,
                 users_manager,
