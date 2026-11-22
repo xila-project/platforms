@@ -5,6 +5,8 @@ mod http_client;
 mod http_common;
 #[cfg(feature = "network")]
 mod https_client;
+#[cfg(feature = "input-queue")]
+mod input_event_queue;
 mod pointer_queue;
 #[cfg(any(
     target_os = "linux",
@@ -21,6 +23,8 @@ pub use hash::*;
 pub use http_client::*;
 #[cfg(feature = "network")]
 pub use https_client::*;
+#[cfg(feature = "input-queue")]
+pub use input_event_queue::*;
 pub use pointer_queue::*;
 #[cfg(any(
     target_os = "linux",

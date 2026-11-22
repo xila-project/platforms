@@ -29,6 +29,26 @@ fn interface_exists(name: &str) -> bool {
     std::fs::metadata(format!("/sys/class/net/{}", name)).is_ok()
 }
 
+/// Describe a command for the log without the name of the host user it may carry.
+fn describe_command(arguments: &[&str]) -> String {
+    let mut description = String::new();
+    let mut previous = "";
+
+    for argument in arguments {
+        if !description.is_empty() {
+            description.push(' ');
+        }
+        description.push_str(if previous == "user" {
+            "<user>"
+        } else {
+            argument
+        });
+        previous = argument;
+    }
+
+    description
+}
+
 fn setup_tap_interface(name: &str) -> Result<(), String> {
     // Get the user from SUDO_USER environment variable
     log::information!(
@@ -38,8 +58,6 @@ fn setup_tap_interface(name: &str) -> Result<(), String> {
 
     let user = std::env::var("SUDO_USER")
         .unwrap_or_else(|_| std::env::var("USER").unwrap_or_else(|_| "root".to_string()));
-
-    log::information!("Using user: {}", user);
 
     let commands: &[&[&str]] = &[
         &[
@@ -101,11 +119,10 @@ fn setup_tap_interface(name: &str) -> Result<(), String> {
             .map_err(|e| format!("Failed to execute command: {}", e))?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(format!(
-                "Command 'sudo {}' failed: {}",
-                cmd_args.join(" "),
-                stderr
+                "Command 'sudo {}' failed with {}",
+                describe_command(cmd_args),
+                output.status
             ));
         }
     }
@@ -121,7 +138,11 @@ fn setup_tap_interface(name: &str) -> Result<(), String> {
             let stderr = String::from_utf8_lossy(&output.stderr);
             // Ignore "File exists" errors for routes
             if !stderr.contains("File exists") {
-                log::warning!("Command 'sudo {}' failed: {}", cmd_args.join(" "), stderr);
+                log::warning!(
+                    "Command 'sudo {}' failed with {}",
+                    describe_command(cmd_args),
+                    output.status
+                );
             }
         }
     }
@@ -155,4 +176,27 @@ pub fn new(name: &str, tun: bool, tap: bool) -> Option<(TunTapInterface, TunTapC
     let controller = TunTapControllerDevice {};
 
     Some((tuntap_device, controller))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::describe_command;
+
+    #[test]
+    fn command_description_hides_the_host_user() {
+        let description = describe_command(&[
+            "ip", "tuntap", "add", "name", "tap0", "mode", "tap", "user", "alice",
+        ]);
+
+        assert_eq!(description, "ip tuntap add name tap0 mode tap user <user>");
+        assert!(!description.contains("alice"));
+    }
+
+    #[test]
+    fn command_description_keeps_commands_without_a_user() {
+        assert_eq!(
+            describe_command(&["ip", "link", "set", "tap0", "up"]),
+            "ip link set tap0 up"
+        );
+    }
 }

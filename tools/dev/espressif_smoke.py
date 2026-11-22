@@ -22,7 +22,7 @@ import time
 import zlib
 
 TIMEOUT = 60
-RNG_MARKER = "Xila: RNG "
+RNG_MARKER = "Random generator works"
 NATIVE_MARKER = "Xila: native executable memory self-test passed"
 LVGL_MARKER = "Xila: LVGL frame flushed"
 SHELL_PROMPT_MARKER = "User name:"
