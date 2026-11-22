@@ -68,6 +68,8 @@ jobs:
         run: mise run ci:profiling-runtime-tests
       - name: "Test | Native profiling"
         run: mise run ci:profiling-native-tests
+      - name: "Test | Heaptrack allocation probe"
+        run: mise run ci:profiling-heap-smoke
       - name: "Build | Native platform"
         run: mise run build:native
       - name: "Build | Native release executable"

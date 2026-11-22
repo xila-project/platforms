@@ -204,6 +204,11 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", compone
 [tasks."build:profiling"]
 extends = "ci:rust"
 
+[tasks."ci:profiling-heap-smoke"]
+description = "Build the allocation probe against drivers/std and check its heaptrack events"
+extends = "ci:rust"
+run = "cargo run --locked --manifest-path tools/profiling/Cargo.toml -- heap-smoke"
+
 [tasks."ci:profiling-runtime-tests"]
 extends = "ci:rust"
 tools."github:nextest-rs/nextest" = "cargo-nextest-{{ vars.nextest_version }}"
