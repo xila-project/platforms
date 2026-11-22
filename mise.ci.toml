@@ -149,8 +149,8 @@ for locale in $locales; do
   cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/repeated.img" 16777216 --bundle wasm --bundles-dir "$CARGO_TARGET_DIR/seed/bundles"
   cmp "$CARGO_TARGET_DIR/seed/wasm/seed.img" "$CARGO_TARGET_DIR/seed/wasm/repeated.img"
   rm "$CARGO_TARGET_DIR/seed/wasm/repeated.img"
-  cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/native.img" 16777216 --bundle native --bundles-dir "$CARGO_TARGET_DIR/seed/bundles"
-  cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/native-repeated.img" 16777216 --bundle native --bundles-dir "$CARGO_TARGET_DIR/seed/bundles"
+  cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/native.img" 16777216 --bundle native --bundles-dir "$CARGO_TARGET_DIR/seed/bundles" --native-runtime unix
+  cargo run --locked -p xila-fs-image -- "$CARGO_TARGET_DIR/seed/wasm/native-repeated.img" 16777216 --bundle native --bundles-dir "$CARGO_TARGET_DIR/seed/bundles" --native-runtime unix
   cmp "$CARGO_TARGET_DIR/seed/wasm/native.img" "$CARGO_TARGET_DIR/seed/wasm/native-repeated.img"
   rm "$CARGO_TARGET_DIR/seed/wasm/native-repeated.img"
   mkdir -p "target/reference-filesystem-images/$locale"

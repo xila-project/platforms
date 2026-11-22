@@ -108,14 +108,25 @@ fn browser_and_native_bundles_contain_their_declared_apps() {
     ] {
         write_bundle(&bundles, app);
     }
-    for profile in ["native", "wasm"] {
-        let output = Command::new(env!("CARGO_BIN_EXE_fs_image"))
-            .arg(f.0.join(format!("{profile}.img")))
+    // The Debug shortcut follows the runtime named by `--native-runtime`, not
+    // the host building the image; without the flag it follows the host.
+    let host = if cfg!(unix) { "unix" } else { "windows" };
+    for (profile, runtime, image_name) in [
+        ("native", Some("unix"), "native-unix"),
+        ("native", Some("windows"), "native-windows"),
+        ("native", None, "native-host"),
+        ("wasm", None, "wasm"),
+    ] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_fs_image"));
+        command
+            .arg(f.0.join(format!("{image_name}.img")))
             .arg("4194304")
             .args(["--bundle", profile, "--bundles-dir"])
-            .arg(&bundles)
-            .output()
-            .unwrap();
+            .arg(&bundles);
+        if let Some(runtime) = runtime {
+            command.args(["--native-runtime", runtime]);
+        }
+        let output = command.output().unwrap();
         assert!(
             output.status.success(),
             "{}",
@@ -123,7 +134,7 @@ fn browser_and_native_bundles_contain_their_declared_apps() {
         );
         let text = String::from_utf8_lossy(&output.stdout);
         assert!(text.contains("calculator,clock,digits,pixel_painter,synth,text_editor"));
-        let image = fs::read(f.0.join(format!("{profile}.img"))).unwrap();
+        let image = fs::read(f.0.join(format!("{image_name}.img"))).unwrap();
         let contains = |content: &[u8]| image.windows(content.len()).any(|bytes| bytes == content);
         for app in ["digits", "synth", "text_editor"] {
             for content in [
@@ -131,23 +142,71 @@ fn browser_and_native_bundles_contain_their_declared_apps() {
                 format!("shortcut for {app}"),
                 format!("manifest for {app}"),
             ] {
-                assert!(contains(content.as_bytes()), "{profile}: {content}");
+                assert!(contains(content.as_bytes()), "{image_name}: {content}");
             }
         }
-        assert!(text.contains(",weather"), "{profile}");
-        assert!(contains(b"guest fixture for weather"), "{profile}");
+        assert!(text.contains(",weather"), "{image_name}");
+        assert!(contains(b"guest fixture for weather"), "{image_name}");
         assert!(contains(b"/applications/executables/activity"));
         assert!(contains(b"/applications/executables/terminal"));
-        // Only the native runtime registers the Debug executable and its
-        // transport, and only on Unix hosts (see `src/main.rs`).
+        // Only the Unix native runtime registers the Debug executable and
+        // its transport (see `src/main.rs`).
         assert_eq!(
             contains(b"/applications/executables/debug"),
-            profile == "native" && cfg!(unix),
-            "{profile}: Debug shortcut"
+            profile == "native" && runtime.unwrap_or(host) == "unix",
+            "{image_name}: Debug shortcut"
         );
         assert!(contains(
             br#""name":"xila","url":"https://registry.xila.dev","root_key":"AJEDFQ2MPtUO0vu/BnC7xX5Ag8sBuq6DF5+ShKfCQgU=""#
         ));
+    }
+}
+
+#[test]
+fn native_runtime_is_rejected_outside_the_native_bundle() {
+    let f = Fixture::new();
+    let bundles = f.0.join("bundles");
+    for app in ["calculator", "clock", "digits", "pixel_painter", "synth"] {
+        write_bundle(&bundles, app);
+    }
+    let cases: [&[&str]; 3] = [
+        &[
+            "--bundle",
+            "wasm",
+            "--native-runtime",
+            "unix",
+            "--bundles-dir",
+        ],
+        &[
+            "--bundle",
+            "native",
+            "--native-runtime",
+            "linux",
+            "--bundles-dir",
+        ],
+        &["--native-runtime", "unix", "--root"],
+    ];
+    for (index, arguments) in cases.into_iter().enumerate() {
+        let image = f.0.join(format!("rejected-{index}.img"));
+        let source = if arguments.contains(&"--root") {
+            f.0.join("root")
+        } else {
+            bundles.clone()
+        };
+        let output = Command::new(env!("CARGO_BIN_EXE_fs_image"))
+            .arg(&image)
+            .arg("4194304")
+            .args(arguments)
+            .arg(source)
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{arguments:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("native-runtime"),
+            "{arguments:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!image.exists());
     }
 }
 
