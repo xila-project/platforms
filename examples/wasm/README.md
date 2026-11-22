@@ -33,7 +33,11 @@ commits it after mounting LittleFS and initializing accounts.
 Clock's settings directory is provisioned per user at
 `<home>/applications/clock/configuration`, in the home recorded in the account
 (`/users/administrator` for the seeded account). Its saved preferences and
-alarm follow the persistence limits of the selected disk. Clock alerts require the application to stay
+alarm follow the persistence limits of the selected disk. Accounts saved
+before homes were recorded keep their numeric home: on such a saved disk the
+administrator's home stays `/users/1000`, so Clock and other application
+settings remain there. Loading accounts never rewrites the saved records; use
+a new saved disk to get the named home. Clock alerts require the application to stay
 open; browser background-tab throttling can delay them.
 
 On a fresh disk, log in as **administrator** with an empty password; otherwise

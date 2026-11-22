@@ -64,6 +64,15 @@ class PlatformWorkflowPolicy(unittest.TestCase):
                       'Test read-only root, host mounts, state persistence, and exit status',
                       'Exercise Xila CLI shell over stdin'):
             self.assertIn(check, pr)
+        # The shell smoke checks the home recorded in the seeded account, in
+        # the PR build and in the release build alike.
+        for home_check in (
+            r"echo home=$HOME\ncd $HOME\npwd\n",
+            "grep -Eq '(^|[[:space:]])home=/users/administrator[[:space:]]*$'",
+            "grep -Eq '(^|[[:space:]])/users/administrator[[:space:]]*$'; then",
+        ):
+            self.assertEqual(workflow.count(home_check), 2, home_check)
+            self.assertIn(home_check, pr)
         self.assertIn('cache-from: type=gha', pr)
         self.assertNotIn('cache-to:', pr)
         self.assertIn('load: true', pr)  # Needed to execute the smoke suite.

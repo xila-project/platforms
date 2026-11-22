@@ -176,9 +176,19 @@ mod tests {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
 
         let id = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let path = format!("/tmp/file_drive_device_test_{}.img", id);
+        // A per-process file in the system temporary directory, so parallel
+        // runs and sandboxes without a writable `/tmp` do not collide.
+        let path = std::env::temp_dir().join(format!(
+            "xila-file-drive-device-test-{}-{id}.img",
+            std::process::id()
+        ));
+        let path = path.to_str().expect("temporary directory is not UTF-8");
 
-        FileDriveDevice::new(&Path::from_str(&path), 16 * 1024 * 1024)
+        let device = FileDriveDevice::new(&Path::from_str(path), 16 * 1024 * 1024);
+        // The device keeps its file open; unlinking it now leaves nothing
+        // behind on Unix. Windows refuses to remove an open file, so it may stay.
+        let _ = std::fs::remove_file(path);
+        device
     }
 
     implement_block_device_tests!(create_test_device());

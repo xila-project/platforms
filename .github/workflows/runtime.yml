@@ -142,12 +142,23 @@ jobs:
           set -eu
           mkdir -p "$PWD/runtime-shell-state"
           chmod 0777 "$PWD/runtime-shell-state"
-          shell_output="$(printf 'administrator\n\necho shell-smoke-ok\npwd\nexit\n' | \
+          # `$HOME` is literal here: the Xila shell expands it, not bash.
+          # shellcheck disable=SC2016
+          shell_output="$(printf 'administrator\n\necho shell-smoke-ok\necho home=$HOME\ncd $HOME\npwd\nexit\n' | \
             docker run --rm -i --network none --read-only \
               --tmpfs /tmp:rw,noexec,nosuid,size=16m \
               --mount "type=bind,src=$PWD/runtime-shell-state,dst=/var/lib/xila" \
               xila-runtime:ci shell --network=none)"
           printf '%s\n' "$shell_output" | grep -Fq 'shell-smoke-ok'
+          # Login sets HOME to the home recorded in the account; the shell
+          # stays in `/`, so `cd $HOME` checks that the home exists. Prompts
+          # end the directory with `$ `, so only command output matches.
+          if ! printf '%s\n' "$shell_output" | grep -Eq '(^|[[:space:]])home=/users/administrator[[:space:]]*$' ||
+            ! printf '%s\n' "$shell_output" | grep -Eq '(^|[[:space:]])/users/administrator[[:space:]]*$'; then
+            echo "::error::HOME or pwd did not show the administrator's home /users/administrator"
+            printf '%s\n' "$shell_output" | sed -n l
+            exit 1
+          fi
           timeout 20s docker run --rm -i --network none --read-only \
             --tmpfs /tmp:rw,noexec,nosuid,size=16m \
             --mount "type=bind,src=$PWD/runtime-shell-state,dst=/var/lib/xila" \
@@ -287,12 +298,23 @@ jobs:
           set -eu
           mkdir -p "$PWD/runtime-shell-state"
           chmod 0777 "$PWD/runtime-shell-state"
-          shell_output="$(printf 'administrator\n\necho shell-smoke-ok\npwd\nexit\n' | \
+          # `$HOME` is literal here: the Xila shell expands it, not bash.
+          # shellcheck disable=SC2016
+          shell_output="$(printf 'administrator\n\necho shell-smoke-ok\necho home=$HOME\ncd $HOME\npwd\nexit\n' | \
             docker run --rm -i --network none --read-only \
               --tmpfs /tmp:rw,noexec,nosuid,size=16m \
               --mount "type=bind,src=$PWD/runtime-shell-state,dst=/var/lib/xila" \
               xila-runtime:ci shell --network=none)"
           printf '%s\n' "$shell_output" | grep -Fq 'shell-smoke-ok'
+          # Login sets HOME to the home recorded in the account; the shell
+          # stays in `/`, so `cd $HOME` checks that the home exists. Prompts
+          # end the directory with `$ `, so only command output matches.
+          if ! printf '%s\n' "$shell_output" | grep -Eq '(^|[[:space:]])home=/users/administrator[[:space:]]*$' ||
+            ! printf '%s\n' "$shell_output" | grep -Eq '(^|[[:space:]])/users/administrator[[:space:]]*$'; then
+            echo "::error::HOME or pwd did not show the administrator's home /users/administrator"
+            printf '%s\n' "$shell_output" | sed -n l
+            exit 1
+          fi
           timeout 20s docker run --rm -i --network none --read-only \
             --tmpfs /tmp:rw,noexec,nosuid,size=16m \
             --mount "type=bind,src=$PWD/runtime-shell-state,dst=/var/lib/xila" \

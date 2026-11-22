@@ -49,9 +49,14 @@ fn screenshot_prints_one_json_document_on_stdout() {
 #[test]
 fn ordinary_request_and_screenshot_payload_obey_total_deadline() {
     use std::time::{Duration, Instant};
+    let never_written = std::env::temp_dir().join(format!(
+        "xila-timeout-never-written-{}.png",
+        std::process::id()
+    ));
+    let never_written_path = never_written.to_str().unwrap();
     for (name,args,response) in [
         ("header",vec!["resolution"],b"".as_slice()),
-        ("payload",vec!["screenshot","/tmp/xila-timeout-never-written.png"], b"{\"ok\":true,\"result\":{\"width\":1,\"height\":1,\"format\":\"rgba8888\",\"payload_bytes\":4}}\n".as_slice()),
+        ("payload",vec!["screenshot",never_written_path], b"{\"ok\":true,\"result\":{\"width\":1,\"height\":1,\"format\":\"rgba8888\",\"payload_bytes\":4}}\n".as_slice()),
     ] {
         let dir=std::env::temp_dir().join(format!("xila-cli-timeout-{name}-{}",std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();let socket=dir.join("socket");let listener=UnixListener::bind(&socket).unwrap();
@@ -71,6 +76,10 @@ fn ordinary_request_and_screenshot_payload_obey_total_deadline() {
         assert_eq!(value["error"]["code"],"timeout");assert!(elapsed<Duration::from_millis(400),"elapsed {elapsed:?}");
         std::fs::remove_dir_all(dir).unwrap();
     }
+    assert!(
+        !never_written.exists(),
+        "a timed-out screenshot must not be written"
+    );
 }
 
 #[test]
