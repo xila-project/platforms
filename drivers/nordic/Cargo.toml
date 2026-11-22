@@ -42,6 +42,8 @@ embassy-usb = { version = "0.6.0", default-features = false, features = [
 ], optional = true }
 
 [dev-dependencies]
+# The byte ring is host-testable, so the host tests link the shared crate too.
+drivers_shared = { package = "xila-drivers-shared", path = "../shared", default-features = false }
 device = { workspace = true }
 file_system = { workspace = true }
 log = { workspace = true }

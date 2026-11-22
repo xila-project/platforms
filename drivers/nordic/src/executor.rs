@@ -36,41 +36,42 @@ impl Executor {
 
     /// Run the executor until stopped.
     pub fn run(&'static self, init: impl FnOnce(Spawner, &'static Self)) {
-        init(self.inner.spawner(), self);
-
-        while !self.stop.load(Ordering::SeqCst) {
-            unsafe {
-                self.inner.poll();
-                cortex_m::asm::wfe();
-            }
-        }
+        drivers_shared::executor::run_until_stopped(
+            &self.stop,
+            || init(self.inner.spawner(), self),
+            || self.poll_and_wait(),
+        );
     }
 
     /// Start the executor loop; does not return.
     pub fn start(&'static mut self, init: impl FnOnce(Spawner)) -> ! {
-        init(self.inner.spawner());
+        let executor: &'static Self = self;
 
-        loop {
-            unsafe {
-                self.inner.poll();
-                cortex_m::asm::wfe();
-            }
+        drivers_shared::executor::run_forever(
+            || init(executor.inner.spawner()),
+            || executor.poll_and_wait(),
+        )
+    }
+
+    /// Poll the executor, then sleep until an event (`sev` from a wake-up or
+    /// from [`Executor::stop`], or an interrupt) arrives.
+    fn poll_and_wait(&'static self) {
+        unsafe {
+            self.inner.poll();
+            cortex_m::asm::wfe();
         }
     }
 }
 
+/// Share the static storage of the executor with the other drivers.
+#[doc(hidden)]
+pub use drivers_shared as __shared;
+
 #[macro_export]
 macro_rules! instantiate_static_executor {
-    () => {{
-        static mut __EXECUTOR: Option<$crate::executor::Executor> = None;
-
-        unsafe {
-            if __EXECUTOR.is_none() {
-                __EXECUTOR = Some($crate::executor::Executor::new());
-            }
-            __EXECUTOR.as_mut().expect("Executor is not initialized")
-        }
-    }};
+    () => {
+        $crate::executor::__shared::instantiate_static_executor!($crate::executor::Executor)
+    };
 }
 
 pub use instantiate_static_executor;
