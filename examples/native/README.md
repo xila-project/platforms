@@ -101,6 +101,14 @@ of the tree, so it cannot establish that the text was absent. Success means the
 text was observed in a snapshot; it does not promise that the UI remains in
 that state or that queued input has been consumed.
 
+`key` and `press-key` accept the named keys `up`, `down`, `left`, `right`,
+`escape`, `delete`, `backspace`, `enter`, `next`, `previous`, `home` and `end`,
+case-insensitively (`Enter` is `enter`), plus the aliases `return`, `esc`,
+`del`, `tab` (`next`), `prev`, `shift-tab` and `backtab` (`previous`), and
+`arrowup`, `arrowdown`, `arrowleft` and `arrowright`. Any other single printable
+ASCII character is a character key and keeps its case. `enter` confirms a text
+field (the LVGL `READY` event).
+
 `press-key` queues its press and release together. `text` accepts up to 4096
 UTF-8 bytes, rejects control characters, and queues whole character pairs. The
 client retries when the bounded input queue is full, for up to 30 seconds. Its

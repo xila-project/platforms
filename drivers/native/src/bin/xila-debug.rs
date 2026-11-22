@@ -258,11 +258,11 @@ fn parse_operation(
             _ => Err("pointer expects `click X Y`, `move X Y` or `button press|release`".into()),
         },
         "key" => Ok(Request::Key {
-            key: arguments.next().ok_or("key requires a name")?,
+            key: key_name(&arguments.next().ok_or("key requires a name")?),
             state: parse_state(arguments.next().as_deref())?,
         }),
         "press-key" => Ok(Request::PressKey {
-            key: arguments.next().ok_or("press-key requires a name")?,
+            key: key_name(&arguments.next().ok_or("press-key requires a name")?),
         }),
         "text" => {
             let text = arguments.collect::<Vec<_>>().join(" ");
@@ -270,6 +270,56 @@ fn parse_operation(
         }
         _ => Err(usage()),
     }
+}
+
+/// Named keys of the Debug protocol (LVGL keys), in the spelling the Debug
+/// application expects.
+const KEY_NAMES: [&str; 12] = [
+    "up",
+    "down",
+    "left",
+    "right",
+    "escape",
+    "delete",
+    "backspace",
+    "enter",
+    "next",
+    "previous",
+    "home",
+    "end",
+];
+
+/// Common spellings of the named keys, mapped to their protocol name.
+const KEY_ALIASES: [(&str, &str); 11] = [
+    ("return", "enter"),
+    ("esc", "escape"),
+    ("del", "delete"),
+    ("tab", "next"),
+    ("prev", "previous"),
+    ("shift-tab", "previous"),
+    ("backtab", "previous"),
+    ("arrowup", "up"),
+    ("arrowdown", "down"),
+    ("arrowleft", "left"),
+    ("arrowright", "right"),
+];
+
+/// Spells a key name as the Debug protocol expects it.
+///
+/// A single character is a character key and is kept as given, so `A` and `a`
+/// stay distinct. Named keys are case-insensitive (`Enter`, `ENTER` and
+/// `enter` are the same key) and accept the aliases of `KEY_ALIASES`. Other
+/// names are passed on lowercased; the Debug application reports them as
+/// `unsupported_key`.
+fn key_name(name: &str) -> String {
+    if name.chars().count() == 1 {
+        return name.into();
+    }
+    let lowercase = name.to_ascii_lowercase();
+    KEY_ALIASES
+        .iter()
+        .find(|(alias, _)| *alias == lowercase)
+        .map_or(lowercase, |(_, key)| (*key).into())
 }
 
 fn parse_state(value: Option<&str>) -> Result<InputState, String> {
@@ -281,7 +331,11 @@ fn parse_state(value: Option<&str>) -> Result<InputState, String> {
 }
 
 fn usage() -> String {
-    "usage: xila-debug [--endpoint PATH] [--timeout-ms MS] capabilities|diagnostics|find SELECTOR|click SELECTOR|resolution|screenshot PATH|ui-tree [MAX_ELEMENTS MAX_DEPTH]|wait-for SELECTOR [--stable-ms MS] [--timeout-ms MS]|pointer click X Y|pointer move X Y|pointer button press|release|key KEY press|release|press-key KEY|text TEXT".into()
+    format!(
+        "usage: xila-debug [--endpoint PATH] [--timeout-ms MS] capabilities|diagnostics|find SELECTOR|click SELECTOR|resolution|screenshot PATH|ui-tree [MAX_ELEMENTS MAX_DEPTH]|wait-for SELECTOR [--stable-ms MS] [--timeout-ms MS]|pointer click X Y|pointer move X Y|pointer button press|release|key KEY press|release|press-key KEY|text TEXT\nKEY (case-insensitive): {}, aliases {}, or one printable ASCII character",
+        KEY_NAMES.join("|"),
+        KEY_ALIASES.map(|(alias, _)| alias).join("|"),
+    )
 }
 
 #[cfg(test)]
@@ -305,10 +359,51 @@ mod tests {
             })
         );
         assert_eq!(
+            parse_operation("press-key", &mut ["Enter".into()].into_iter()),
+            Ok(Request::PressKey {
+                key: "enter".into()
+            })
+        );
+        assert_eq!(
             parse_operation("screenshot", &mut ["capture.png".into()].into_iter()),
             Ok(Request::Screenshot {
                 path: "capture.png".into(),
             })
         );
+    }
+
+    #[test]
+    fn key_names_are_case_insensitive_and_accept_aliases() {
+        for (given, expected) in [
+            ("Enter", "enter"),
+            ("ENTER", "enter"),
+            ("Return", "enter"),
+            ("Escape", "escape"),
+            ("Esc", "escape"),
+            ("Tab", "next"),
+            ("Shift-Tab", "previous"),
+            ("Prev", "previous"),
+            ("BackSpace", "backspace"),
+            ("Del", "delete"),
+            ("ArrowUp", "up"),
+            ("Home", "home"),
+        ] {
+            assert_eq!(key_name(given), expected, "{given}");
+        }
+        for name in KEY_NAMES {
+            assert_eq!(key_name(name), name);
+            assert_eq!(key_name(&name.to_ascii_uppercase()), name);
+        }
+        for (alias, key) in KEY_ALIASES {
+            assert!(KEY_NAMES.contains(&key), "{alias} maps to unknown {key}");
+        }
+    }
+
+    #[test]
+    fn character_keys_keep_their_case_and_unknown_names_pass_through() {
+        assert_eq!(key_name("A"), "A");
+        assert_eq!(key_name("a"), "a");
+        assert_eq!(key_name("Q"), "Q");
+        assert_eq!(key_name("F13"), "f13");
     }
 }
