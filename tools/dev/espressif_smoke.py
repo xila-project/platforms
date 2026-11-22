@@ -128,6 +128,30 @@ def check_frame(screen):
     print(f"Captured the {WIDTH}x{HEIGHT} LVGL frame: {screen.with_suffix('.png')}", flush=True)
 
 
+def stop(emulator, failed):
+    """Stop QEMU, killing it if it ignores the termination request.
+
+    A killed process only exits once its pending disk input and output finish,
+    which can take a while on a loaded machine, so the wait after the kill is
+    long. If QEMU still has not exited, that fails the run only when the boot
+    checks passed, so it never hides the original failure.
+    """
+    if emulator.poll() is not None:
+        return
+    emulator.terminate()
+    try:
+        emulator.wait(timeout=10)
+        return
+    except subprocess.TimeoutExpired:
+        emulator.kill()
+    try:
+        emulator.wait(timeout=60)
+    except subprocess.TimeoutExpired as error:
+        if not failed:
+            raise SmokeError(f"QEMU (process {emulator.pid}) did not exit after being killed") from error
+        print(f"QEMU (process {emulator.pid}) did not exit after being killed", file=sys.stderr)
+
+
 def run(chip, qemu, image, runs):
     # Espressif QEMU exposes the virtual RGB panel on the S3 machine.
     check_display = chip == "esp32s3"
@@ -141,7 +165,9 @@ def run(chip, qemu, image, runs):
     command = [
         qemu, "-M", chip, "-display", "none", "-monitor", "none", "-nic", "none",
         "-no-reboot", "-serial", f"file:{uart}",
-        "-drive", f"file={flash},if=mtd,format=raw",
+        # The flash copy is thrown away after the run, so QEMU never has to flush
+        # it: an exit then does not wait on the disk when the machine is busy.
+        "-drive", f"file={flash},if=mtd,format=raw,cache=unsafe",
     ]
     if check_display:
         command += ["-qmp", "unix:qmp.sock,server=on,wait=off"]
@@ -149,6 +175,7 @@ def run(chip, qemu, image, runs):
     with (directory / "qemu.log").open("wb") as diagnostics:
         emulator = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=diagnostics,
                                     stderr=subprocess.STDOUT)
+        failed = True
         try:
             log = ""
             while SHELL_PROMPT_MARKER not in log:
@@ -163,20 +190,13 @@ def run(chip, qemu, image, runs):
             check_markers(log, chip)
             if check_display:
                 check_frame(screendump(directory, deadline))
+            failed = False
         except BaseException:
             sys.stdout.write(uart.read_text(errors="replace") if uart.exists() else "")
             print(f"{chip} smoke failed; see {directory}", file=sys.stderr)
             raise
         finally:
-            emulator.terminate()
-            try:
-                emulator.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                emulator.kill()
-                try:
-                    emulator.wait(timeout=5)
-                except subprocess.TimeoutExpired as error:
-                    raise SmokeError("QEMU did not exit after being killed") from error
+            stop(emulator, failed)
     sys.stdout.write(uart.read_text(errors="replace"))
 
 
