@@ -220,6 +220,13 @@ async fn main(task_manager: &'static xila::task::Manager) {
         )
         .await
         .expect("Failed to mount CPU neural network loader");
+        drivers_shared::devices::neural_network::mount_backend_information(
+            virtual_file_system,
+            task,
+            "/devices/nn/backend",
+        )
+        .await
+        .expect("Failed to mount neural network backend information");
     }
 
     #[cfg(unix)]
