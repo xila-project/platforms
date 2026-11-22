@@ -31,6 +31,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut root = None;
     let mut bundle = None;
     let mut bundles = None;
+    let mut native_runtime = None;
     while let Some(flag) = arguments.next() {
         match flag.to_str() {
             Some("--root") => {
@@ -48,20 +49,36 @@ fn run() -> Result<(), Box<dyn Error>> {
                         .ok_or("--bundles-dir requires a directory")?,
                 ))
             }
+            Some("--native-runtime") => {
+                let value = arguments
+                    .next()
+                    .ok_or("--native-runtime requires unix or windows")?;
+                native_runtime = Some(NativeRuntime::parse(
+                    value.to_str().ok_or("invalid native runtime")?,
+                )?)
+            }
             _ => return Err("unknown argument".into()),
         }
     }
     let output = match (bundle, bundles) {
         (Some(name), Some(directory)) if root.is_none() => {
             let name = name.to_str().ok_or("invalid bundle")?;
-            let profile = profile(name)?;
+            if native_runtime.is_some() && name != "native" {
+                return Err("--native-runtime only applies to --bundle native".into());
+            }
+            let profile = profile(name, native_runtime.unwrap_or_else(NativeRuntime::host))?;
             let staging = tools_image::stage(&profile, &directory)?;
             println!("Prepared {name} bundle: {}", profile.applications.join(","));
             tools_image::build(&output, size, Some(staging.path()))?
         }
-        (None, None) => tools_image::build(&output, size, root.as_deref())?,
+        (None, None) if native_runtime.is_none() => {
+            tools_image::build(&output, size, root.as_deref())?
+        }
         _ => {
-            return Err("use --root or --bundle native|wasm --bundles-dir <directory>".into());
+            return Err(
+                "use --root or --bundle native|wasm --bundles-dir <directory> [--native-runtime unix|windows]"
+                    .into(),
+            );
         }
     };
     println!(
@@ -72,8 +89,46 @@ fn run() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// The host family of the native runtime that will mount a `native` image.
+///
+/// It is chosen by the caller, not by the machine building the image: an
+/// image built on one host can be run by a native runtime on another.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NativeRuntime {
+    /// Linux or macOS: the native example mounts the Debug control transport.
+    Unix,
+    /// Windows: no Debug control transport.
+    Windows,
+}
+
+impl NativeRuntime {
+    fn parse(value: &str) -> Result<Self, Box<dyn Error>> {
+        match value {
+            "unix" => Ok(Self::Unix),
+            "windows" => Ok(Self::Windows),
+            _ => Err("--native-runtime must be unix or windows".into()),
+        }
+    }
+
+    /// The default when the caller does not say: the build host's family.
+    fn host() -> Self {
+        if cfg!(windows) {
+            Self::Windows
+        } else {
+            Self::Unix
+        }
+    }
+
+    /// Whether the runtime provides `/devices/graphics/debug/transport`, which
+    /// the Debug application needs (`examples/native/src/main.rs`).
+    fn provides_debug_transport(self) -> bool {
+        self == Self::Unix
+    }
+}
+
 /// Platforms' seed profile `native` or `wasm` (the browser profile).
-fn profile(name: &str) -> Result<Profile, Box<dyn Error>> {
+/// `native_runtime` only affects the `native` profile.
+fn profile(name: &str, native_runtime: NativeRuntime) -> Result<Profile, Box<dyn Error>> {
     let (applications, shortcuts) = match name {
         "native" => (
             include_str!("../profiles/native.txt"),
@@ -86,10 +141,11 @@ fn profile(name: &str) -> Result<Profile, Box<dyn Error>> {
         _ => return Err("bundle must be native or wasm".into()),
     };
     // Native applications are linked into the runtime; only their shortcuts
-    // are seeded. The Debug application needs the Unix control transport.
+    // are seeded. The Debug application needs the control transport of the
+    // runtime that will mount the image, not of the host building it.
     let shortcuts = Profile::parse_list(shortcuts)?
         .into_iter()
-        .filter(|name| cfg!(unix) || name != "debug")
+        .filter(|name| native_runtime.provides_debug_transport() || name != "debug")
         .map(|name| {
             Ok(ProfileFile {
                 content: native_shortcut(&name)
@@ -132,7 +188,7 @@ mod tests {
     #[test]
     fn profiles_seed_their_shortcuts_and_the_official_registry() {
         for name in ["native", "wasm"] {
-            let profile = profile(name).unwrap();
+            let profile = profile(name, NativeRuntime::host()).unwrap();
             assert!(profile.applications.contains(&"digits".to_owned()));
             assert!(
                 profile
@@ -143,11 +199,39 @@ mod tests {
             assert_eq!(profile.repositories[0].name, "xila.json");
         }
         assert!(
-            profile("native")
+            profile("native", NativeRuntime::host())
                 .unwrap()
                 .applications
                 .contains(&"weather".to_owned())
         );
-        assert!(profile("other").is_err());
+        assert!(profile("other", NativeRuntime::host()).is_err());
+    }
+
+    fn has_debug_shortcut(name: &str, runtime: NativeRuntime) -> bool {
+        profile(name, runtime)
+            .unwrap()
+            .shortcuts
+            .iter()
+            .any(|shortcut| shortcut.name == "debug.json")
+    }
+
+    #[test]
+    fn debug_shortcut_follows_the_native_runtime_not_the_build_host() {
+        assert!(has_debug_shortcut("native", NativeRuntime::Unix));
+        assert!(!has_debug_shortcut("native", NativeRuntime::Windows));
+        for runtime in [NativeRuntime::Unix, NativeRuntime::Windows] {
+            assert!(!has_debug_shortcut("wasm", runtime));
+        }
+    }
+
+    #[test]
+    fn native_runtime_names_are_explicit() {
+        assert_eq!(NativeRuntime::parse("unix").unwrap(), NativeRuntime::Unix);
+        assert_eq!(
+            NativeRuntime::parse("windows").unwrap(),
+            NativeRuntime::Windows
+        );
+        assert!(NativeRuntime::parse("linux").is_err());
+        assert_eq!(NativeRuntime::host() == NativeRuntime::Unix, cfg!(unix));
     }
 }

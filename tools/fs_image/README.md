@@ -21,6 +21,13 @@ cargo run -p xila-fs-image -- native.img 16777216 --bundle native --bundles-dir 
 cargo run -p xila-fs-image -- browser.img 16777216 --bundle wasm --bundles-dir bundles
 ```
 
+A `native` image lists the Debug shortcut only for a native runtime that
+provides the Debug control transport (`/devices/graphics/debug/transport`),
+which the Unix native example mounts. `--native-runtime unix|windows` names the
+runtime that will mount the image; it defaults to the family of the host
+building it, so pass it when building an image for another host. The published
+reference `native.img` is built with `--native-runtime unix`.
+
 The official package registry is seeded as the `xila` repository
 ([`repositories/xila.json`](repositories/xila.json), in
 `/configuration/system/packages/repositories/`), pinned to its root key
