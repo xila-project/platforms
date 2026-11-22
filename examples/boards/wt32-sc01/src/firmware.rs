@@ -20,20 +20,40 @@ const STORAGE: StoragePartition = StoragePartition {
 };
 
 // The primary DRAM linker region is 192 KiB, shared by static data and the stack.
-const INTERNAL_HEAP_SIZE: usize = 160 * 1024;
+const INTERNAL_HEAP_SIZE: usize = 64 * 1024;
 static INTERNAL_HEAP: StaticCell<[MaybeUninit<u8>; INTERNAL_HEAP_SIZE]> = StaticCell::new();
 
+// esp-hal's ESP32 DRAM2 region excludes the ROM data and stacks. The ESP-IDF
+// bootloader releases the region when it transfers control to the application.
+const RECLAIMED_HEAP_SIZE: usize = 96 * 1024;
+#[esp_hal::ram(reclaimed)]
+static mut RECLAIMED_HEAP: [MaybeUninit<u8>; RECLAIMED_HEAP_SIZE] =
+    [MaybeUninit::uninit(); RECLAIMED_HEAP_SIZE];
+
 // Keep external storage explicit. ESP32 hardware atomics and flash ROM calls
-// cannot use PSRAM buffers. The global allocator has no way to distinguish
-// those allocations from ordinary data.
+// cannot use PSRAM buffers. LittleFS's C code is built without the PSRAM
+// cache workaround and is safe because the global allocator serves internal
+// SRAM only.
 static EXTERNAL_HEAP: MemoryManager = MemoryManager::new();
+
+/// Explicit access to the external data heap for CPU-only Rust buffers.
+/// Callers must keep LittleFS, DMA and hardware atomics off this heap.
+pub(crate) fn external_heap() -> &'static MemoryManager {
+    &EXTERNAL_HEAP
+}
 
 #[esp_hal::main]
 fn main() -> ! {
     let peripherals = esp_hal::init(esp_hal::Config::default());
     let reservation = INTERNAL_HEAP.init_with(|| [MaybeUninit::uninit(); INTERNAL_HEAP_SIZE]);
     // SAFETY: the reservation is exclusive and linked into internal data SRAM.
-    unsafe { firmware::initialize_heap_from_slice(reservation) };
+    let heap = unsafe { firmware::initialize_heap_from_slice(reservation) };
+    // SAFETY: the bootloader has handed over to the application; this
+    // separate, DMA-capable reservation is passed to the heap only once.
+    assert!(
+        unsafe { heap.init_reclaimed_internal(&mut *(&raw mut RECLAIMED_HEAP)) },
+        "Could not register reclaimed internal SRAM"
+    );
 
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     drivers_espressif::time::initialize(timer_group.timer0);
@@ -55,7 +75,7 @@ fn main() -> ! {
         );
         let (start, size) = psram.raw_parts();
         // SAFETY: the data heap is the only owner of this PSRAM mapping.
-        let registered = unsafe { EXTERNAL_HEAP.init_psram_from_hal(&psram) };
+        let registered = unsafe { external_heap().init_psram_from_hal(&psram) };
         ExternalMemory {
             start: start as usize,
             size,
@@ -83,16 +103,10 @@ fn main() -> ! {
 }
 
 fn check_external_memory(report: &MemoryReport) {
-    if let Some(external) = report.external {
-        if external.registered {
-            firmware::psram_self_test::check(
-                &EXTERNAL_HEAP,
-                external.start..external.start + external.size,
-            );
-        }
-    } else {
+    if report.external.is_none() {
         xila::log::warning!("Xila: PSRAM unavailable on ESP32 revision v0.0");
     }
+    firmware::psram_self_test::run(external_heap(), report);
 }
 
 #[panic_handler]

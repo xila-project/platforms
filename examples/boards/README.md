@@ -29,6 +29,11 @@ Each board crate:
 `target/espressif-emulator/BOARD-flash.bin`. To add a board, add a folder
 with these files, a `build:BOARD` task in `mise.toml` and a CI matrix entry.
 
+To compile and copy only the ELF, run
+`bash tools/dev/build_espressif_image.sh ESPFLASH_VERSION RUST_VERSION ESP_GCC_VERSION BOARD elf`
+from the Platforms root. Supply the version pins from `mise.toml`. The script
+uses the installed compiler and skips image packaging.
+
 Default account creation requires a secure entropy source and a freshly
 formatted file system. If you keep the account-free file system from the old
 boot-only firmware, it will stay account-free after upgrading. Back up any
@@ -242,12 +247,13 @@ reformatting the partition.
 
 The classic Wireless-Tag WT32-SC01 uses the ESP32-WROVER-B module. It starts
 the command-line shell on UART0 at 115200 baud through the CP210x bridge.
-The board supplies a 160 KiB internal heap for the runtime. The ESP32 can
+The 160 KiB runtime heap comprises 64 KiB in primary DRAM and 96 KiB in
+DRAM2 reclaimed after ESP-IDF bootloader handoff. The ESP32 can
 directly map 4 MiB of the module's 8 MiB of PSRAM. The firmware registers that
 mapping in a separate data heap and runs a 1 MiB allocation and readback
 test. This keeps pointers that may be used by hardware atomics or flash ROM
 routines in internal SRAM. The ESP32 target applies the compiler workaround
-for the PSRAM cache erratum. See the [Wireless-Tag datasheet][classic-board],
+for the PSRAM cache erratum. LittleFS C code uses the internal runtime heap. See the [Wireless-Tag datasheet][classic-board],
 [Espressif module datasheet][wrover] and [ESP32 external RAM guide][external-ram].
 
 ```sh
@@ -267,8 +273,10 @@ espflash flash --chip esp32 --port /dev/ttyUSB0 \
 
 Look for `Xila: board WT32-SC01`, `Xila: PSRAM 4194304 bytes (registered: true)`,
 `Xila: PSRAM self-test passed`, `Xila: LittleFS mounted`,
-`Random generator works`, the internal heap report and the `User name:`
-prompt. A freshly formatted file system creates the default
+`Random generator works`, the two internal heap regions, and
+`Xila: main stack high-water … bytes (estimate)` before the `User name:`
+prompt. The estimate covers execution from early application startup through
+the shell's first console output. A freshly formatted file system creates the default
 `administrator` account with an empty password. The display and touch
 bring-up is tracked in [issue #177][classic-issue].
 

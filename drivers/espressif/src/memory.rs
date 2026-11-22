@@ -22,9 +22,11 @@ pub const DEFAULT_LARGE_ALLOCATION_THRESHOLD: usize = 4096;
 ///
 /// Chips with external PSRAM support (`esp32`, `esp32s2`, `esp32s3`, `esp32c5`, `esp32c61`,
 /// `esp32p4`, `esp32s31`) reserve slot `0` for internal SRAM and slot `1` for optional PSRAM.
+/// ESP32 also reserves slot `2` for reclaimed internal SRAM.
 /// Chips without PSRAM (`esp32c2`, `esp32c3`, `esp32c6`, `esp32h2`) allocate a single slot.
-pub const REGION_COUNT: usize = if cfg!(any(
-    feature = "esp32",
+pub const REGION_COUNT: usize = if cfg!(feature = "esp32") {
+    3
+} else if cfg!(any(
     feature = "esp32s2",
     feature = "esp32s3",
     feature = "esp32c5",
@@ -36,6 +38,12 @@ pub const REGION_COUNT: usize = if cfg!(any(
 } else {
     1
 };
+
+/// Region reserved for external PSRAM on chips that support it.
+pub const PSRAM_REGION: usize = 1;
+
+#[cfg(feature = "esp32")]
+const RECLAIMED_INTERNAL_REGION: usize = 2;
 
 const INTERNAL_DMA_ALIGNMENT: usize = if cfg!(feature = "esp32p4") { 64 } else { 4 };
 
@@ -72,6 +80,7 @@ const PSRAM_DESCRIPTOR: RegionDescriptor = {
 };
 
 const fn default_descriptors() -> [RegionDescriptor; REGION_COUNT] {
+    let descriptors = [INTERNAL_DESCRIPTOR; REGION_COUNT];
     #[cfg(any(
         feature = "esp32",
         feature = "esp32s2",
@@ -81,29 +90,20 @@ const fn default_descriptors() -> [RegionDescriptor; REGION_COUNT] {
         feature = "esp32p4",
         feature = "esp32s31",
     ))]
-    {
-        [INTERNAL_DESCRIPTOR, PSRAM_DESCRIPTOR]
-    }
-
-    #[cfg(not(any(
-        feature = "esp32",
-        feature = "esp32s2",
-        feature = "esp32s3",
-        feature = "esp32c5",
-        feature = "esp32c61",
-        feature = "esp32p4",
-        feature = "esp32s31",
-    )))]
-    {
-        [INTERNAL_DESCRIPTOR]
-    }
+    let descriptors = {
+        let mut descriptors = descriptors;
+        descriptors[PSRAM_REGION] = PSRAM_DESCRIPTOR;
+        descriptors
+    };
+    descriptors
 }
 
 /// Espressif platform memory manager backing Xila's global allocator.
 ///
 /// Region `0` is internal SRAM (`DirectMemoryAccess | AlwaysAccessible`). On PSRAM-capable chips,
 /// region `1` is optional external PSRAM, left uninitialized until the board registers it via
-/// [`Self::init_psram`] or [`Self::init_psram_from_hal`].
+/// [`Self::init_psram`] or [`Self::init_psram_from_hal`]. ESP32 uses region `2` for
+/// optional reclaimed internal SRAM.
 pub struct MemoryManager {
     inner: RegionManager<REGION_COUNT>,
     internal_only: AtomicBool,
@@ -150,6 +150,19 @@ impl MemoryManager {
         self.inner.init_region_from_slice(0, slice)
     }
 
+    /// Registers a second internal SRAM region reclaimed from the ESP-IDF bootloader.
+    ///
+    /// # Safety
+    ///
+    /// The application must own this region after bootloader handoff. It must
+    /// be DMA-capable internal data RAM and remain accessible during flash
+    /// cache suspension. The slice must not overlap another heap region.
+    #[cfg(feature = "esp32")]
+    pub unsafe fn init_reclaimed_internal(&self, slice: &'static mut [MaybeUninit<u8>]) -> bool {
+        self.inner
+            .init_region_from_slice(RECLAIMED_INTERNAL_REGION, slice)
+    }
+
     /// Registers an optional external PSRAM region `[start, start + size)`.
     ///
     /// Returns `false` (leaving all allocations in internal SRAM) if `start` is null or `size` is
@@ -169,7 +182,7 @@ impl MemoryManager {
         feature = "esp32s31",
     ))]
     pub unsafe fn init_psram(&self, start: *mut u8, size: usize) -> bool {
-        unsafe { self.inner.init_region(1, start, size) }
+        unsafe { self.inner.init_region(PSRAM_REGION, start, size) }
     }
 
     /// Registers the full external PSRAM region discovered by esp-hal.

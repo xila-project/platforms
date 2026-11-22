@@ -13,6 +13,11 @@
 # RISC-V boards need the stable RISC-V targets and Clang for LittleFS.
 set -euo pipefail
 
+if (( $# < 4 )); then
+    echo "Usage: $0 ESPFLASH_VERSION RUST_VERSION ESP_GCC_VERSION BOARD [elf|image] [CARGO_ARGUMENTS...]" >&2
+    exit 2
+fi
+
 espflash_version=$1
 rust_version=$2
 esp_gcc_version=$3
@@ -33,7 +38,6 @@ binary=${board//-/_}
 partition_table="$directory/partitions.csv"
 root="$PWD/target/espressif-emulator"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
-mkdir -p "$root"
 
 build_xtensa() {
     local compiler esp_root gcc_bin target_environment
@@ -120,6 +124,7 @@ case "$board" in
     *) echo "No image settings for the Espressif board $board." >&2; exit 2 ;;
 esac
 
+mkdir -p "$root"
 cp "$CARGO_TARGET_DIR/$target/release-embedded/$binary" "$root/$board.elf"
 
 if [[ "$output" == elf ]]; then

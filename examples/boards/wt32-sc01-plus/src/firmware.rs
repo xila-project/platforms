@@ -142,7 +142,7 @@ fn main() -> ! {
 /// The board's memory check: the PSRAM self-test, followed by the boot
 /// benchmark when the `boot-benchmark` feature is enabled.
 fn check_memory(report: &MemoryReport) {
-    firmware::psram_self_test::run(report);
+    firmware::psram_self_test::run(firmware::heap(), report);
     #[cfg(feature = "boot-benchmark")]
     boot_benchmark::run(report);
 }

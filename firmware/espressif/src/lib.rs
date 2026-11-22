@@ -33,14 +33,17 @@ use alloc::boxed::Box;
 use core::{cell::RefCell, mem::MaybeUninit, ptr::addr_of_mut, time::Duration};
 
 use critical_section::Mutex;
-use drivers_espressif::{console, memory::MemoryManager, power::BoardPower, time::TimeDevice};
+use drivers_espressif::{
+    console,
+    memory::{MemoryManager, PSRAM_REGION},
+    power::BoardPower,
+    time::TimeDevice,
+};
 use xila::{
     authentication,
     executable::{self, mount_executables},
     file_system::{AccessFlags, CreateFlags, Flags, Path},
-    little_fs, log,
-    memory::ManagerTrait,
-    memory_file_system, task, time, users,
+    little_fs, log, memory_file_system, task, time, users,
     virtual_file_system::{self, AccessTimePolicy, File, MountOptions, mount_static},
 };
 
@@ -96,7 +99,8 @@ static BOARD: Mutex<RefCell<Option<Board>>> = Mutex::new(RefCell::new(None));
 /// Hands the static internal heap reservation to the allocator and returns the
 /// allocator, for the board to add its PSRAM. Call it first, once.
 pub fn initialize_heap() -> &'static MemoryManager {
-    let heap = &__DRIVERS_ESPRESSIF_MEMORY_ALLOCATOR;
+    console::paint_main_stack();
+    let heap = heap();
     // SAFETY: the reservation is static SRAM that only the allocator uses;
     // `init_internal` fails when called a second time.
     assert!(
@@ -115,7 +119,8 @@ pub fn initialize_heap() -> &'static MemoryManager {
 pub unsafe fn initialize_heap_from_slice(
     reservation: &'static mut [MaybeUninit<u8>],
 ) -> &'static MemoryManager {
-    let heap = &__DRIVERS_ESPRESSIF_MEMORY_ALLOCATOR;
+    console::paint_main_stack();
+    let heap = heap();
     assert!(
         unsafe { heap.init_internal_from_slice(reservation) },
         "Could not initialize the internal heap"
@@ -555,40 +560,39 @@ async fn start(task_manager: &'static task::Manager) {
         task::yield_now().await;
     }
 
-    let heap = &__DRIVERS_ESPRESSIF_MEMORY_ALLOCATOR;
-    let statistics = heap.get_statistics();
-    let internal_budget = statistics.region_stats[0]
-        .as_ref()
-        .map_or(0, |region| region.size);
+    let statistics = heap().get_statistics();
+    let internal_budget: usize = statistics
+        .region_stats
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != PSRAM_REGION)
+        .filter_map(|(_, region)| region.as_ref().map(|region| region.size))
+        .sum();
     log::information!(
         "Xila heap: {} bytes used, {} free, {} total ({}-byte budget)",
-        heap.get_used(),
-        heap.get_free(),
-        heap.get_total_size(),
+        statistics.current_usage,
+        statistics.size - statistics.current_usage,
+        statistics.size,
         internal_budget
     );
-    if memory.external.is_some() {
-        // Region 0 is the static internal heap reservation, region 1 the
-        // external PSRAM.
+    if memory.external.is_some() || statistics.region_stats.iter().flatten().count() > 1 {
         for (index, region) in statistics.region_stats.iter().enumerate() {
             if let Some(region) = region {
-                if index == 0 {
+                if index == PSRAM_REGION {
                     log::information!(
-                        "Xila heap region 0 (internal heap reservation of {internal_budget} bytes, \
-                         out of the chip's {} bytes of SRAM): \
-                         {} bytes used, {} free, {} total",
-                        memory.internal_sram_size,
+                        "Xila heap region {index} (external PSRAM): {} bytes used, {} free, {} total",
                         region.used,
                         region.free,
                         region.size
                     );
                 } else {
                     log::information!(
-                        "Xila heap region {index} (external PSRAM): \
-                         {} bytes used, {} free, {} total",
+                        "Xila heap region {index} (internal SRAM): {} bytes used, {} free, {} total \
+                         (of {} bytes of chip SRAM)",
                         region.used,
                         region.free,
-                        region.size
+                        region.size,
+                        memory.internal_sram_size,
                     );
                 }
             }
