@@ -168,6 +168,15 @@ done
 cp examples/wasm/pages-index.html pages/index.html
 '''
 
+[tasks."release:native"]
+description = "Build the optimized native executable for release"
+extends = "ci:rust"
+run = "cargo build --locked --release -p xila-native-example"
+
+[tasks."release:browser-revision"]
+description = "Record the Platforms commit used for the browser artifact"
+run = "git rev-parse HEAD > pages/demonstrations/platform-revision.txt"
+
 [tasks."ci:profiling"]
 extends = "ci:rust"
 run = "cargo test --locked --manifest-path tools/profiling/Cargo.toml"

@@ -377,7 +377,11 @@ class PlatformWorkflowPolicy(unittest.TestCase):
     def test_nano_build_installs_the_linker_package_set(self):
         job = yaml.safe_load(read('.github/workflows/ci.yml'))['jobs']['nano-33-ble']
         tasks = [step['run'] for step in job['steps'] if 'run' in step]
-        self.assertEqual(tasks, ['mise run ci:packages-linker', 'mise run build:nano-33-ble'])
+        self.assertEqual(tasks, [
+            'mise run ci:packages-linker',
+            'mise run build:nano-33-ble',
+            'mise run release:nano-33-ble-image',
+        ])
 
     def test_quality_reuses_shared_job_without_weakening_gate(self):
         ci = read('.github/workflows/ci.yml')

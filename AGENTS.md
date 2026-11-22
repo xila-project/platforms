@@ -13,3 +13,14 @@ Keep device interfaces and portable runtime contracts in Core; implement platfor
 - For attribution, rebuild with `mise run build:profiling -- --features profiling,heaptrack`. The `profiling` feature records task/spawner/thread identity, cumulative poll CPU time, poll/wait wall time and allocation request volume in each run's `runtime.json`. The `heaptrack` feature annotates the native custom allocator. Features are disabled by default and Linux-only instrumentation compiles out on other targets.
 - Use the recorder's `cpu` mode with separately installed Samply (or `--tool perf`) and `heap` mode with heaptrack. Read the README's profiling section for artifacts and limitations. Keep external profiler overhead and feature-enabled counters out of uninstrumented before/after consumption comparisons.
 - CPU time, elapsed latency, RSS, allocator-used/reserved bytes and allocation request volume are different metrics. Task IDs can be reused: use the manager/generation identity in reports. Executor poll CPU includes task CPU; do not add them together. Snapshots are periodic, not final or peak heap reports. Check active poll/wait flags: long-running polls do not update completed CPU/counts until they return. Native improvements need follow-up validation on the intended Wasm/embedded target.
+
+## Releases
+
+Platforms inherits a single Cargo workspace package version shared with Core
+and Tools. Before 1.0, a breaking change bumps the minor version and compatible
+changes bump the patch. Submit version bumps through review. The workspace
+release tags the pinned Platforms commit as `vX.Y.Z`, and the Platforms
+GitHub release holds the system downloads and checksums. Keep git dependencies
+on `main` and build with `--locked`. Platform crates stay off crates.io.
+
+See [the Xila release policy](https://github.com/xila-project/core/issues/276).

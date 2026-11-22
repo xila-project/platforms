@@ -194,7 +194,7 @@ jobs:
       - name: Read runtime package version
         id: version
         run: |
-          version="$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("examples/native/Cargo.toml").read_text())["package"]["version"])')"
+          version="$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("Cargo.toml").read_text())["workspace"]["package"]["version"])')"
           echo "value=$version" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v4
       - name: Prepare image metadata
