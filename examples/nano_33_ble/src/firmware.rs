@@ -43,6 +43,31 @@ static TASK_MANAGER: task::Manager = task::Manager::new();
 
 drivers_nordic::memory::instantiate_global_allocator!();
 
+/// The developer-only handler for raw ELF files, with images in the SRAM heap.
+#[cfg(feature = "native-dev")]
+mod native {
+    use drivers_nordic::executable_memory::ExecutableMemory;
+    use xila::executable::{ExecutableFormat, NativeFormat};
+
+    /// Usable coroutine stack of a native executable.
+    const STACK_SIZE: usize = 8 * 1024;
+    /// Largest ELF file the handler reads.
+    const FILE_LIMIT: usize = 32 * 1024;
+    /// Largest installed image.
+    const IMAGE_LIMIT: usize = 32 * 1024;
+
+    static MEMORY: ExecutableMemory =
+        ExecutableMemory::new(&super::__DRIVERS_NORDIC_MEMORY_ALLOCATOR);
+
+    // SAFETY: the handler exists only in developer builds, which run trusted ELF
+    // files built for the current startup ABI. The firmware has one core, and the
+    // executor never runs tasks from an interrupt.
+    static FORMAT: NativeFormat =
+        unsafe { NativeFormat::new(&MEMORY, STACK_SIZE, FILE_LIMIT, IMAGE_LIMIT) };
+
+    pub static FORMATS: &[ExecutableFormat] = &[FORMAT.registration()];
+}
+
 #[cortex_m_rt::entry]
 fn entry() -> ! {
     // The state a reset leaves, whatever the bootloader left.
@@ -268,12 +293,16 @@ async fn run(task_manager: &'static task::Manager) {
 
     // - Executables.
     let executable_context: &'static executable::ExecutableContext =
-        Box::leak(Box::new(executable::ExecutableContext::new(
-            task_manager,
-            users_manager,
-            virtual_file_system,
-            time_manager,
-        )));
+        Box::leak(Box::new(executable::ExecutableContext {
+            #[cfg(feature = "native-dev")]
+            formats: native::FORMATS,
+            ..executable::ExecutableContext::new(
+                task_manager,
+                users_manager,
+                virtual_file_system,
+                time_manager,
+            )
+        }));
     mount_executables!(
         executable_context,
         virtual_file_system,

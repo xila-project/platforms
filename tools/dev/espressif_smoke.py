@@ -23,6 +23,7 @@ import zlib
 
 TIMEOUT = 60
 RNG_MARKER = "Xila: RNG "
+NATIVE_MARKER = "Xila: native executable memory self-test passed"
 LVGL_MARKER = "Xila: LVGL frame flushed"
 SHELL_PROMPT_MARKER = "User name:"
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -30,6 +31,7 @@ ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 # that is missing, so the failing boot stage is named.
 MARKERS = [
     "Xila ESP32 startup",
+    NATIVE_MARKER,
     "Xila: LittleFS mounted",
     RNG_MARKER,
     LVGL_MARKER,
@@ -50,6 +52,9 @@ def check_markers(log, chip):
     for marker in MARKERS:
         # The C6 machine lacks the RNG register and virtual RGB panel.
         if chip == "esp32c6" and marker in (RNG_MARKER, LVGL_MARKER):
+            continue
+        # Only the C6 emulator build runs the native code self-test.
+        if chip != "esp32c6" and marker == NATIVE_MARKER:
             continue
         try:
             position = next(i for i in range(position, len(lines)) if marker in lines[i]) + 1

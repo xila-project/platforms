@@ -2,6 +2,8 @@
 mod cli;
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+mod native_executables;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod power;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod storage;
@@ -434,7 +436,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
             virtual_file_system,
             graphics_manager,
             network_manager: (config.networking || config.mock_wifi).then_some(network_manager),
-            formats: &[],
+            formats: native_executables::FORMATS,
             time_manager,
         }));
 

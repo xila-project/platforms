@@ -39,6 +39,9 @@ audio = ["dep:audio", "drivers_native/audio"]
 prebuilt-applications = []
 profiling = ["drivers_std/profiling", "prebuilt-applications"]
 heaptrack = ["drivers_std/heaptrack", "prebuilt-applications"]
+# Developer-only handler that runs raw ELF files from the file system as native
+# executables (Linux on x86-64 or AArch64). It does not sandbox them.
+native-dev = ["xila/native-dev"]
 
 [[bin]]
 name = "native_example"

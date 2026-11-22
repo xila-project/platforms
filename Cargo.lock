@@ -6579,8 +6579,10 @@ dependencies = [
  "xila-graphics",
  "xila-lifecycle",
  "xila-log",
+ "xila-native-loader",
  "xila-network",
  "xila-shared",
+ "xila-stackful",
  "xila-synchronization",
  "xila-task",
  "xila-time",
@@ -6808,7 +6810,7 @@ dependencies = [
 [[package]]
 name = "xila-native-loader"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/core?branch=main#32c7a31b38bf9e79bde15f8da1caa15ede9152cd"
+source = "git+https://github.com/xila-project/core?branch=main#7c1806641e2767ba89cbeb8290f0eab7ec65079c"
 dependencies = [
  "xila-abi-application",
  "xila-stackful",
