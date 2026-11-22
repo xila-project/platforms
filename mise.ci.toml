@@ -170,7 +170,12 @@ cp examples/wasm/pages-index.html pages/index.html
 
 [tasks."ci:profiling"]
 extends = "ci:rust"
-run = "cargo test --locked --manifest-path tools/profiling/Cargo.toml"
+tools."github:nextest-rs/nextest" = "cargo-nextest-{{ vars.nextest_version }}"
+run = """
+set -eu
+cargo nextest run --locked --manifest-path tools/profiling/Cargo.toml
+cargo test --locked --manifest-path tools/profiling/Cargo.toml --doc
+"""
 
 [tasks."test:drivers"]
 extends = "ci:rust"
@@ -192,11 +197,13 @@ extends = "ci:rust"
 
 [tasks."ci:profiling-runtime-tests"]
 extends = "ci:rust"
-run = "cargo test --locked -p xila-drivers-std --lib --features profiling,heaptrack"
+tools."github:nextest-rs/nextest" = "cargo-nextest-{{ vars.nextest_version }}"
+run = "cargo nextest run --locked -p xila-drivers-std --lib --features profiling,heaptrack"
 
 [tasks."ci:profiling-native-tests"]
 extends = "ci:rust"
-run = "cargo test --locked -p xila-native-example --bin native_example --features profiling,heaptrack"
+tools."github:nextest-rs/nextest" = "cargo-nextest-{{ vars.nextest_version }}"
+run = "cargo nextest run --locked -p xila-native-example --bin native_example --features profiling,heaptrack"
 
 [tasks."ci:lint-workflows"]
 tools."aqua:rhysd/actionlint" = "{{ vars.actionlint_version }}"
@@ -263,11 +270,6 @@ for repository in core applications package_manager; do
   uv run --no-project python tools/ci/locked_revision.py "$repository" "$repository" >> "$GITHUB_OUTPUT"
 done
 """
-
-[tasks."ci:diagnose-package-lock"]
-description = "Resolve the Cargo package graph and show any lockfile changes"
-extends = "ci:rust"
-run = "cargo metadata --format-version 1 > /dev/null && git diff -- Cargo.lock"
 
 [tasks."ci:integration-toolchain"]
 description = "Install pinned WASI and native integration Rust targets via mise"

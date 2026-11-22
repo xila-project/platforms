@@ -42,7 +42,7 @@ jobs:
           repository: xila-project/platforms
           ref: ${{ inputs.platform_ref || github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
-      - uses: xila-project/workspace/.github/actions/setup-rust@d4ff44239bcfa0bc662e37f38d00f3d23f8f04db
+      - uses: xila-project/workspace/.github/actions/setup-rust@ab0393f7a1df988b8fcd13da38e013057e9c9de8
         with:
           cache-mode: objects
           cache-generation: v1-platforms-pages-all-locales
