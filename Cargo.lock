@@ -6810,7 +6810,7 @@ dependencies = [
 [[package]]
 name = "xila-native-loader"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/core?branch=main#22dd5b8e40060bfbd9d7519c0608918a7ab26f83"
+source = "git+https://github.com/xila-project/core?branch=main#4851bf35ee048b015615f1b344444de816e82699"
 dependencies = [
  "xila-abi-application",
  "xila-stackful",
