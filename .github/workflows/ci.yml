@@ -194,13 +194,6 @@ jobs:
         run: mise run ci:deps-npm
       - name: "Test | Boot in QEMU"
         run: mise run ${{ matrix.task }}
-      - name: "Report | Upload Espressif release input"
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v7
-        with:
-          name: xila-${{ matrix.chip }}
-          path: target/espressif-emulator/${{ matrix.chip }}-flash.bin
-          if-no-files-found: error
       - name: "Report | Upload emulator logs and screenshot"
         if: always()
         uses: actions/upload-artifact@v7
