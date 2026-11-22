@@ -274,8 +274,8 @@ async fn start(task_manager: &'static task::Manager) {
         .expect("Failed to read from the random device");
         let first = u32::from_le_bytes([sample[0], sample[1], sample[2], sample[3]]);
         let second = u32::from_le_bytes([sample[4], sample[5], sample[6], sample[7]]);
-        log::information!("Xila: RNG {first:08x} {second:08x}");
         assert_ne!(first, second, "RNG returned a constant value");
+        log::information!("Random generator works");
         task::yield_now().await;
     }
 

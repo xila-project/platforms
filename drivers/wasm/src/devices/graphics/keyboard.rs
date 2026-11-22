@@ -1,4 +1,5 @@
 use alloc::{boxed::Box, string::String};
+use drivers_shared::devices::send_input_event;
 use file_system::{DirectBaseOperations, DirectCharacterDevice, MountOperations, Size};
 use graphics::{InputData, Key, State};
 use synchronization::{
@@ -24,9 +25,7 @@ impl KeyboardDevice {
             State::Released
         };
 
-        if let Err(e) = sender.try_send((key, state)) {
-            log::error!("Failed to send key event: {:?}", e);
-        }
+        send_input_event(&sender, (key, state));
     }
 
     fn handle_key_press<const N: usize>(
@@ -37,7 +36,7 @@ impl KeyboardDevice {
         let key = match map_key(key) {
             Some(k) => k,
             None => {
-                log::warning!("Unsupported key: {}", key);
+                log::warning!("Unsupported key ignored");
                 return;
             }
         };
@@ -48,9 +47,7 @@ impl KeyboardDevice {
             State::Released
         };
 
-        if let Err(e) = sender.try_send((key, state)) {
-            log::error!("Failed to send key event: {:?}", e);
-        }
+        send_input_event(&sender, (key, state));
     }
 
     pub fn new(canvas: &HtmlCanvasElement) -> Result<Self, String> {

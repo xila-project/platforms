@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
 
 use arboard::Clipboard;
-use drivers_shared::devices::SharedPointerQueue;
+use drivers_shared::devices::{SharedPointerQueue, send_input_event};
 use graphics::{Key, Point, State};
 use pixels::{Pixels, SurfaceTexture};
 use synchronization::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Sender};
@@ -46,13 +46,9 @@ impl<'a> Window<'a> {
             for character in text.chars() {
                 let key = Key::Character(character as u8);
 
-                if let Err(e) = self.keyboard_receiver.try_send((key, State::Pressed)) {
-                    log::error!("Failed to send key event: {:?}", e);
-                    return None;
-                }
-
-                if let Err(e) = self.keyboard_receiver.try_send((key, State::Released)) {
-                    log::error!("Failed to send key event: {:?}", e);
+                if !send_input_event(&self.keyboard_receiver, (key, State::Pressed))
+                    || !send_input_event(&self.keyboard_receiver, (key, State::Released))
+                {
                     return None;
                 }
             }
@@ -132,12 +128,8 @@ impl<'a> ApplicationHandler for Window<'a> {
                             return;
                         }
 
-                        if let Err(e) = self.keyboard_receiver.try_send((key, State::Pressed)) {
-                            log::error!("Failed to send key event: {:?}", e);
-                            return;
-                        }
-                        if let Err(e) = self.keyboard_receiver.try_send((key, State::Released)) {
-                            log::error!("Failed to send key event: {:?}", e);
+                        if send_input_event(&self.keyboard_receiver, (key, State::Pressed)) {
+                            send_input_event(&self.keyboard_receiver, (key, State::Released));
                         }
                     }
                 } else if let winit::keyboard::Key::Named(key) = event.logical_key {
@@ -162,9 +154,7 @@ impl<'a> ApplicationHandler for Window<'a> {
                         _ => Key::Character(0),
                     };
 
-                    if let Err(e) = self.keyboard_receiver.try_send((key, state)) {
-                        log::error!("Failed to send key event: {:?}", e);
-                    }
+                    send_input_event(&self.keyboard_receiver, (key, state));
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => {
