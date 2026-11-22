@@ -14,6 +14,49 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
 use crate::devices::graphics::get_window_size;
 
+/// Target height in rows of a single browser partial-rendering tile.
+pub const DRAW_BUFFER_TILE_ROWS: usize = 64;
+
+/// Minimum browser draw buffer capacity in pixels so resizing from a small
+/// initial viewport to a wide desktop viewport still fits complete scanlines.
+pub const MINIMUM_DRAW_BUFFER_PIXELS: usize = 4096;
+
+/// Maximum browser draw buffer capacity in pixels (128 Ki pixels, or 512 KiB
+/// at 4 bytes per pixel in XRGB8888), bounding both the graphics draw buffer
+/// and the canvas conversion buffer regardless of viewport size.
+pub const MAXIMUM_DRAW_BUFFER_PIXELS: usize = 128 * 1024;
+
+/// Compute the bounded single-tile draw buffer size in pixels for the browser.
+///
+/// `CanvasScreenDevice` flushes synchronously via `putImageData`, so LVGL
+/// renders in partial mode with a single row-sized tile buffer rather than two
+/// full-resolution framebuffers.
+pub const fn draw_buffer_pixel_count(resolution: &Point) -> usize {
+    let width = if resolution.get_x() > 0 {
+        resolution.get_x() as usize
+    } else {
+        1
+    };
+    let height = if resolution.get_y() > 0 {
+        resolution.get_y() as usize
+    } else {
+        1
+    };
+    let rows = if height < DRAW_BUFFER_TILE_ROWS {
+        height
+    } else {
+        DRAW_BUFFER_TILE_ROWS
+    };
+    let pixels = width.saturating_mul(rows);
+    if pixels < MINIMUM_DRAW_BUFFER_PIXELS {
+        MINIMUM_DRAW_BUFFER_PIXELS
+    } else if pixels > MAXIMUM_DRAW_BUFFER_PIXELS {
+        MAXIMUM_DRAW_BUFFER_PIXELS
+    } else {
+        pixels
+    }
+}
+
 struct Inner {
     canvas: HtmlCanvasElement,
     context: CanvasRenderingContext2d,
@@ -84,12 +127,30 @@ impl Inner {
     }
 
     fn draw_buffer(&mut self, buffer: &[RenderingColor]) -> Result<(), String> {
-        let pixel_count = self.area.get_width() as usize * self.area.get_height() as usize;
-        let bytes_needed = pixel_count * size_of::<RenderingColor>();
+        let width = self.area.get_width();
+        let height = self.area.get_height();
+        if width == 0 || height == 0 {
+            return Ok(());
+        }
+
+        let pixel_count = (width as usize)
+            .checked_mul(height as usize)
+            .ok_or("Drawing area pixel count overflowed")?;
+        if buffer.len() < pixel_count {
+            return Err(alloc::format!(
+                "Drawing buffer too small: received {} pixels for {}x{} area",
+                buffer.len(),
+                width,
+                height
+            ));
+        }
+        let bytes_needed = pixel_count
+            .checked_mul(size_of::<RenderingColor>())
+            .ok_or("Drawing area byte length overflowed")?;
 
         if self.conversion_buffer.capacity() < bytes_needed {
-            self.conversion_buffer
-                .reserve(bytes_needed - self.conversion_buffer.len());
+            self.conversion_buffer.clear();
+            self.conversion_buffer.reserve_exact(bytes_needed);
         }
         unsafe {
             self.conversion_buffer.set_len(bytes_needed);
@@ -107,8 +168,8 @@ impl Inner {
         // now conversion_buffer is ready as &[u8]
         let image_data = ImageData::new_with_u8_clamped_array_and_sh(
             Clamped(&self.conversion_buffer),
-            self.area.get_width() as _,
-            self.area.get_height() as _,
+            width as _,
+            height as _,
         )
         .expect("Failed to create ImageData");
 
@@ -267,6 +328,53 @@ mod color_conversion_tests {
         assert_eq!(
             destination,
             [30, 20, 10, 40, 0, 128, 255, 77, 255, 255, 0, 255]
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn draw_buffer_pixel_count_uses_bounded_row_tiles() {
+        use super::{
+            DRAW_BUFFER_TILE_ROWS, MAXIMUM_DRAW_BUFFER_PIXELS, MINIMUM_DRAW_BUFFER_PIXELS,
+            draw_buffer_pixel_count,
+        };
+        use graphics::Point;
+
+        assert_eq!(
+            draw_buffer_pixel_count(&Point::new(800, 600)),
+            800 * DRAW_BUFFER_TILE_ROWS
+        );
+        assert_eq!(
+            draw_buffer_pixel_count(&Point::new(1280, 720)),
+            1280 * DRAW_BUFFER_TILE_ROWS
+        );
+        assert_eq!(
+            draw_buffer_pixel_count(&Point::new(1920, 1080)),
+            1920 * DRAW_BUFFER_TILE_ROWS
+        );
+        assert_eq!(
+            draw_buffer_pixel_count(&Point::new(2560, 1440)),
+            MAXIMUM_DRAW_BUFFER_PIXELS
+        );
+        assert_eq!(
+            draw_buffer_pixel_count(&Point::new(3840, 2160)),
+            MAXIMUM_DRAW_BUFFER_PIXELS
+        );
+        assert_eq!(
+            draw_buffer_pixel_count(&Point::new(390, 844)),
+            390 * DRAW_BUFFER_TILE_ROWS
+        );
+        assert_eq!(draw_buffer_pixel_count(&Point::new(1280, 32)), 1280 * 32);
+        assert_eq!(
+            draw_buffer_pixel_count(&Point::new(32, 32)),
+            MINIMUM_DRAW_BUFFER_PIXELS
+        );
+        assert_eq!(
+            draw_buffer_pixel_count(&Point::new(0, 0)),
+            MINIMUM_DRAW_BUFFER_PIXELS
+        );
+        assert_eq!(
+            draw_buffer_pixel_count(&Point::new(-100, -100)),
+            MINIMUM_DRAW_BUFFER_PIXELS
         );
     }
 }
