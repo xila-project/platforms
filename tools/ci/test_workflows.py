@@ -66,7 +66,7 @@ class PlatformWorkflowPolicy(unittest.TestCase):
             self.assertIn(check, pr)
         # The shell smoke checks the home recorded in the seeded account, in
         # the PR build and in the release build alike.
-        home_check = "grep -Eq '(^|[[:space:]])/users/administrator[[:space:]]*$'"
+        home_check = "grep -Eq '(^|[[:space:]])/users/administrator[[:space:]]*$'; then"
         self.assertEqual(workflow.count(home_check), 2)
         self.assertIn(home_check, pr)
         self.assertIn('cache-from: type=gha', pr)
