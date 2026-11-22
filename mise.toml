@@ -25,6 +25,24 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", compone
   "thumbv7em-none-eabihf",
 ] }
 
+[tasks."release:nano-33-ble-image"]
+description = "Export the built Nano 33 BLE ELF as a raw firmware image"
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
+  "llvm-tools",
+], targets = [
+  "thumbv7em-none-eabihf",
+] }
+run = """
+set -eu
+system_root="$(rustc --print sysroot)"
+host="$(rustc -vV | sed -n 's/^host: //p')"
+target_directory="${CARGO_TARGET_DIR:-target}"
+mkdir -p target/release-artifacts
+"$system_root/lib/rustlib/$host/bin/llvm-objcopy" -O binary \
+  "$target_directory/thumbv7em-none-eabihf/release-embedded/nano_33_ble_example" \
+  target/release-artifacts/nano-33-ble.bin
+"""
+
 [tasks."flash:nano-33-ble"]
 description = "Build the Arduino Nano 33 BLE firmware and flash it through the Arduino bootloader"
 depends = ["build:nano-33-ble"]

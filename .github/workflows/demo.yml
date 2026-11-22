@@ -1,4 +1,5 @@
 name: Browser demonstrations
+run-name: Browser demonstrations for ${{ inputs.platform_ref || github.event.workflow_run.head_sha || github.sha }}
 on:
   pull_request:
   workflow_run:
@@ -73,6 +74,8 @@ jobs:
         env:
           CARGO_TARGET_ROOT: ${{ github.workspace }}/target/pages
         run: mise run pages:build
+      - name: "Report | Record the Platforms revision"
+        run: mise run release:browser-revision
       - uses: actions/upload-pages-artifact@v5
         with:
           path: pages/
@@ -85,6 +88,12 @@ jobs:
         with:
           name: reference-filesystem-images
           path: target/reference-filesystem-images/
+          if-no-files-found: error
+      - name: "Report | Upload native release seed"
+        uses: actions/upload-artifact@v7
+        with:
+          name: xila-native-seed
+          path: target/reference-filesystem-images/en/native.img
           if-no-files-found: error
   deploy:
     if: >-
