@@ -162,10 +162,10 @@ jobs:
         include:
           - chip: esp32s3
             name: ESP32-S3
-            task: test:espressif-emulator
+            task: test:esp32-s3-qemu
           - chip: esp32c6
             name: ESP32-C6
-            task: test:esp32c6-emulator
+            task: test:esp32-c6-qemu
     steps:
       - name: "Setup | Checkout sources"
         uses: actions/checkout@v7
@@ -192,11 +192,22 @@ jobs:
             target/espressif-emulator/runs/${{ matrix.chip }}.*/uart.log
             target/espressif-emulator/runs/${{ matrix.chip }}.*/qemu.log
             target/espressif-emulator/runs/${{ matrix.chip }}.*/screen.png
-  esp32p4:
-    # Advisory build while boot testing on ESP32-P4 hardware is pending.
-    name: "Build / ESP32-P4 firmware"
+  espressif-boards:
+    # Advisory builds of the hardware boards; their boot is checked on the
+    # boards themselves.
+    name: "Build / ${{ matrix.name }} firmware"
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - board: esp32-p4-function-ev-board
+            name: ESP32-P4-Function-EV-Board
+            xtensa: false
+          - board: wt32-sc01-plus
+            name: WT32-SC01 Plus
+            xtensa: true
     steps:
       - name: "Setup | Checkout sources"
         uses: actions/checkout@v7
@@ -206,8 +217,11 @@ jobs:
         uses: jdx/mise-action@v5.2.2
       - name: "Setup | Native build and flasher dependencies"
         run: mise run ci:packages-espressif
-      - name: "Build | ESP32-P4 flash image"
-        run: mise run build:esp32p4-image
+      - name: "Setup | Espressif Rust and GCC toolchain"
+        if: matrix.xtensa
+        run: mise run setup:espressif-rust
+      - name: "Build | Flash image"
+        run: mise run build:${{ matrix.board }}
   required:
     if: always()
     needs: [quality, native, nano-33-ble, browser]

@@ -176,42 +176,41 @@ description = "Run the pinned espflash binary"
 depends = ["setup:espflash"]
 run = "target/espressif-emulator/tools/espflash-{{ vars.espflash_version }}/espflash"
 
-[tasks."build:esp32s3-image"]
-description = "Build the ESP32-S3 example and merge it into a flash image for Espressif QEMU"
+[tasks."build:esp32-s3-qemu"]
+description = "Build the ESP32-S3 QEMU board (examples/boards/esp32-s3-qemu) and merge it into a 4 MiB flash image"
 depends = ["setup:espressif-emulator"]
 tools.node = "{{ vars.node_version }}"
-run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}'"
+run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' esp32-s3-qemu"
 
-[tasks."build:wt32-sc01-plus-image"]
-description = "Build the ESP32 example for the WT32-SC01 Plus board and merge it into a 16 MiB flash image"
-depends = ["setup:espressif-emulator"]
-tools.node = "{{ vars.node_version }}"
-run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' wt32-sc01-plus"
-
-[tasks."build:esp32c6-image"]
-description = "Build the ESP32-C6 example and merge it into a flash image for Espressif QEMU"
+[tasks."build:esp32-c6-qemu"]
+description = "Build the ESP32-C6 QEMU board (examples/boards/esp32-c6-qemu) and merge it into a 4 MiB flash image"
 depends = ["setup:esp32c6-emulator"]
 tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets = [
   "riscv32imac-unknown-none-elf",
 ] }
-run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' esp32c6"
+run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' esp32-c6-qemu"
 
-[tasks."build:esp32p4-image"]
-description = "Build the ESP32-P4 example and merge it into a 16 MiB flash image"
+[tasks."build:esp32-p4-function-ev-board"]
+description = "Build the ESP32-P4X-Function-EV-Board firmware (examples/boards/esp32-p4-function-ev-board) and merge it into a 16 MiB flash image"
 depends = ["setup:espflash"]
 tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets = [
   "riscv32imafc-unknown-none-elf",
 ] }
-run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' esp32p4"
+run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' esp32-p4-function-ev-board"
 
-[tasks."test:espressif-emulator"]
-description = "Boot the ESP32-S3 image headless in Espressif QEMU and check LittleFS, RNG, LVGL, the heap and the shell login prompt"
-depends = ["build:esp32s3-image"]
-tools.uv = "{{ vars.uv_version }}"
-run = "uv run --no-project python -I tools/dev/espressif_smoke.py target/espressif-emulator/tools/qemu-{{ vars.esp_qemu_version }}/qemu/bin/qemu-system-xtensa target/espressif-emulator/esp32s3-flash.bin target/espressif-emulator/runs"
+[tasks."build:wt32-sc01-plus"]
+description = "Build the WT32-SC01 Plus firmware (examples/boards/wt32-sc01-plus) and merge it into a 16 MiB flash image"
+depends = ["setup:espflash"]
+run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' wt32-sc01-plus"
 
-[tasks."test:esp32c6-emulator"]
-description = "Boot the ESP32-C6 image headless in Espressif QEMU and check LittleFS, the heap and the shell login prompt"
-depends = ["build:esp32c6-image"]
+[tasks."test:esp32-s3-qemu"]
+description = "Boot the ESP32-S3 QEMU board headless in Espressif QEMU and check LittleFS, RNG, LVGL, the heap and the shell login prompt"
+depends = ["build:esp32-s3-qemu"]
 tools.uv = "{{ vars.uv_version }}"
-run = "uv run --no-project python -I tools/dev/espressif_smoke.py --chip esp32c6 target/espressif-emulator/tools/qemu-riscv32-{{ vars.esp_qemu_version }}/qemu/bin/qemu-system-riscv32 target/espressif-emulator/esp32c6-flash.bin target/espressif-emulator/runs"
+run = "uv run --no-project python -I tools/dev/espressif_smoke.py target/espressif-emulator/tools/qemu-{{ vars.esp_qemu_version }}/qemu/bin/qemu-system-xtensa target/espressif-emulator/esp32-s3-qemu-flash.bin target/espressif-emulator/runs"
+
+[tasks."test:esp32-c6-qemu"]
+description = "Boot the ESP32-C6 QEMU board headless in Espressif QEMU and check LittleFS, the heap and the shell login prompt"
+depends = ["build:esp32-c6-qemu"]
+tools.uv = "{{ vars.uv_version }}"
+run = "uv run --no-project python -I tools/dev/espressif_smoke.py --chip esp32c6 target/espressif-emulator/tools/qemu-riscv32-{{ vars.esp_qemu_version }}/qemu/bin/qemu-system-riscv32 target/espressif-emulator/esp32-c6-qemu-flash.bin target/espressif-emulator/runs"

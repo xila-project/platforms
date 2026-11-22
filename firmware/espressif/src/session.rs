@@ -6,10 +6,9 @@
 //! startup task then waits for the request, and the lifecycle supervisor stops
 //! every session together with the other tasks that are not services.
 //!
-//! The serial console session is the only one for now. A graphical session can
-//! run beside it as a second task with its own shell and display.
-
-extern crate alloc;
+//! Boards list their sessions in [`crate::Board::sessions`]: the serial
+//! console session for now. A graphical session can run beside it as a second
+//! task with its own shell and display.
 
 use alloc::vec;
 
@@ -19,7 +18,7 @@ use xila::{
 };
 
 /// The terminal and the shell of a session.
-pub(super) struct Session {
+pub struct Session {
     pub name: &'static str,
     pub input: &'static str,
     pub output: &'static str,
@@ -27,16 +26,25 @@ pub(super) struct Session {
     pub shell: &'static str,
 }
 
+/// The command-line shell on the console.
+pub const CONSOLE: Session = Session {
+    name: "Console session",
+    input: "/devices/standard_io/input",
+    output: "/devices/standard_io/output",
+    error: "/devices/standard_io/error",
+    shell: crate::SHELL_PATH,
+};
+
 /// Starts `session` as a child task of `parent`.
 pub(super) async fn spawn(
     task_manager: &'static task::Manager,
     parent: task::TaskIdentifier,
     executable_context: &'static ExecutableContext,
-    session: Session,
+    session: &'static Session,
 ) {
     task_manager
         .spawn(parent, session.name, None, async move |task| {
-            run(executable_context, task, &session).await;
+            run(executable_context, task, session).await;
         })
         .await
         .expect("Failed to spawn a session");

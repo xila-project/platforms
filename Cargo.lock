@@ -6239,6 +6239,57 @@ dependencies = [
 ]
 
 [[package]]
+name = "xila-board-esp32-c6-qemu"
+version = "0.1.0"
+dependencies = [
+ "esp-bootloader-esp-idf",
+ "esp-hal",
+ "esp-println",
+ "esp-storage",
+ "xila",
+ "xila-drivers-espressif",
+ "xila-firmware-espressif",
+]
+
+[[package]]
+name = "xila-board-esp32-p4-function-ev-board"
+version = "0.1.0"
+dependencies = [
+ "esp-bootloader-esp-idf",
+ "esp-hal",
+ "esp-println",
+ "esp-storage",
+ "xila",
+ "xila-drivers-espressif",
+ "xila-firmware-espressif",
+]
+
+[[package]]
+name = "xila-board-esp32-s3-qemu"
+version = "0.1.0"
+dependencies = [
+ "esp-bootloader-esp-idf",
+ "esp-hal",
+ "esp-println",
+ "esp-storage",
+ "xila",
+ "xila-drivers-espressif",
+ "xila-firmware-espressif",
+]
+
+[[package]]
+name = "xila-board-wt32-sc01-plus"
+version = "0.1.0"
+dependencies = [
+ "esp-bootloader-esp-idf",
+ "esp-hal",
+ "esp-storage",
+ "xila",
+ "xila-drivers-espressif",
+ "xila-firmware-espressif",
+]
+
+[[package]]
 name = "xila-bootsplash"
 version = "0.1.0"
 source = "git+https://github.com/xila-project/core?branch=main#4851bf35ee048b015615f1b344444de816e82699"
@@ -6551,24 +6602,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "xila-esp32-example"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "embedded-storage",
- "esp-bootloader-esp-idf",
- "esp-hal",
- "esp-println",
- "esp-storage",
- "xila",
- "xila-command-line-shell",
- "xila-drivers-core",
- "xila-drivers-espressif",
- "xila-drivers-peripherals",
- "xila-drivers-shared",
-]
-
-[[package]]
 name = "xila-executable"
 version = "0.1.0"
 source = "git+https://github.com/xila-project/core?branch=main#4851bf35ee048b015615f1b344444de816e82699"
@@ -6613,6 +6646,22 @@ dependencies = [
  "xila-synchronization",
  "xila-task",
  "xila-users",
+]
+
+[[package]]
+name = "xila-firmware-espressif"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embedded-storage",
+ "esp-hal",
+ "esp-storage",
+ "xila",
+ "xila-command-line-shell",
+ "xila-drivers-core",
+ "xila-drivers-espressif",
+ "xila-drivers-peripherals",
+ "xila-drivers-shared",
 ]
 
 [[package]]

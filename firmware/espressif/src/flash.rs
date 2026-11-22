@@ -15,32 +15,38 @@ use xila::{
     synchronization::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex},
 };
 
-// `START` and `LENGTH` come from the LittleFS partition of the partition table
-// of the board (`partitions_4mb.csv`, or `partitions_16mb.csv` on the ESP32-P4
-// and the WT32-SC01 Plus), read by `build.rs`.
-include!(concat!(env!("OUT_DIR"), "/storage_partition.rs"));
+use crate::StoragePartition;
+
 const BLOCK: u32 = FlashStorage::ERASE_SIZE as u32;
 
-pub(super) struct LittleFsPartition(Mutex<CriticalSectionRawMutex, RefCell<FlashStorage<'static>>>);
-
-impl LittleFsPartition {
-    pub(super) fn new(storage: FlashStorage<'static>) -> Self {
-        Self(Mutex::new(RefCell::new(storage)))
-    }
+/// The board's storage partition as a block device.
+pub(super) struct LittleFsPartition {
+    flash: Mutex<CriticalSectionRawMutex, RefCell<FlashStorage<'static>>>,
+    partition: StoragePartition,
 }
 
-fn address(position: Size, length: Size) -> Result<u32> {
-    if position > LENGTH.into() || length > Size::from(LENGTH) - position {
-        return Err(IoErrorKind::InvalidArgument);
+impl LittleFsPartition {
+    pub(super) fn new(storage: FlashStorage<'static>, partition: StoragePartition) -> Self {
+        Self {
+            flash: Mutex::new(RefCell::new(storage)),
+            partition,
+        }
     }
-    Ok(START + position as u32)
+
+    fn address(&self, position: Size, length: Size) -> Result<u32> {
+        let partition_length = Size::from(self.partition.length);
+        if position > partition_length || length > partition_length - position {
+            return Err(IoErrorKind::InvalidArgument);
+        }
+        Ok(self.partition.offset + position as u32)
+    }
 }
 
 impl DirectBaseOperations for LittleFsPartition {
     fn read(&self, _: &mut Context<'_>, buffer: &mut [u8], position: Size) -> Poll<Result<usize>> {
         file_system::ready(|| {
-            let address = address(position, buffer.len() as Size)?;
-            self.0
+            let address = self.address(position, buffer.len() as Size)?;
+            self.flash
                 .lock(|flash| ReadNorFlash::read(&mut *flash.borrow_mut(), address, buffer))
                 .map_err(|_| IoErrorKind::InputOutput)?;
             Ok(buffer.len())
@@ -49,8 +55,8 @@ impl DirectBaseOperations for LittleFsPartition {
 
     fn write(&self, _: &mut Context<'_>, buffer: &[u8], position: Size) -> Poll<Result<usize>> {
         file_system::ready(|| {
-            let address = address(position, buffer.len() as Size)?;
-            self.0
+            let address = self.address(position, buffer.len() as Size)?;
+            self.flash
                 .lock(|flash| NorFlash::write(&mut *flash.borrow_mut(), address, buffer))
                 .map_err(|_| IoErrorKind::InputOutput)?;
             Ok(buffer.len())
@@ -70,14 +76,14 @@ impl DirectBaseOperations for LittleFsPartition {
                 Ok(())
             }
             GET_BLOCK_COUNT::IDENTIFIER => {
-                *GET_BLOCK_COUNT::cast_output(output)? = LENGTH / BLOCK;
+                *GET_BLOCK_COUNT::cast_output(output)? = self.partition.length / BLOCK;
                 Ok(())
             }
             ERASE::IDENTIFIER => {
                 let range = ERASE::cast_input(input)?;
-                let start = address(range.position, range.size)?;
+                let start = self.address(range.position, range.size)?;
                 let end = start + range.size as u32;
-                self.0
+                self.flash
                     .lock(|flash| NorFlash::erase(&mut *flash.borrow_mut(), start, end))
                     .map_err(|_| IoErrorKind::InputOutput)
             }

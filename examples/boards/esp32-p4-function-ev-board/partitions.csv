@@ -1,4 +1,4 @@
 # Name, Type, SubType, Offset, Size, Flags
-# 16 MB flash (ESP32-P4): a 3 MB application and the rest (12.8 MB) for LittleFS.
+# 16 MB flash: a 3 MB application and the rest (12.8 MB) for LittleFS.
 factory, app, factory, 0x10000, 0x300000,
 storage, data, littlefs, 0x310000, 0xCF0000,
