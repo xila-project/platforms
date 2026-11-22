@@ -2,7 +2,6 @@
 compile_error!("drivers_headless is only available on native host platforms");
 
 mod audio;
-mod screen;
 
 pub use audio::HeadlessAudioOutput;
-pub use screen::{HeadlessError, HeadlessScreenDevice};
+pub use graphics::headless_screen::{HeadlessError, HeadlessScreenDevice};

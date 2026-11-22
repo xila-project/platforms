@@ -7,11 +7,11 @@ rust-version.workspace = true
 [dependencies]
 audio = { workspace = true }
 file_system = { workspace = true }
-graphics = { workspace = true, features = ["rendering_xrgb8888"] }
-shared = { workspace = true }
+graphics = { workspace = true, features = ["headless_screen", "rendering_xrgb8888"] }
 
 [lib]
 name = "drivers_headless"
 
 [dev-dependencies]
 critical-section = { workspace = true, features = ["std"] }
+shared = { workspace = true }
