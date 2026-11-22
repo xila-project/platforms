@@ -15,6 +15,17 @@ fn checked(command: &mut Command) -> Result<()> {
     Ok(())
 }
 
+/// The scratch crate's manifest. Core's memory subsystem uses the same Git
+/// source as Platforms' workspace, so the copied `Cargo.lock` pins it.
+fn probe_manifest(drivers_std: &str, heaptrack: bool) -> String {
+    format!(
+        "[package]\nname = \"xila_heaptrack_probe\"\nversion = \"0.0.0\"\nedition = \"2024\"\n[workspace]\n[dependencies]\ndrivers_std = {{ package = \"xila-drivers-std\", path = {drivers_std}, features = {} }}\nmemory = {{ package = \"xila-memory\", git = \"{CORE_REPOSITORY}\", branch = \"main\" }}\ncritical-section = {{ version = \"1.2\", features = [\"std\"] }}\n",
+        if heaptrack { "[\"heaptrack\"]" } else { "[]" },
+    )
+}
+
+const CORE_REPOSITORY: &str = "https://github.com/xila-project/core";
+
 pub(crate) fn run() -> Result<()> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -44,13 +55,13 @@ pub(crate) fn run() -> Result<()> {
         let quote = |path: PathBuf| -> Result<String> {
             Ok(miniserde::json::to_string(&super::text(&path)?))
         };
-        let manifest = format!(
-            "[package]\nname = \"xila_heaptrack_probe\"\nversion = \"0.0.0\"\nedition = \"2024\"\n[workspace]\n[dependencies]\ndrivers_std = {{ path = {}, features = {} }}\nmemory = {{ path = {} }}\ncritical-section = {{ version = \"1.2\", features = [\"std\"] }}\n",
-            quote(root.join("drivers/std"))?,
-            if enabled { "[\"heaptrack\"]" } else { "[]" },
-            quote(root.join("subsystems/memory"))?
-        );
-        fs::write(scratch.0.join("Cargo.toml"), manifest)?;
+        fs::write(
+            scratch.0.join("Cargo.toml"),
+            probe_manifest(&quote(root.join("drivers/std"))?, enabled),
+        )?;
+        // Start from Platforms' lockfile so the probe builds the Core revision
+        // the firmware is locked to; Cargo only adds the probe package to it.
+        fs::copy(root.join("Cargo.lock"), scratch.0.join("Cargo.lock"))?;
         checked(
             Command::new("cargo")
                 .args(["build", "--manifest-path"])
@@ -113,4 +124,35 @@ pub(crate) fn run() -> Result<()> {
         "Heaptrack smoke passed: enabled events, default silence, failed request, alignment and realloc preservation"
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn workspace_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    #[test]
+    fn probe_depends_on_existing_drivers_and_the_locked_core_memory_source() {
+        let root = workspace_root();
+        let drivers = fs::read_to_string(root.join("drivers/std/Cargo.toml")).unwrap();
+        assert!(drivers.contains("name = \"xila-drivers-std\""));
+        let workspace = fs::read_to_string(root.join("Cargo.toml")).unwrap();
+        let memory = format!(
+            "memory = {{ package = \"xila-memory\", git = \"{CORE_REPOSITORY}\", branch = \"main\" }}"
+        );
+        assert!(
+            workspace.lines().any(|line| line.trim() == memory),
+            "the probe's memory dependency must match the workspace's: {memory}"
+        );
+        for heaptrack in [false, true] {
+            let manifest = probe_manifest("\"drivers/std\"", heaptrack);
+            assert!(manifest.contains(&memory), "{manifest}");
+            assert!(manifest.contains("package = \"xila-drivers-std\""));
+            assert_eq!(manifest.contains("[\"heaptrack\"]"), heaptrack);
+        }
+    }
 }

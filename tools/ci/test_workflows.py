@@ -88,6 +88,30 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         self.assertIn('ghcr.io/${{ github.repository_owner }}/xila-runtime', release)
         self.assertNotIn("github.event_name == 'pull_request' ||", release)
 
+    def test_runtime_core_deep_validation_matches_the_locked_core(self):
+        # The release gate runs Core's deep validation at the Core revision the
+        # firmware is locked to; the `uses:` SHA, `core_ref` and the
+        # `validated-sha` comparison must all follow a Core relock.
+        locked = {
+            package['source'].rsplit('#', 1)[1]
+            for package in tomllib.loads(read('Cargo.lock'))['package']
+            if package.get('source', '').startswith('git+https://github.com/xila-project/core?')
+        }
+        self.assertEqual(len(locked), 1, locked)
+        core = locked.pop()
+        jobs = yaml.safe_load(read('.github/workflows/runtime.yml'))['jobs']
+        workflow, _, uses_revision = jobs['deep']['uses'].partition('@')
+        self.assertEqual(workflow, 'xila-project/core/.github/workflows/extended.yml')
+        self.assertEqual(uses_revision, core, 'deep `uses:` revision')
+        self.assertEqual(jobs['deep']['with']['core_ref'], core, 'deep `core_ref`')
+        comparisons = re.findall(r"needs\.deep\.outputs\.validated-sha\s*==\s*'([0-9a-f]*)'",
+                                 jobs['runtime']['if'])
+        self.assertEqual(comparisons, [core], 'runtime `validated-sha` comparison')
+        # No other copy of a Core revision may hide elsewhere in the workflow.
+        workflow_text = read('.github/workflows/runtime.yml')
+        self.assertEqual(
+            set(re.findall(r'xila-project/core/[^@\s]*@([0-9a-f]{40})', workflow_text)), {core})
+
     def test_docker_consumes_separately_built_guests(self):
         dockerfile = read('Dockerfile.runtime')
         self.assertIn('COPY --from=applications / /bundles/', dockerfile)
