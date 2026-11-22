@@ -6,6 +6,12 @@ console and command-line shell over the `drivers/espressif` runtime drivers
 in internal flash. The ESP32-S3 emulator build also checks `/devices/random/source`
 and renders a frame with LVGL.
 
+Default account creation requires a secure entropy source and a freshly
+formatted file system. If you keep the account-free file system from the old
+boot-only firmware, it will stay account-free after upgrading. Back up any
+files you need before using a fresh image to create the default account on
+hardware with an entropy source.
+
 ## Build and flash the ESP32-P4 firmware
 
 Only chip revisions **v3.0 and later** are supported by `esp-hal` 1.2.2.
@@ -13,9 +19,13 @@ The image assumes **16 MiB of flash**, as on the ESP32-P4X-Function-EV-Board (ch
 Check the chip revision and flash capacity on your board before flashing.
 The firmware adds detected external pseudo-static memory (PSRAM) to the
 internal heap and uses the existing LittleFS partition in `partitions.csv`.
-Because `esp-hal` 1.2.2 cannot enable the onboard ESP32-P4 entropy source yet,
-`/devices/random/source` returns unavailable and default account seeding is
-skipped until an entropy source is configured.
+Because [`esp-hal` 1.2.2 cannot enable the onboard ESP32-P4 entropy source][entropy],
+nonempty reads of `/devices/random/source` return `DeviceUnavailable`.
+The firmware skips default account creation on a fresh file system. A fresh
+board reaches the login prompt but has no account to sign in with. Existing
+accounts can still authenticate with their stored password salts. A future
+firmware with a secure entropy source will also need to handle initial account
+setup on boards that already booted this image.
 
 From the repository root on Linux with Clang and unzip installed:
 
@@ -57,3 +67,4 @@ image. The ESP32-S3 and ESP32-C6 boot tests run in QEMU and check for the
 `User name:` prompt.
 
 [board]: https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32p4/esp32-p4x-function-ev-board/user_guide.html
+[entropy]: https://github.com/esp-rs/esp-hal/issues/5982

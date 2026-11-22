@@ -19,16 +19,11 @@ use esp_storage::FlashStorage;
 use xila::{
     authentication,
     executable::{self, Standard, mount_executables},
-    file_system::Path,
+    file_system::{AccessFlags, CreateFlags, Flags, Path},
     little_fs, log,
     memory::ManagerTrait,
     memory_file_system, task, time, users,
-    virtual_file_system::{self, AccessTimePolicy, MountOptions, mount_static},
-};
-#[cfg(not(feature = "esp32p4"))]
-use xila::{
-    file_system::{AccessFlags, CreateFlags, Flags},
-    virtual_file_system::File,
+    virtual_file_system::{self, AccessTimePolicy, File, MountOptions, mount_static},
 };
 
 #[cfg(feature = "qemu-display")]
@@ -57,6 +52,7 @@ const BUILD_EPOCH: u64 = {
 };
 
 const SHELL_PATH: &str = "/system/executables/command_line_shell";
+const HAS_ENTROPY_SOURCE: bool = !cfg!(any(feature = "esp32p4", feature = "qemu-esp32c6"));
 
 static TASK_MANAGER: task::Manager = task::Manager::new();
 
@@ -82,43 +78,36 @@ fn main() -> ! {
 
     #[cfg(feature = "esp32p4")]
     let external_memory = {
-        let psram =
+        let mapped_memory =
             esp_hal::psram::Psram::new(peripherals.PSRAM, esp_hal::psram::PsramConfig::default());
-        let (_, size) = psram.raw_parts();
+        let (_, size) = mapped_memory.raw_parts();
         // SAFETY: The detected PSRAM is reserved exclusively for this allocator.
-        let registered = unsafe { heap.init_psram_from_hal(&psram) };
+        let registered = unsafe { heap.init_psram_from_hal(&mapped_memory) };
         (size, registered)
     };
 
     let system_timer = SystemTimer::new(peripherals.SYSTIMER);
     drivers_espressif::time::initialize(system_timer.alarm0);
 
-    let uart_configuration = UartConfiguration::default();
     #[cfg(feature = "esp32s3")]
-    let serial = Uart::new(peripherals.UART0, uart_configuration)
-        .expect("Failed to configure UART0")
-        .with_tx(peripherals.GPIO43)
-        .with_rx(peripherals.GPIO44);
+    let (transmit_pin, receive_pin) = (peripherals.GPIO43, peripherals.GPIO44);
     #[cfg(feature = "esp32c6")]
-    let serial = Uart::new(peripherals.UART0, uart_configuration)
-        .expect("Failed to configure UART0")
-        .with_tx(peripherals.GPIO16)
-        .with_rx(peripherals.GPIO17);
+    let (transmit_pin, receive_pin) = (peripherals.GPIO16, peripherals.GPIO17);
     #[cfg(feature = "esp32p4")]
-    let serial = Uart::new(peripherals.UART0, uart_configuration)
+    let (transmit_pin, receive_pin) = (peripherals.GPIO37, peripherals.GPIO38);
+    let serial = Uart::new(peripherals.UART0, UartConfiguration::default())
         .expect("Failed to configure UART0")
-        .with_tx(peripherals.GPIO37)
-        .with_rx(peripherals.GPIO38);
+        .with_tx(transmit_pin)
+        .with_rx(receive_pin);
 
     let flash_storage = FlashStorage::new(peripherals.FLASH);
 
-    #[cfg(any(feature = "esp32s3", feature = "esp32c6"))]
+    #[cfg(not(any(feature = "esp32p4", feature = "qemu-esp32c6")))]
     let random_device = RandomDevice::new(peripherals.RNG, peripherals.ADC1);
-    #[cfg(feature = "esp32p4")]
+    #[cfg(any(feature = "esp32p4", feature = "qemu-esp32c6"))]
     let random_device = RandomDevice::from_entropy_source(|_| {
-        // esp-hal 1.2.2 cannot enable the onboard ESP32-P4 entropy source yet
-        // (https://github.com/esp-rs/esp-hal/issues/5982); refuse reads instead
-        // of falling back to pseudorandom output.
+        // esp-hal lacks ESP32-P4 entropy support, and the pinned ESP32-C6
+        // emulator lacks the random register.
         Err(xila::file_system::IoErrorKind::DeviceUnavailable)
     });
 
@@ -276,8 +265,7 @@ async fn run(task_manager: &'static task::Manager) {
     .await
     .expect("Failed to mount the power device");
 
-    // The pinned C6 QEMU machine does not implement the LP_PERI RNG register,
-    // and esp-hal 1.2.2 lacks an ESP32-P4 entropy source (esp-hal#5982).
+    // The ESP32-S3 smoke test checks that the device returns changing values.
     #[cfg(feature = "esp32s3")]
     {
         let mut sample = [0u8; 8];
@@ -298,8 +286,7 @@ async fn run(task_manager: &'static task::Manager) {
 
     // - Accounts. A file system this start just formatted is a first
     // installation: only then may the default account be created.
-    #[cfg(not(feature = "esp32p4"))]
-    if formatted {
+    if formatted && HAS_ENTROPY_SOURCE {
         let mut marker = File::open(
             virtual_file_system,
             task,
@@ -317,19 +304,20 @@ async fn run(task_manager: &'static task::Manager) {
             .await
             .expect("Failed to mark the first installation");
     }
-    #[cfg(feature = "esp32p4")]
-    if formatted {
-        log::warning!(
-            "Skipping default account seeding on ESP32-P4: no entropy source is configured"
-        );
-    }
-    authentication::initialize_seeded(&authentication::Context {
+    let authentication_context = authentication::Context {
         virtual_file_system,
         task_manager,
         users_manager,
         task,
-    })
-    .await
+    };
+    if HAS_ENTROPY_SOURCE {
+        authentication::initialize_seeded(&authentication_context).await
+    } else {
+        log::warning!(
+            "Default account creation is disabled because no entropy source is available"
+        );
+        authentication::load_all_users_and_groups(&authentication_context).await
+    }
     .expect("Failed to load the accounts");
 
     // - Executables.

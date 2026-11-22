@@ -57,7 +57,7 @@ case "$chip" in
         flash_mode=qio
         flash_size=4mb
         CC_riscv32imac_unknown_none_elf=clang \
-            rustup run "$rust_version" cargo "${build_args[@]}" --target "$target" --features esp32c6
+            rustup run "$rust_version" cargo "${build_args[@]}" --target "$target" --features qemu-esp32c6
         ;;
     esp32p4)
         target=riscv32imafc-unknown-none-elf

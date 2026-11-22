@@ -25,6 +25,8 @@ esp32s3 = [
 ]
 # Draws through the virtual RGB panel that only Espressif's QEMU provides.
 qemu-display = ["esp32s3", "xila/graphics_rendering_rgb565"]
+# The pinned QEMU machine lacks the ESP32-C6 random register.
+qemu-esp32c6 = ["esp32c6"]
 
 [target.'cfg(all(target_os = "none", any(target_arch = "xtensa", target_arch = "riscv32")))'.dependencies]
 # Not the workspace entries: these boards have no network, and a workspace

@@ -48,9 +48,9 @@ mise run test:espressif-emulator  # QEMU + espflash, build, merge a 4 MiB image,
 
 The S3 task requires the startup line, LittleFS mount, RNG check, LVGL flush, heap statistics and the `User name:` shell login prompt in order, plus a non-blank 160x120 frame on QEMU's virtual RGB panel. Each run keeps `uart.log`, `qemu.log` and `screen.png` in `target/espressif-emulator/runs/esp32s3.*`. `mise run build:esp32s3-image` stops after the flash image. To watch the panel in a window, run `target/espressif-emulator/tools/qemu-*/qemu/bin/qemu-system-xtensa -M esp32s3 -display sdl -nic none -drive file=target/espressif-emulator/esp32s3-flash.bin,if=mtd,format=raw -serial stdio`. The panel is an emulator-only device (the `qemu-display` feature).
 
-After installing the native packages, run `mise run test:esp32c6-emulator` to check startup, the LittleFS mount, heap statistics and the `User name:` shell login prompt. The task provisions stable Rust 1.97 and its `riscv32imac-unknown-none-elf` target, and keeps `uart.log` and `qemu.log` in `target/espressif-emulator/runs/esp32c6.*`. The C6 machine lacks RNG emulation and the virtual RGB panel.
+After installing the native packages, run `mise run test:esp32c6-emulator` to check startup, the LittleFS mount, heap statistics and the `User name:` shell login prompt. The task provisions stable Rust 1.97 and its `riscv32imac-unknown-none-elf` target, and keeps `uart.log` and `qemu.log` in `target/espressif-emulator/runs/esp32c6.*`. The C6 machine lacks a virtual display panel and a random source. The emulator image returns `DeviceUnavailable` from `/devices/random/source` and skips creating the default account.
 
-`mise run build:esp32c6-image` builds the C6 flash image in QIO mode to work around the DIO flash-read bug. [Platforms #130](https://github.com/xila-project/platforms/issues/130)
+`mise run build:esp32c6-image` builds the C6 emulator image in QIO mode to work around the DIO flash-read bug. A hardware build uses the `esp32c6` feature by itself to enable its random source and default account setup. [Platforms #130](https://github.com/xila-project/platforms/issues/130)
 
 Versions and SHA-256 digests of QEMU and espflash are pinned in `mise.toml` and `tools/dev/install_espressif_emulator.sh`.
 
