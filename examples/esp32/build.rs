@@ -7,9 +7,12 @@ use std::{
 /// Reads the LittleFS partition from the partition table of the selected
 /// chip, so that the firmware and the flashed table cannot disagree.
 fn write_storage_partition() {
-    // The ESP32-P4 board has 16 MB of flash, the other chips 4 MB. Keep in sync
-    // with `--flash-size` in `tools/dev/build_espressif_image.sh`.
-    let table = if env::var_os("CARGO_FEATURE_ESP32P4").is_some() {
+    // The ESP32-P4 board and the WT32-SC01 Plus have 16 MB of flash, the other
+    // boards 4 MB. Keep in sync with `--flash-size` in
+    // `tools/dev/build_espressif_image.sh`.
+    let table = if env::var_os("CARGO_FEATURE_ESP32P4").is_some()
+        || env::var_os("CARGO_FEATURE_WT32_SC01_PLUS").is_some()
+    {
         "partitions_16mb.csv"
     } else {
         "partitions_4mb.csv"

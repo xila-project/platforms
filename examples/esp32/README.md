@@ -19,7 +19,7 @@ The image assumes **16 MiB of flash**, as on the ESP32-P4X-Function-EV-Board (ch
 Check the chip revision and flash capacity on your board before flashing.
 The firmware adds detected external pseudo-static memory (PSRAM) to the
 internal heap and uses the existing LittleFS partition of its partition table: `partitions_4mb.csv` (ESP32-S3 and ESP32-C6) or
-`partitions_16mb.csv` (ESP32-P4).
+`partitions_16mb.csv` (ESP32-P4 and WT32-SC01 Plus).
 Because [`esp-hal` 1.2.2 cannot enable the onboard ESP32-P4 entropy source][entropy],
 nonempty reads of `/devices/random/source` return `DeviceUnavailable`.
 The firmware skips default account creation on a fresh file system. A fresh
@@ -66,6 +66,39 @@ Look for `Xila: LittleFS mounted`, the heap report, and the `User name:`
 shell login prompt. The ESP32-P4 continuous integration job builds the flash
 image. The ESP32-S3 and ESP32-C6 boot tests run in QEMU and check for the
 `User name:` prompt.
+
+## Build and flash the WT32-SC01 Plus firmware
+
+The `wt32-sc01-plus` feature builds the ESP32-S3 firmware for Wireless-Tag's
+WT32-SC01 Plus: 16 MB of flash and 2 MB of quad SPI PSRAM, which the firmware
+adds to the heap. The board's USB-C port is wired to the chip's built-in USB
+Serial/JTAG controller (USB identifier 303a:1001), with no USB to UART bridge,
+so the console, the logger and panic messages use that controller instead of
+UART0. The firmware boots headless for now: the display and touch screen are
+not driven yet.
+
+From the repository root, after `mise run setup:espressif-rust`:
+
+```sh
+mise run build:wt32-sc01-plus-image
+```
+
+This writes the firmware to `target/espressif-emulator/wt32-sc01-plus.elf`
+and a merged 16 MiB image next to it. Connect the board's USB-C port, set
+`FLASH_PORT` to its device path (`/dev/ttyACM0` on Linux), and flash with the
+16 MiB partition table:
+
+```sh
+mise run run:espflash -- flash --chip esp32s3 --port "$FLASH_PORT" \
+  --flash-size 16mb --flash-mode dio \
+  --partition-table examples/esp32/partitions_16mb.csv --partition-table-offset 0x8000 \
+  --monitor target/espressif-emulator/wt32-sc01-plus.elf
+```
+
+The first boot formats the 12.8 MB LittleFS partition. Look for the PSRAM
+size, `Xila: LittleFS mounted`, the heap report and the `User name:` prompt.
+Once the shell session starts, the console shows only warnings and errors from
+the log, a few per second at most, so that they do not bury the session.
 
 [board]: https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32p4/esp32-p4x-function-ev-board/user_guide.html
 [entropy]: https://github.com/esp-rs/esp-hal/issues/5982

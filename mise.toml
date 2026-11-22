@@ -182,6 +182,12 @@ depends = ["setup:espressif-emulator"]
 tools.node = "{{ vars.node_version }}"
 run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}'"
 
+[tasks."build:wt32-sc01-plus-image"]
+description = "Build the ESP32 example for the WT32-SC01 Plus board and merge it into a 16 MiB flash image"
+depends = ["setup:espressif-emulator"]
+tools.node = "{{ vars.node_version }}"
+run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' wt32-sc01-plus"
+
 [tasks."build:esp32c6-image"]
 description = "Build the ESP32-C6 example and merge it into a flash image for Espressif QEMU"
 depends = ["setup:esp32c6-emulator"]

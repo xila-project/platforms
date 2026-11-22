@@ -1,24 +1,20 @@
 extern crate alloc;
 
-use alloc::{boxed::Box, vec};
+use alloc::boxed::Box;
 use core::{cell::RefCell, mem::MaybeUninit, panic::PanicInfo, ptr::addr_of_mut, time::Duration};
 
 use critical_section::Mutex;
-use drivers_espressif::{
-    console::{self, ConsoleRunner},
-    power::BoardPower,
-    random::RandomDevice,
-    time::TimeDevice,
-};
+use drivers_espressif::{console, power::BoardPower, random::RandomDevice, time::TimeDevice};
+use esp_hal::timer::systimer::SystemTimer;
+#[cfg(not(feature = "wt32-sc01-plus"))]
 use esp_hal::{
     Blocking,
-    timer::systimer::SystemTimer,
     uart::{Config as UartConfiguration, Uart},
 };
 use esp_storage::FlashStorage;
 use xila::{
     authentication,
-    executable::{self, Standard, mount_executables},
+    executable::{self, mount_executables},
     file_system::{AccessFlags, CreateFlags, Flags, Path},
     little_fs, log,
     memory::ManagerTrait,
@@ -31,9 +27,18 @@ mod display;
 mod flash;
 #[cfg(feature = "native-dev")]
 mod native;
+mod session;
+// Board modules: what a board does differently from the generic firmware of
+// its chip. Each one moves to the board's own crate later.
+#[cfg(feature = "wt32-sc01-plus")]
+mod wt32_sc01_plus;
+#[cfg(feature = "wt32-sc01-plus")]
+use wt32_sc01_plus as board;
 
 #[cfg(not(any(feature = "esp32s3", feature = "esp32c6", feature = "esp32p4")))]
 compile_error!("Select one target chip feature: esp32s3, esp32c6 or esp32p4.");
+#[cfg(all(feature = "wt32-sc01-plus", feature = "qemu-display"))]
+compile_error!("The qemu-display feature is for Espressif QEMU, not for the WT32-SC01 Plus.");
 
 const HEAP_SIZE: usize = 256 * 1024;
 static mut HEAP: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
@@ -54,6 +59,25 @@ const BUILD_EPOCH: u64 = {
 };
 
 const SHELL_PATH: &str = "/system/executables/command_line_shell";
+
+/// Internal SRAM of the chip, of which [`HEAP_SIZE`] is reserved for the heap;
+/// the rest holds the stacks, static data and code that runs from RAM.
+#[cfg(feature = "esp32p4")]
+const INTERNAL_SRAM_SIZE: usize = 768 * 1024;
+#[cfg(not(feature = "esp32p4"))]
+const INTERNAL_SRAM_SIZE: usize = 512 * 1024;
+
+/// Whether the board has external PSRAM that the firmware adds to the heap.
+const HAS_PSRAM: bool = cfg!(any(feature = "esp32p4", feature = "wt32-sc01-plus"));
+
+/// How long the startup task waits for the boot report to reach the console
+/// before it starts the sessions: at most 50 checks, 2 seconds in all.
+const BOOT_REPORT_DRAIN_ATTEMPTS: usize = 50;
+const BOOT_REPORT_DRAIN_INTERVAL: Duration = Duration::from_millis(40);
+
+/// How often the startup task checks for a lifecycle request.
+const LIFECYCLE_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
 const HAS_ENTROPY_SOURCE: bool = !cfg!(any(feature = "esp32p4", feature = "qemu-esp32c6"));
 
 static TASK_MANAGER: task::Manager = task::Manager::new();
@@ -61,12 +85,20 @@ static TASK_MANAGER: task::Manager = task::Manager::new();
 drivers_espressif::instantiate_global_allocator!();
 esp_bootloader_esp_idf::esp_app_desc!();
 
+/// The console port: UART0, unless the board says otherwise.
+#[cfg(feature = "wt32-sc01-plus")]
+use board::ConsolePort;
+#[cfg(not(feature = "wt32-sc01-plus"))]
+type ConsolePort = Uart<'static, Blocking>;
+
 struct StartupHardware {
-    serial: Uart<'static, Blocking>,
+    console: ConsolePort,
     flash_storage: FlashStorage<'static>,
     random_device: RandomDevice,
-    #[cfg(feature = "esp32p4")]
-    external_memory: (usize, bool),
+    /// Start address and size of the external PSRAM, and whether the heap could
+    /// use it.
+    #[cfg(any(feature = "esp32p4", feature = "wt32-sc01-plus"))]
+    external_memory: (usize, usize, bool),
 }
 
 static STARTUP_HARDWARE: Mutex<RefCell<Option<StartupHardware>>> = Mutex::new(RefCell::new(None));
@@ -78,29 +110,35 @@ fn main() -> ! {
     // SAFETY: startup hands this static SRAM exclusively to the allocator.
     assert!(unsafe { heap.init_internal(addr_of_mut!(HEAP).cast(), HEAP_SIZE) });
 
-    #[cfg(feature = "esp32p4")]
+    #[cfg(any(feature = "esp32p4", feature = "wt32-sc01-plus"))]
     let external_memory = {
-        let mapped_memory =
-            esp_hal::psram::Psram::new(peripherals.PSRAM, esp_hal::psram::PsramConfig::default());
-        let (_, size) = mapped_memory.raw_parts();
+        #[cfg(feature = "esp32p4")]
+        let configuration = esp_hal::psram::PsramConfig::default();
+        #[cfg(feature = "wt32-sc01-plus")]
+        let configuration = board::psram_configuration();
+        let mapped_memory = esp_hal::psram::Psram::new(peripherals.PSRAM, configuration);
+        let (start, size) = mapped_memory.raw_parts();
         // SAFETY: The detected PSRAM is reserved exclusively for this allocator.
         let registered = unsafe { heap.init_psram_from_hal(&mapped_memory) };
-        (size, registered)
+        (start as usize, size, registered)
     };
 
     let system_timer = SystemTimer::new(peripherals.SYSTIMER);
     drivers_espressif::time::initialize(system_timer.alarm0);
 
-    #[cfg(feature = "esp32s3")]
+    #[cfg(all(feature = "esp32s3", not(feature = "wt32-sc01-plus")))]
     let (transmit_pin, receive_pin) = (peripherals.GPIO43, peripherals.GPIO44);
     #[cfg(feature = "esp32c6")]
     let (transmit_pin, receive_pin) = (peripherals.GPIO16, peripherals.GPIO17);
     #[cfg(feature = "esp32p4")]
     let (transmit_pin, receive_pin) = (peripherals.GPIO37, peripherals.GPIO38);
-    let serial = Uart::new(peripherals.UART0, UartConfiguration::default())
+    #[cfg(not(feature = "wt32-sc01-plus"))]
+    let console = Uart::new(peripherals.UART0, UartConfiguration::default())
         .expect("Failed to configure UART0")
         .with_tx(transmit_pin)
         .with_rx(receive_pin);
+    #[cfg(feature = "wt32-sc01-plus")]
+    let console = board::console_port(peripherals.USB_DEVICE);
 
     let flash_storage = FlashStorage::new(peripherals.FLASH);
 
@@ -115,10 +153,10 @@ fn main() -> ! {
 
     critical_section::with(|section| {
         *STARTUP_HARDWARE.borrow(section).borrow_mut() = Some(StartupHardware {
-            serial,
+            console,
             flash_storage,
             random_device,
-            #[cfg(feature = "esp32p4")]
+            #[cfg(any(feature = "esp32p4", feature = "wt32-sc01-plus"))]
             external_memory,
         });
     });
@@ -139,9 +177,13 @@ async fn run(task_manager: &'static task::Manager) {
 
     let task = task_manager.get_current_task_identifier().await;
 
-    // - Console: serial input, output and logging over UART0.
+    // - Console: serial input, output and logging over UART0, or over USB
+    // Serial/JTAG on boards without a USB to UART bridge.
     log::initialize(&console::LOGGER).expect("Failed to initialize logger");
-    let console_runner = ConsoleRunner::new(hardware.serial);
+    #[cfg(not(feature = "wt32-sc01-plus"))]
+    let console_runner = console::ConsoleRunner::new(hardware.console);
+    #[cfg(feature = "wt32-sc01-plus")]
+    let console_runner = board::console_runner(hardware.console);
     task_manager
         .spawn(task, "Serial console", None, async move |_| {
             console_runner.run().await
@@ -150,6 +192,8 @@ async fn run(task_manager: &'static task::Manager) {
         .expect("Failed to spawn the serial console");
 
     log::information!("Xila ESP32 startup");
+    #[cfg(feature = "wt32-sc01-plus")]
+    log::information!("Xila: board {}", board::NAME);
     #[cfg(feature = "native-dev")]
     native::initialize();
     #[cfg(feature = "qemu-esp32c6")]
@@ -159,10 +203,19 @@ async fn run(task_manager: &'static task::Manager) {
         }
         Err(error) => log::error!("Xila: native executable memory self-test failed: {error}"),
     }
-    #[cfg(feature = "esp32p4")]
+    #[cfg(any(feature = "esp32p4", feature = "wt32-sc01-plus"))]
     {
-        let (size, registered) = hardware.external_memory;
+        let (start, size, registered) = hardware.external_memory;
         log::information!("Xila: PSRAM {size} bytes (registered: {registered})");
+        if size == 0 {
+            log::warning!("Xila: no PSRAM detected; the heap uses internal SRAM only");
+        }
+        #[cfg(feature = "wt32-sc01-plus")]
+        if registered {
+            board::psram_self_test(&__DRIVERS_ESPRESSIF_MEMORY_ALLOCATOR, start..start + size);
+        }
+        #[cfg(not(feature = "wt32-sc01-plus"))]
+        let _ = start;
     }
     task::yield_now().await;
 
@@ -395,29 +448,67 @@ async fn run(task_manager: &'static task::Manager) {
         heap.get_total_size(),
         HEAP_SIZE
     );
+    if HAS_PSRAM {
+        let statistics = heap.get_statistics();
+        // Region 0 is the static internal heap reservation, region 1 the
+        // external PSRAM.
+        for (index, region) in statistics.region_stats.iter().enumerate() {
+            if let Some(region) = region {
+                if index == 0 {
+                    log::information!(
+                        "Xila heap region 0 (internal heap reservation of {HEAP_SIZE} bytes, \
+                         out of the chip's {INTERNAL_SRAM_SIZE} bytes of SRAM): \
+                         {} bytes used, {} free, {} total",
+                        region.used,
+                        region.free,
+                        region.size
+                    );
+                } else {
+                    log::information!(
+                        "Xila heap region {index} (external PSRAM): \
+                         {} bytes used, {} free, {} total",
+                        region.used,
+                        region.free,
+                        region.size
+                    );
+                }
+            }
+        }
+    }
     task::yield_now().await;
 
-    // - The shell, again whenever a session ends, until a lifecycle request.
+    // - Sessions. Everything already running is a runtime service; the
+    // sessions and what they launch are stopped by the lifecycle pipeline.
     let services = task_manager.get_children(task).await.unwrap_or_default();
-    while xila::lifecycle::SYSTEM.is_running() {
-        let standard = Standard::open(
-            &"/devices/standard_io/input",
-            &"/devices/standard_io/output",
-            &"/devices/standard_io/error",
-            task,
-            virtual_file_system,
-            executable_context,
-        )
-        .await
-        .expect("Failed to open the console");
-        let shell = executable::execute(executable_context, SHELL_PATH, vec![], standard, None)
-            .await
-            .expect("Failed to start the shell");
-        let status = shell.join().await;
-        log::information!("The shell ended with status {status}");
+    // Let the boot report reach the console before the login prompt, unless
+    // nobody reads the port yet (a USB host that has not opened it).
+    for _ in 0..BOOT_REPORT_DRAIN_ATTEMPTS {
+        if console::is_output_idle() {
+            break;
+        }
+        task::Manager::sleep(BOOT_REPORT_DRAIN_INTERVAL).await;
     }
+    // From now on a person may be typing on the console: keep the log quiet.
+    console::set_interactive(true);
+    session::spawn(
+        task_manager,
+        task,
+        executable_context,
+        session::Session {
+            name: "Console session",
+            input: "/devices/standard_io/input",
+            output: "/devices/standard_io/output",
+            error: "/devices/standard_io/error",
+            shell: SHELL_PATH,
+        },
+    )
+    .await;
+    while xila::lifecycle::SYSTEM.is_running() {
+        task::Manager::sleep(LIFECYCLE_POLL_INTERVAL).await;
+    }
+    console::set_interactive(false);
 
-    // A privileged `reboot` ended the session: stop, commit, then reset.
+    // A privileged `reboot` was requested: stop, commit, then reset.
     let supervisor = xila::lifecycle::Supervisor {
         virtual_file_system,
         time_manager,
@@ -430,9 +521,19 @@ async fn run(task_manager: &'static task::Manager) {
     }
 }
 
+#[cfg(not(feature = "wt32-sc01-plus"))]
 #[panic_handler]
 fn panic(information: &PanicInfo<'_>) -> ! {
     esp_println::println!("Xila panic: {information}");
+    loop {
+        core::hint::spin_loop();
+    }
+}
+
+#[cfg(feature = "wt32-sc01-plus")]
+#[panic_handler]
+fn panic(information: &PanicInfo<'_>) -> ! {
+    board::write_panic(information);
     loop {
         core::hint::spin_loop();
     }
