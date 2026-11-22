@@ -181,17 +181,12 @@ fn wait_reports_incomplete_tree_on_timeout() {
 
 #[test]
 fn wait_reports_invalid_socket_path_as_transport_error() {
-    let path = format!("/tmp/{}", "x".repeat(256));
+    // Longer than a Unix socket address allows; it is never created.
+    let path = std::env::temp_dir().join("x".repeat(256));
     let output = Command::new(env!("CARGO_BIN_EXE_xila-debug"))
-        .args([
-            "--endpoint",
-            &path,
-            "wait-for",
-            "--text",
-            "Settings",
-            "--timeout-ms",
-            "1000",
-        ])
+        .arg("--endpoint")
+        .arg(&path)
+        .args(["wait-for", "--text", "Settings", "--timeout-ms", "1000"])
         .output()
         .unwrap();
     assert!(!output.status.success());

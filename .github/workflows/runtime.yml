@@ -148,6 +148,9 @@ jobs:
               --mount "type=bind,src=$PWD/runtime-shell-state,dst=/var/lib/xila" \
               xila-runtime:ci shell --network=none)"
           printf '%s\n' "$shell_output" | grep -Fq 'shell-smoke-ok'
+          # The shell starts in the home recorded in the account. The prompt
+          # ends the directory with `$ `, so only the `pwd` output matches.
+          printf '%s\n' "$shell_output" | grep -Eq '(^|[[:space:]])/users/administrator[[:space:]]*$'
           timeout 20s docker run --rm -i --network none --read-only \
             --tmpfs /tmp:rw,noexec,nosuid,size=16m \
             --mount "type=bind,src=$PWD/runtime-shell-state,dst=/var/lib/xila" \
@@ -293,6 +296,9 @@ jobs:
               --mount "type=bind,src=$PWD/runtime-shell-state,dst=/var/lib/xila" \
               xila-runtime:ci shell --network=none)"
           printf '%s\n' "$shell_output" | grep -Fq 'shell-smoke-ok'
+          # The shell starts in the home recorded in the account. The prompt
+          # ends the directory with `$ `, so only the `pwd` output matches.
+          printf '%s\n' "$shell_output" | grep -Eq '(^|[[:space:]])/users/administrator[[:space:]]*$'
           timeout 20s docker run --rm -i --network none --read-only \
             --tmpfs /tmp:rw,noexec,nosuid,size=16m \
             --mount "type=bind,src=$PWD/runtime-shell-state,dst=/var/lib/xila" \

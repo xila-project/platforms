@@ -172,17 +172,19 @@ async fn saved_accounts_fixture(task_manager: &'static xila::task::Manager) -> R
     if home != "/users/42" {
         return Err(format!("Saved user without a recorded home got {home}"));
     }
-    let mut bytes = Vec::new();
-    virtual_file_system::File::read_from_path(
-        &vfs,
-        task,
-        &"/system/accounts/groups/administrator",
-        &mut bytes,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    if bytes != group {
-        return Err("Saved administrator group was overwritten".into());
+    // Loading accounts never writes to storage: both saved records, including
+    // the user record without a home, are read back byte for byte.
+    for (path, saved) in [
+        ("/system/accounts/groups/administrator", group.as_slice()),
+        ("/system/accounts/users/bob", user.as_slice()),
+    ] {
+        let mut bytes = Vec::new();
+        virtual_file_system::File::read_from_path(&vfs, task, &path, &mut bytes)
+            .await
+            .map_err(|e| e.to_string())?;
+        if bytes != saved {
+            return Err(format!("Saved account record {path} was overwritten"));
+        }
     }
     vfs.uninitialize().await;
     drop(vfs);
