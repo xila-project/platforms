@@ -9,6 +9,18 @@
 //! unrepresentable host names are omitted from directory enumeration. Final
 //! symlinks are rejected for file opens on Unix, while directory resolution may
 //! follow links only within the root.
+//!
+//! On Linux, the filesystem also implements the directory-entry operations of
+//! [`FileSystemOperations`]. The virtual file system then walks a mount one
+//! component at a time with pinned directory descriptors and asks this backend
+//! only about a single entry name inside an already-opened directory. Entry
+//! operations never follow a symbolic link in that final entry (`O_NOFOLLOW`,
+//! `AT_SYMLINK_NOFOLLOW`, `unlinkat`, `renameat`, `linkat`) and never resolve a
+//! parent path again, so replacing an ancestor directory with a link after the
+//! virtual file system has walked it cannot redirect the operation. This is what
+//! allows `supports_confined_namespace` to hold for WASI preopens on host
+//! mounts. Other hosts keep the path-based operations, and confined lookups that
+//! enter a host mount there fail with `PathEscapesRoot`.
 
 #[cfg(target_os = "linux")]
 use std::os::fd::{AsFd, AsRawFd};
@@ -74,8 +86,27 @@ struct FileHandle(Arc<Mutex<cap_std::fs::File>>);
 
 struct DirectoryHandle {
     directory: Dir,
-    entries: ReadDir,
+    /// Created on the first read, so directories opened only to walk a path
+    /// do not allocate a host directory stream.
+    entries: Option<ReadDir>,
     position: Size,
+}
+
+impl DirectoryHandle {
+    fn new(directory: Dir) -> Self {
+        Self {
+            directory,
+            entries: None,
+            position: 0,
+        }
+    }
+
+    fn entries(&mut self) -> Result<&mut ReadDir> {
+        if self.entries.is_none() {
+            self.entries = Some(self.directory.entries().map_err(map_io_error)?);
+        }
+        self.entries.as_mut().ok_or(IoErrorKind::InputOutput)
+    }
 }
 
 impl HostFileSystem {
@@ -131,6 +162,51 @@ impl HostFileSystem {
         }
     }
 
+    /// The size requested by a path or entry attribute update, the only field
+    /// a host file accepts. `None` means the update is an empty no-op.
+    fn writable_size(attributes: &Attributes) -> Result<Option<Size>> {
+        let mask = attributes.get_mask();
+        if mask.is_empty() {
+            return Ok(None);
+        }
+        if mask != AttributeFlags::Size {
+            return Err(IoErrorKind::Unsupported);
+        }
+        attributes
+            .get_size()
+            .copied()
+            .map(Some)
+            .ok_or(IoErrorKind::InvalidArgument)
+    }
+
+    /// The pinned host directory of a parent context opened by this filesystem.
+    #[cfg(target_os = "linux")]
+    fn entry_parent(context: &Context) -> Result<&Dir> {
+        context
+            .get_private_data_of_type::<DirectoryHandle>()
+            .map(|handle| &handle.directory)
+            .ok_or(IoErrorKind::InvalidState)
+    }
+
+    /// Open the child directory `name` of the pinned `parent` without
+    /// following a link in `name`: Linux reports a link there as not a
+    /// directory. `O_DIRECTORY` also keeps device nodes closed, since the
+    /// kernel checks it before calling a driver.
+    #[cfg(target_os = "linux")]
+    fn open_directory_entry(parent: &Dir, name: &StdPath) -> Result<Dir> {
+        let descriptor = rustix::fs::openat(
+            parent.as_fd(),
+            name,
+            rustix::fs::OFlags::RDONLY
+                | rustix::fs::OFlags::DIRECTORY
+                | rustix::fs::OFlags::NOFOLLOW
+                | rustix::fs::OFlags::CLOEXEC,
+            rustix::fs::Mode::empty(),
+        )
+        .map_err(|error| map_io_error(error.into()))?;
+        Ok(Dir::from_std_file(std::fs::File::from(descriptor)))
+    }
+
     fn open_options(&self) -> OpenOptions {
         let mut options = OpenOptions::new();
         #[cfg(unix)]
@@ -144,14 +220,14 @@ impl HostFileSystem {
     #[cfg(target_os = "linux")]
     fn open_regular_file(
         &self,
+        directory: &Dir,
         relative: &StdPath,
         read: bool,
         write: bool,
         truncate: bool,
     ) -> Result<cap_std::fs::File> {
-        let root = self.root()?;
         let pinned = rustix::fs::openat2(
-            root.as_fd(),
+            directory.as_fd(),
             relative,
             rustix::fs::OFlags::PATH | rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::CLOEXEC,
             rustix::fs::Mode::empty(),
@@ -168,6 +244,10 @@ impl HostFileSystem {
         if !metadata.is_file() {
             return Err(if metadata.is_dir() {
                 IoErrorKind::IsADirectory
+            } else if metadata.file_type().is_symlink() {
+                // `O_PATH | O_NOFOLLOW` pins a final link itself; report it
+                // like `O_NOFOLLOW` does.
+                IoErrorKind::SymlinkLoop
             } else {
                 IoErrorKind::Unsupported
             });
@@ -197,13 +277,14 @@ impl HostFileSystem {
     #[cfg(target_os = "linux")]
     fn open_new_regular_file(
         &self,
+        directory: &Dir,
         relative: &StdPath,
         read: bool,
         write: bool,
     ) -> Result<cap_std::fs::File> {
         let mut options = self.open_options();
         options.read(read).write(write).create_new(true);
-        self.root()?
+        directory
             .open_with(relative, &options)
             .map_err(map_io_error)
     }
@@ -211,6 +292,7 @@ impl HostFileSystem {
     #[cfg(not(target_os = "linux"))]
     fn open_regular_file(
         &self,
+        directory: &Dir,
         relative: &StdPath,
         read: bool,
         write: bool,
@@ -218,8 +300,7 @@ impl HostFileSystem {
     ) -> Result<cap_std::fs::File> {
         let mut options = self.open_options();
         options.read(read).write(write).truncate(truncate);
-        let file = self
-            .root()?
+        let file = directory
             .open_with(relative, &options)
             .map_err(map_io_error)?;
         let metadata = file.metadata().map_err(map_io_error)?;
@@ -230,6 +311,73 @@ impl HostFileSystem {
                 IoErrorKind::Unsupported
             });
         }
+        Ok(file)
+    }
+
+    /// Open the regular file `relative` beneath `directory` for `flags`.
+    fn open_file(
+        &self,
+        directory: &Dir,
+        relative: &StdPath,
+        flags: Flags,
+    ) -> Result<cap_std::fs::File> {
+        let access = flags.get_access();
+        let create = flags.get_create();
+        let write = access.contains(AccessFlags::Write);
+        if !access.contains(AccessFlags::Read) && !write {
+            return Err(IoErrorKind::InvalidFlags);
+        }
+        if create.contains(CreateFlags::Exclusive) && !create.contains(CreateFlags::Create) {
+            return Err(IoErrorKind::InvalidFlags);
+        }
+        if create.contains(CreateFlags::Create) && !write {
+            return Err(IoErrorKind::InvalidFlags);
+        }
+        if write {
+            self.writable()?;
+        }
+        let read = access.contains(AccessFlags::Read);
+        let truncate = create.contains(CreateFlags::Truncate);
+        if truncate && !write {
+            return Err(IoErrorKind::InvalidFlags);
+        }
+        #[cfg(target_os = "linux")]
+        let file = if create.contains(CreateFlags::Exclusive) {
+            self.open_new_regular_file(directory, relative, read, write)?
+        } else {
+            match self.open_regular_file(directory, relative, read, write, truncate) {
+                Ok(file) => file,
+                Err(IoErrorKind::NotFound) if create.contains(CreateFlags::Create) => {
+                    match self.open_new_regular_file(directory, relative, read, write) {
+                        Err(IoErrorKind::AlreadyExists) => {
+                            self.open_regular_file(directory, relative, read, write, truncate)?
+                        }
+                        result => result?,
+                    }
+                }
+                Err(error) => return Err(error),
+            }
+        };
+        #[cfg(not(target_os = "linux"))]
+        let file = {
+            let mut options = self.open_options();
+            options.read(read).write(write);
+            options.create(create.contains(CreateFlags::Create));
+            options.create_new(create.contains(CreateFlags::Exclusive));
+            options.truncate(truncate);
+            let file = directory
+                .open_with(relative, &options)
+                .map_err(map_io_error)?;
+            let metadata = file.metadata().map_err(map_io_error)?;
+            if !metadata.is_file() {
+                return Err(if metadata.is_dir() {
+                    IoErrorKind::IsADirectory
+                } else {
+                    IoErrorKind::Unsupported
+                });
+            }
+            file
+        };
         Ok(file)
     }
 
@@ -321,6 +469,59 @@ impl HostFileSystem {
         self.populate_attributes(&metadata, attributes);
         Ok(())
     }
+}
+
+/// Check a single directory entry name handed over by the virtual file system:
+/// it must name one entry of an opened directory, never a path to resolve.
+#[cfg(target_os = "linux")]
+fn entry_name(name: &str) -> Result<&StdPath> {
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\0']) {
+        return Err(IoErrorKind::InvalidPath);
+    }
+    Ok(StdPath::new(name))
+}
+
+/// Metadata of the entry `name` itself, without following a link, limited to
+/// the kinds this filesystem exposes.
+#[cfg(target_os = "linux")]
+fn entry_metadata(parent: &Dir, name: &StdPath) -> Result<cap_std::fs::Metadata> {
+    let metadata = parent.symlink_metadata(name).map_err(map_io_error)?;
+    if !metadata.is_file() && !metadata.is_dir() && !metadata.file_type().is_symlink() {
+        return Err(IoErrorKind::Unsupported);
+    }
+    Ok(metadata)
+}
+
+/// Check a link target before storing it on the host.
+fn symlink_target(target: &Path) -> Result<PathBuf> {
+    if target.get_length() > 4096 {
+        return Err(IoErrorKind::NameTooLong);
+    }
+    if !target.is_valid() || target.is_empty() {
+        return Err(IoErrorKind::InvalidPath);
+    }
+    if target.is_absolute() {
+        // The VFS converts absolute Xila targets into relative namespace
+        // paths before calling this native adapter. An unadapted absolute
+        // target is ambiguous with a host-absolute link and is rejected.
+        return Err(IoErrorKind::Unsupported);
+    }
+    Ok(StdPath::new(target.as_str()).to_path_buf())
+}
+
+/// Copy a stored link target into `buffer`.
+fn copy_symlink_target(target: &StdPath, buffer: &mut [u8]) -> Result<usize> {
+    if target.is_absolute() {
+        // An absolute target in a pre-existing host tree belongs to the
+        // host namespace and cannot safely be exposed as an Xila target.
+        return Err(IoErrorKind::CorruptData);
+    }
+    let target = target.to_str().ok_or(IoErrorKind::CorruptData)?.as_bytes();
+    if target.len() > buffer.len() {
+        return Err(IoErrorKind::NameTooLong);
+    }
+    buffer[..target.len()].copy_from_slice(target);
+    Ok(target.len())
 }
 
 fn stable_inode(metadata: &cap_std::fs::Metadata) -> Option<u64> {
@@ -450,39 +651,181 @@ impl FileSystemOperations for HostFileSystem {
         AttributeFlags::Size
     }
 
+    fn supports_confined_namespace(&self) -> bool {
+        self.supports_directory_entry_operations()
+    }
+
+    fn supports_directory_entry_operations(&self) -> bool {
+        cfg!(target_os = "linux")
+    }
+
+    #[cfg(target_os = "linux")]
+    fn lookup_directory_entry(
+        &self,
+        parent: &Context,
+        name: &str,
+        context: &mut Context,
+    ) -> Result<()> {
+        let directory = Self::open_directory_entry(Self::entry_parent(parent)?, entry_name(name)?)?;
+        context.set_private_data(Box::new(DirectoryHandle::new(directory)));
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    fn lookup_file_entry(
+        &self,
+        parent: &Context,
+        name: &str,
+        context: &mut Context,
+        flags: Flags,
+    ) -> Result<()> {
+        let file = self.open_file(Self::entry_parent(parent)?, entry_name(name)?, flags)?;
+        context.set_private_data(Box::new(FileHandle(Arc::new(Mutex::new(file)))));
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    fn create_directory_entry(&self, parent: &Context, name: &str) -> Result<()> {
+        self.writable()?;
+        let name = entry_name(name)?;
+        Self::entry_parent(parent)?
+            .create_dir(name)
+            .map_err(map_io_error)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn create_file_entry(&self, parent: &Context, name: &str) -> Result<()> {
+        self.writable()?;
+        let name = entry_name(name)?;
+        // `O_CREAT | O_EXCL` fails on an existing entry, including a link.
+        Self::entry_parent(parent)?
+            .open_with(name, self.open_options().write(true).create_new(true))
+            .map(|_| ())
+            .map_err(map_io_error)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn remove_entry(&self, parent: &Context, name: &str) -> Result<()> {
+        self.writable()?;
+        let name = entry_name(name)?;
+        let parent = Self::entry_parent(parent)?;
+        let metadata = entry_metadata(parent, name)?;
+        // `unlinkat` acts on the entry itself. If it is swapped for another
+        // kind after this check, the removal fails instead of following it.
+        if metadata.is_dir() {
+            parent.remove_dir(name).map_err(map_io_error)
+        } else {
+            parent.remove_file(name).map_err(map_io_error)
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn rename_entry(
+        &self,
+        source_parent: &Context,
+        source_name: &str,
+        destination_parent: &Context,
+        destination_name: &str,
+    ) -> Result<()> {
+        self.writable()?;
+        let source_name = entry_name(source_name)?;
+        let destination_name = entry_name(destination_name)?;
+        let source_parent = Self::entry_parent(source_parent)?;
+        let destination_parent = Self::entry_parent(destination_parent)?;
+        entry_metadata(source_parent, source_name)?;
+        source_parent
+            .rename(source_name, destination_parent, destination_name)
+            .map_err(map_io_error)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn link_entry(
+        &self,
+        existing_parent: &Context,
+        existing_name: &str,
+        new_parent: &Context,
+        new_name: &str,
+    ) -> Result<()> {
+        self.writable()?;
+        let existing_name = entry_name(existing_name)?;
+        let new_name = entry_name(new_name)?;
+        let existing_parent = Self::entry_parent(existing_parent)?;
+        let new_parent = Self::entry_parent(new_parent)?;
+        let metadata = entry_metadata(existing_parent, existing_name)?;
+        if metadata.is_dir() {
+            return Err(IoErrorKind::IsADirectory);
+        }
+        // `linkat` without `AT_SYMLINK_FOLLOW` links the entry itself.
+        existing_parent
+            .hard_link(existing_name, new_parent, new_name)
+            .map_err(map_io_error)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn create_symlink_entry(&self, target: &Path, parent: &Context, name: &str) -> Result<()> {
+        self.writable()?;
+        let target = symlink_target(target)?;
+        let name = entry_name(name)?;
+        Self::entry_parent(parent)?
+            .symlink(target, name)
+            .map_err(map_io_error)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn read_symlink_entry(&self, parent: &Context, name: &str, buffer: &mut [u8]) -> Result<usize> {
+        let name = entry_name(name)?;
+        // The contents are returned as stored: the virtual file system resolves
+        // them, so a `..` target is checked against the Xila namespace instead
+        // of the host directory that holds the link.
+        let target = Self::entry_parent(parent)?
+            .read_link_contents(name)
+            .map_err(map_io_error)?;
+        copy_symlink_target(&target, buffer)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn get_entry_attributes(
+        &self,
+        parent: &Context,
+        name: &str,
+        attributes: &mut Attributes,
+    ) -> Result<()> {
+        let name = entry_name(name)?;
+        if attributes.get_mask().is_empty() {
+            return Ok(());
+        }
+        let metadata = entry_metadata(Self::entry_parent(parent)?, name)?;
+        self.populate_attributes(&metadata, attributes);
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    fn set_entry_attributes(
+        &self,
+        parent: &Context,
+        name: &str,
+        attributes: &Attributes,
+    ) -> Result<()> {
+        let name = entry_name(name)?;
+        let Some(size) = Self::writable_size(attributes)? else {
+            return Ok(());
+        };
+        self.writable()?;
+        let file = self.open_regular_file(Self::entry_parent(parent)?, name, false, true, false)?;
+        file.set_len(size).map_err(map_io_error)
+    }
+
     fn create_symlink(&self, target: &Path, link: &Path) -> Result<()> {
         self.writable()?;
-        if target.get_length() > 4096 {
-            return Err(IoErrorKind::NameTooLong);
-        }
-        if !target.is_valid() || target.is_empty() {
-            return Err(IoErrorKind::InvalidPath);
-        }
+        let target = symlink_target(target)?;
         let link = Self::relative_path(link)?;
-        if target.is_absolute() {
-            // The VFS converts absolute Xila targets into relative namespace
-            // paths before calling this native adapter. An unadapted absolute
-            // target is ambiguous with a host-absolute link and is rejected.
-            return Err(IoErrorKind::Unsupported);
-        }
-        let target = StdPath::new(target.as_str()).to_path_buf();
         self.root()?.symlink(target, &link).map_err(map_io_error)
     }
 
     fn read_symlink(&self, link: &Path, buffer: &mut [u8]) -> Result<usize> {
         let link = Self::relative_path(link)?;
         let target = self.root()?.read_link(&link).map_err(map_io_error)?;
-        if target.is_absolute() {
-            // An absolute target in a pre-existing host tree belongs to the
-            // host namespace and cannot safely be exposed as an Xila target.
-            return Err(IoErrorKind::CorruptData);
-        }
-        let target = target.to_str().ok_or(IoErrorKind::CorruptData)?.as_bytes();
-        if target.len() > buffer.len() {
-            return Err(IoErrorKind::NameTooLong);
-        }
-        buffer[..target.len()].copy_from_slice(target);
-        Ok(target.len())
+        copy_symlink_target(&target, buffer)
     }
 
     fn lookup_directory(&self, context: &mut Context, path: &Path) -> Result<()> {
@@ -493,75 +836,13 @@ impl FileSystemOperations for HostFileSystem {
         if !metadata.is_dir() {
             return Err(IoErrorKind::NotADirectory);
         }
-        let entries = directory.entries().map_err(map_io_error)?;
-        context.set_private_data(Box::new(DirectoryHandle {
-            directory,
-            entries,
-            position: 0,
-        }));
+        context.set_private_data(Box::new(DirectoryHandle::new(directory)));
         Ok(())
     }
 
     fn lookup_file(&self, context: &mut Context, path: &Path, flags: Flags) -> Result<()> {
         let relative = Self::relative_path(path)?;
-        let access = flags.get_access();
-        let create = flags.get_create();
-        let write = access.contains(AccessFlags::Write);
-        if !access.contains(AccessFlags::Read) && !write {
-            return Err(IoErrorKind::InvalidFlags);
-        }
-        if create.contains(CreateFlags::Exclusive) && !create.contains(CreateFlags::Create) {
-            return Err(IoErrorKind::InvalidFlags);
-        }
-        if create.contains(CreateFlags::Create) && !write {
-            return Err(IoErrorKind::InvalidFlags);
-        }
-        if write {
-            self.writable()?;
-        }
-        let read = access.contains(AccessFlags::Read);
-        let truncate = create.contains(CreateFlags::Truncate);
-        if truncate && !write {
-            return Err(IoErrorKind::InvalidFlags);
-        }
-        #[cfg(target_os = "linux")]
-        let file = if create.contains(CreateFlags::Exclusive) {
-            self.open_new_regular_file(&relative, read, write)?
-        } else {
-            match self.open_regular_file(&relative, read, write, truncate) {
-                Ok(file) => file,
-                Err(IoErrorKind::NotFound) if create.contains(CreateFlags::Create) => {
-                    match self.open_new_regular_file(&relative, read, write) {
-                        Err(IoErrorKind::AlreadyExists) => {
-                            self.open_regular_file(&relative, read, write, truncate)?
-                        }
-                        result => result?,
-                    }
-                }
-                Err(error) => return Err(error),
-            }
-        };
-        #[cfg(not(target_os = "linux"))]
-        let file = {
-            let mut options = self.open_options();
-            options.read(read).write(write);
-            options.create(create.contains(CreateFlags::Create));
-            options.create_new(create.contains(CreateFlags::Exclusive));
-            options.truncate(truncate);
-            let file = self
-                .root()?
-                .open_with(&relative, &options)
-                .map_err(map_io_error)?;
-            let metadata = file.metadata().map_err(map_io_error)?;
-            if !metadata.is_file() {
-                return Err(if metadata.is_dir() {
-                    IoErrorKind::IsADirectory
-                } else {
-                    IoErrorKind::Unsupported
-                });
-            }
-            file
-        };
+        let file = self.open_file(&*self.root()?, &relative, flags)?;
         context.set_private_data(Box::new(FileHandle(Arc::new(Mutex::new(file)))));
         Ok(())
     }
@@ -614,17 +895,12 @@ impl FileSystemOperations for HostFileSystem {
     }
 
     fn set_attributes(&self, path: &Path, attributes: &Attributes) -> Result<()> {
-        let mask = attributes.get_mask();
-        if mask.is_empty() {
+        let Some(size) = Self::writable_size(attributes)? else {
             return Ok(());
-        }
-        if mask != AttributeFlags::Size {
-            return Err(IoErrorKind::Unsupported);
-        }
+        };
         self.writable()?;
-        let size = *attributes.get_size().ok_or(IoErrorKind::InvalidArgument)?;
         let path = Self::relative_path(path)?;
-        let file = self.open_regular_file(&path, false, true, false)?;
+        let file = self.open_regular_file(&*self.root()?, &path, false, true, false)?;
         file.set_len(size).map_err(map_io_error)
     }
 }
@@ -715,17 +991,17 @@ impl BaseOperations for HostFileSystem {
             .get_private_data_of_type::<DirectoryHandle>()
             .ok_or(IoErrorKind::InvalidState)?;
         let directory = handle.directory.try_clone().map_err(map_io_error)?;
-        let mut entries = directory.entries().map_err(map_io_error)?;
-        for _ in 0..handle.position {
-            if entries.next().transpose().map_err(map_io_error)?.is_none() {
-                break;
+        let mut clone = DirectoryHandle::new(directory);
+        if handle.position > 0 {
+            let entries = clone.entries()?;
+            for _ in 0..handle.position {
+                if entries.next().transpose().map_err(map_io_error)?.is_none() {
+                    break;
+                }
             }
+            clone.position = handle.position;
         }
-        Ok(Context::new(Some(DirectoryHandle {
-            directory,
-            entries,
-            position: handle.position,
-        })))
+        Ok(Context::new(Some(clone)))
     }
 
     fn close(&self, context: &mut Context) -> Result<()> {
@@ -794,7 +1070,7 @@ impl DirectoryOperations for HostFileSystem {
                 let handle = context
                     .get_private_data_mutable_of_type::<DirectoryHandle>()
                     .ok_or(IoErrorKind::InvalidState)?;
-                let entry = handle.entries.next().transpose().map_err(map_io_error)?;
+                let entry = handle.entries()?.next().transpose().map_err(map_io_error)?;
                 let mut symlink_metadata = None;
                 if let Some(entry) = entry.as_ref() {
                     handle.position += 1;
@@ -850,20 +1126,20 @@ impl DirectoryOperations for HostFileSystem {
         let handle = context
             .get_private_data_mutable_of_type::<DirectoryHandle>()
             .ok_or(IoErrorKind::InvalidState)?;
-        handle.entries = handle.directory.entries().map_err(map_io_error)?;
+        handle.entries = None;
         handle.position = 0;
-        for _ in 0..position {
-            if handle
-                .entries
-                .next()
-                .transpose()
-                .map_err(map_io_error)?
-                .is_none()
-            {
+        if position == 0 {
+            return Ok(());
+        }
+        let entries = handle.entries()?;
+        let mut skipped = 0;
+        while skipped < position {
+            if entries.next().transpose().map_err(map_io_error)?.is_none() {
                 break;
             }
-            handle.position += 1;
+            skipped += 1;
         }
+        handle.position = skipped;
         Ok(())
     }
 
@@ -913,7 +1189,7 @@ impl MountOperations for HostFileSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use file_system::{AccessFlags, AttributeFlags, Flags};
+    use file_system::{AccessFlags, AttributeFlags, CreateFlags, Flags};
     use std::fs;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -1313,6 +1589,643 @@ mod tests {
             Err(IoErrorKind::Unsupported)
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(target_os = "linux")]
+    fn open_root_entry(filesystem: &HostFileSystem) -> Context {
+        let mut context = Context::new_empty();
+        filesystem
+            .lookup_directory(&mut context, Path::ROOT)
+            .unwrap();
+        context
+    }
+
+    #[cfg(target_os = "linux")]
+    fn entry_kind(filesystem: &HostFileSystem, parent: &Context, name: &str) -> Result<Kind> {
+        let mut attributes = Attributes::new().set_mask(AttributeFlags::Kind);
+        filesystem.get_entry_attributes(parent, name, &mut attributes)?;
+        attributes
+            .get_kind()
+            .copied()
+            .ok_or(IoErrorKind::InputOutput)
+    }
+
+    #[test]
+    fn reports_confined_namespace_with_directory_entry_operations() {
+        let root = temp_root();
+        let filesystem = HostFileSystem::open(&root, HostFileSystemOptions::default()).unwrap();
+        assert_eq!(
+            filesystem.supports_directory_entry_operations(),
+            cfg!(target_os = "linux")
+        );
+        assert_eq!(
+            filesystem.supports_confined_namespace(),
+            filesystem.supports_directory_entry_operations()
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn directory_entry_lookup_and_creation() {
+        let root = temp_root();
+        let filesystem = HostFileSystem::open(&root, HostFileSystemOptions::default()).unwrap();
+        let mut root_context = open_root_entry(&filesystem);
+
+        filesystem
+            .create_directory_entry(&root_context, "directory")
+            .unwrap();
+        assert_eq!(
+            filesystem.create_directory_entry(&root_context, "directory"),
+            Err(IoErrorKind::AlreadyExists)
+        );
+        assert!(root.join("directory").is_dir());
+
+        let mut directory = Context::new_empty();
+        filesystem
+            .lookup_directory_entry(&root_context, "directory", &mut directory)
+            .unwrap();
+        filesystem.create_file_entry(&directory, "file").unwrap();
+        assert_eq!(
+            filesystem.create_file_entry(&directory, "file"),
+            Err(IoErrorKind::AlreadyExists)
+        );
+        assert!(root.join("directory/file").is_file());
+
+        // A context opened by entry lookup is a complete directory handle.
+        let entry = DirectoryOperations::read(&filesystem, &mut directory)
+            .unwrap()
+            .unwrap();
+        assert_eq!(entry.name, "file");
+        assert_eq!(entry.kind, Kind::File);
+        assert_eq!(
+            DirectoryOperations::read(&filesystem, &mut directory).unwrap(),
+            None
+        );
+        DirectoryOperations::rewind(&filesystem, &mut directory).unwrap();
+        let mut clone = filesystem.clone_context(&directory).unwrap();
+        assert_eq!(
+            DirectoryOperations::read(&filesystem, &mut clone)
+                .unwrap()
+                .map(|entry| entry.name),
+            Some("file".into())
+        );
+        DirectoryOperations::close(&filesystem, &mut clone).unwrap();
+
+        let mut missing = Context::new_empty();
+        assert_eq!(
+            filesystem.lookup_directory_entry(&root_context, "missing", &mut missing),
+            Err(IoErrorKind::NotFound)
+        );
+        assert_eq!(
+            filesystem.lookup_directory_entry(&directory, "file", &mut missing),
+            Err(IoErrorKind::NotADirectory)
+        );
+        DirectoryOperations::close(&filesystem, &mut directory).unwrap();
+        DirectoryOperations::close(&filesystem, &mut root_context).unwrap();
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn file_entry_lookup_and_attributes() {
+        let root = temp_root();
+        fs::write(root.join("file"), b"content").unwrap();
+        let filesystem = HostFileSystem::open(&root, HostFileSystemOptions::default()).unwrap();
+        let root_context = open_root_entry(&filesystem);
+
+        let mut file = Context::new_empty();
+        filesystem
+            .lookup_file_entry(
+                &root_context,
+                "file",
+                &mut file,
+                Flags::from(AccessFlags::READ_WRITE),
+            )
+            .unwrap();
+        let mut data = [0; 7];
+        assert_eq!(
+            BaseOperations::read_sync(&filesystem, &mut file, &mut data, 0),
+            Ok(7)
+        );
+        assert_eq!(&data, b"content");
+        BaseOperations::close(&filesystem, &mut file).unwrap();
+
+        let mut created = Context::new_empty();
+        filesystem
+            .lookup_file_entry(
+                &root_context,
+                "created",
+                &mut created,
+                Flags::new(
+                    AccessFlags::Write,
+                    Some(CreateFlags::Create | CreateFlags::Exclusive),
+                    None,
+                ),
+            )
+            .unwrap();
+        BaseOperations::close(&filesystem, &mut created).unwrap();
+        assert!(root.join("created").is_file());
+
+        let mut directory = Context::new_empty();
+        fs::create_dir(root.join("directory")).unwrap();
+        assert_eq!(
+            filesystem.lookup_file_entry(
+                &root_context,
+                "directory",
+                &mut directory,
+                AccessFlags::Read.into()
+            ),
+            Err(IoErrorKind::IsADirectory)
+        );
+
+        let mut attributes = Attributes::new().set_mask(
+            AttributeFlags::Kind
+                | AttributeFlags::Size
+                | AttributeFlags::Inode
+                | AttributeFlags::User
+                | AttributeFlags::Permissions,
+        );
+        filesystem
+            .get_entry_attributes(&root_context, "file", &mut attributes)
+            .unwrap();
+        assert_eq!(attributes.get_kind(), Some(&Kind::File));
+        assert_eq!(attributes.get_size(), Some(&7));
+        assert!(attributes.get_inode().is_some());
+        assert_eq!(attributes.get_user(), Some(&users::UserIdentifier::ROOT));
+        assert_eq!(
+            attributes.get_permissions(),
+            Some(&Permissions::FILE_DEFAULT)
+        );
+        assert_eq!(
+            entry_kind(&filesystem, &root_context, "directory"),
+            Ok(Kind::Directory)
+        );
+        assert_eq!(
+            entry_kind(&filesystem, &root_context, "missing"),
+            Err(IoErrorKind::NotFound)
+        );
+
+        filesystem
+            .set_entry_attributes(&root_context, "file", &Attributes::new().set_size(3))
+            .unwrap();
+        assert_eq!(fs::read(root.join("file")).unwrap(), b"con");
+        filesystem
+            .set_entry_attributes(&root_context, "file", &Attributes::new())
+            .unwrap();
+        assert_eq!(
+            filesystem.set_entry_attributes(
+                &root_context,
+                "file",
+                &Attributes::new().set_user(users::UserIdentifier::new(1))
+            ),
+            Err(IoErrorKind::Unsupported)
+        );
+        assert_eq!(
+            filesystem.set_entry_attributes(
+                &root_context,
+                "directory",
+                &Attributes::new().set_size(0)
+            ),
+            Err(IoErrorKind::IsADirectory)
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn removes_renames_and_links_entries() {
+        let root = temp_root();
+        fs::create_dir(root.join("source")).unwrap();
+        fs::create_dir(root.join("destination")).unwrap();
+        fs::write(root.join("source/file"), b"data").unwrap();
+        fs::create_dir(root.join("source/directory")).unwrap();
+        let filesystem = HostFileSystem::open(&root, HostFileSystemOptions::default()).unwrap();
+        let root_context = open_root_entry(&filesystem);
+        let mut source = Context::new_empty();
+        let mut destination = Context::new_empty();
+        filesystem
+            .lookup_directory_entry(&root_context, "source", &mut source)
+            .unwrap();
+        filesystem
+            .lookup_directory_entry(&root_context, "destination", &mut destination)
+            .unwrap();
+
+        filesystem
+            .rename_entry(&source, "file", &destination, "moved")
+            .unwrap();
+        assert!(!root.join("source/file").exists());
+        assert_eq!(fs::read(root.join("destination/moved")).unwrap(), b"data");
+        assert_eq!(
+            filesystem.rename_entry(&source, "file", &destination, "again"),
+            Err(IoErrorKind::NotFound)
+        );
+
+        filesystem
+            .link_entry(&destination, "moved", &source, "hard")
+            .unwrap();
+        let mut attributes = Attributes::new().set_mask(AttributeFlags::Links);
+        filesystem
+            .get_entry_attributes(&source, "hard", &mut attributes)
+            .unwrap();
+        assert_eq!(attributes.get_links(), Some(&2));
+        assert_eq!(
+            filesystem.link_entry(&source, "directory", &destination, "linked"),
+            Err(IoErrorKind::IsADirectory)
+        );
+
+        filesystem.remove_entry(&source, "hard").unwrap();
+        filesystem.remove_entry(&source, "directory").unwrap();
+        assert!(!root.join("source/hard").exists());
+        assert!(!root.join("source/directory").exists());
+        fs::write(root.join("destination/inner"), b"").unwrap();
+        assert_eq!(
+            filesystem.remove_entry(&root_context, "destination"),
+            Err(IoErrorKind::DirectoryNotEmpty)
+        );
+        assert_eq!(
+            filesystem.remove_entry(&source, "missing"),
+            Err(IoErrorKind::NotFound)
+        );
+        DirectoryOperations::close(&filesystem, &mut source).unwrap();
+        DirectoryOperations::close(&filesystem, &mut destination).unwrap();
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn symbolic_link_entries_are_never_followed() {
+        let root = temp_root();
+        let outside = root.with_extension("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("secret"), b"secret").unwrap();
+        fs::create_dir(root.join("directory")).unwrap();
+        fs::write(root.join("file"), b"inside").unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("absolute")).unwrap();
+        std::os::unix::fs::symlink("../outside-relative", root.join("relative")).unwrap();
+        std::os::unix::fs::symlink(outside.join("secret"), root.join("secret")).unwrap();
+        let filesystem = HostFileSystem::open(&root, HostFileSystemOptions::default()).unwrap();
+        let root_context = open_root_entry(&filesystem);
+
+        filesystem
+            .create_symlink_entry(Path::new("directory"), &root_context, "directory-link")
+            .unwrap();
+        filesystem
+            .create_symlink_entry(Path::new("file"), &root_context, "file-link")
+            .unwrap();
+        assert_eq!(
+            fs::read_link(root.join("file-link")).unwrap(),
+            PathBuf::from("file")
+        );
+        assert_eq!(
+            filesystem.create_symlink_entry(Path::new("/file"), &root_context, "absolute-link"),
+            Err(IoErrorKind::Unsupported)
+        );
+        assert_eq!(
+            filesystem.create_symlink_entry(Path::new("file"), &root_context, "file-link"),
+            Err(IoErrorKind::AlreadyExists)
+        );
+
+        let mut buffer = [0; 64];
+        let length = filesystem
+            .read_symlink_entry(&root_context, "file-link", &mut buffer)
+            .unwrap();
+        assert_eq!(&buffer[..length], b"file");
+        // A relative target is returned as stored, for the virtual file system
+        // to resolve within its own namespace.
+        let length = filesystem
+            .read_symlink_entry(&root_context, "relative", &mut buffer)
+            .unwrap();
+        assert_eq!(&buffer[..length], b"../outside-relative");
+        assert_eq!(
+            filesystem.read_symlink_entry(&root_context, "absolute", &mut buffer),
+            Err(IoErrorKind::CorruptData)
+        );
+        assert_eq!(
+            filesystem.read_symlink_entry(&root_context, "file-link", &mut [0; 2]),
+            Err(IoErrorKind::NameTooLong)
+        );
+        assert_eq!(
+            filesystem.read_symlink_entry(&root_context, "file", &mut buffer),
+            Err(IoErrorKind::InvalidArgument)
+        );
+
+        let mut attributes =
+            Attributes::new().set_mask(AttributeFlags::Kind | AttributeFlags::Size);
+        filesystem
+            .get_entry_attributes(&root_context, "file-link", &mut attributes)
+            .unwrap();
+        assert_eq!(attributes.get_kind(), Some(&Kind::SymbolicLink));
+        assert_eq!(attributes.get_size(), Some(&("file".len() as Size)));
+
+        for link in ["directory-link", "absolute", "relative"] {
+            let mut context = Context::new_empty();
+            assert_eq!(
+                filesystem.lookup_directory_entry(&root_context, link, &mut context),
+                Err(IoErrorKind::NotADirectory),
+                "{link}"
+            );
+        }
+        for link in ["file-link", "secret"] {
+            let mut context = Context::new_empty();
+            assert_eq!(
+                filesystem.lookup_file_entry(
+                    &root_context,
+                    link,
+                    &mut context,
+                    AccessFlags::Read.into()
+                ),
+                Err(IoErrorKind::SymlinkLoop),
+                "{link}"
+            );
+            assert_eq!(
+                filesystem.set_entry_attributes(
+                    &root_context,
+                    link,
+                    &Attributes::new().set_size(0)
+                ),
+                Err(IoErrorKind::SymlinkLoop),
+                "{link}"
+            );
+        }
+        let mut context = Context::new_empty();
+        assert_eq!(
+            filesystem.lookup_file_entry(
+                &root_context,
+                "secret",
+                &mut context,
+                Flags::new(
+                    AccessFlags::Write,
+                    Some(CreateFlags::Create | CreateFlags::Exclusive),
+                    None,
+                ),
+            ),
+            Err(IoErrorKind::AlreadyExists)
+        );
+        assert_eq!(
+            filesystem.create_file_entry(&root_context, "secret"),
+            Err(IoErrorKind::AlreadyExists)
+        );
+        assert_eq!(fs::read(outside.join("secret")).unwrap(), b"secret");
+
+        // Renaming, linking and removing act on the link, not its target.
+        filesystem
+            .rename_entry(&root_context, "secret", &root_context, "renamed")
+            .unwrap();
+        assert!(
+            fs::symlink_metadata(root.join("renamed"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        filesystem
+            .link_entry(&root_context, "renamed", &root_context, "linked")
+            .unwrap();
+        assert!(
+            fs::symlink_metadata(root.join("linked"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        for link in ["renamed", "linked", "directory-link", "absolute"] {
+            filesystem.remove_entry(&root_context, link).unwrap();
+        }
+        assert_eq!(fs::read(outside.join("secret")).unwrap(), b"secret");
+        assert!(root.join("directory").is_dir());
+        assert!(outside.is_dir());
+        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(outside);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn entry_operations_reject_paths_and_dot_names() {
+        let root = temp_root();
+        fs::create_dir(root.join("directory")).unwrap();
+        fs::write(root.join("directory/file"), b"").unwrap();
+        let filesystem = HostFileSystem::open(&root, HostFileSystemOptions::default()).unwrap();
+        let root_context = open_root_entry(&filesystem);
+        for name in [
+            "",
+            ".",
+            "..",
+            "directory/file",
+            "/directory",
+            "../outside",
+            "a\0b",
+        ] {
+            let mut context = Context::new_empty();
+            let mut attributes = Attributes::new().set_mask(AttributeFlags::Kind);
+            let mut buffer = [0; 16];
+            assert_eq!(
+                filesystem.lookup_directory_entry(&root_context, name, &mut context),
+                Err(IoErrorKind::InvalidPath),
+                "{name:?}"
+            );
+            assert_eq!(
+                filesystem.lookup_file_entry(
+                    &root_context,
+                    name,
+                    &mut context,
+                    AccessFlags::Read.into()
+                ),
+                Err(IoErrorKind::InvalidPath)
+            );
+            assert_eq!(
+                filesystem.create_directory_entry(&root_context, name),
+                Err(IoErrorKind::InvalidPath)
+            );
+            assert_eq!(
+                filesystem.create_file_entry(&root_context, name),
+                Err(IoErrorKind::InvalidPath)
+            );
+            assert_eq!(
+                filesystem.remove_entry(&root_context, name),
+                Err(IoErrorKind::InvalidPath)
+            );
+            assert_eq!(
+                filesystem.rename_entry(&root_context, name, &root_context, "new"),
+                Err(IoErrorKind::InvalidPath)
+            );
+            assert_eq!(
+                filesystem.rename_entry(&root_context, "directory", &root_context, name),
+                Err(IoErrorKind::InvalidPath)
+            );
+            assert_eq!(
+                filesystem.link_entry(&root_context, name, &root_context, "new"),
+                Err(IoErrorKind::InvalidPath)
+            );
+            assert_eq!(
+                filesystem.create_symlink_entry(Path::new("target"), &root_context, name),
+                Err(IoErrorKind::InvalidPath)
+            );
+            assert_eq!(
+                filesystem.read_symlink_entry(&root_context, name, &mut buffer),
+                Err(IoErrorKind::InvalidPath)
+            );
+            assert_eq!(
+                filesystem.get_entry_attributes(&root_context, name, &mut attributes),
+                Err(IoErrorKind::InvalidPath)
+            );
+            assert_eq!(
+                filesystem.set_entry_attributes(
+                    &root_context,
+                    name,
+                    &Attributes::new().set_size(0)
+                ),
+                Err(IoErrorKind::InvalidPath)
+            );
+        }
+        // A file context is not a parent directory.
+        let mut file = Context::new_empty();
+        filesystem
+            .lookup_file(
+                &mut file,
+                Path::new("/directory/file"),
+                AccessFlags::Read.into(),
+            )
+            .unwrap();
+        assert_eq!(
+            filesystem.create_file_entry(&file, "child"),
+            Err(IoErrorKind::InvalidState)
+        );
+        BaseOperations::close(&filesystem, &mut file).unwrap();
+        assert!(root.join("directory").is_dir());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn read_only_rejects_entry_mutations() {
+        let root = temp_root();
+        fs::write(root.join("file"), b"data").unwrap();
+        let filesystem = HostFileSystem::open(
+            &root,
+            HostFileSystemOptions {
+                read_only: true,
+                ..HostFileSystemOptions::default()
+            },
+        )
+        .unwrap();
+        let root_context = open_root_entry(&filesystem);
+        let read_only = Err(IoErrorKind::ReadOnlyFileSystem);
+        assert_eq!(
+            filesystem.create_directory_entry(&root_context, "new"),
+            read_only
+        );
+        assert_eq!(
+            filesystem.create_file_entry(&root_context, "new"),
+            read_only
+        );
+        assert_eq!(filesystem.remove_entry(&root_context, "file"), read_only);
+        assert_eq!(
+            filesystem.rename_entry(&root_context, "file", &root_context, "new"),
+            read_only
+        );
+        assert_eq!(
+            filesystem.link_entry(&root_context, "file", &root_context, "new"),
+            read_only
+        );
+        assert_eq!(
+            filesystem.create_symlink_entry(Path::new("file"), &root_context, "new"),
+            read_only
+        );
+        assert_eq!(
+            filesystem.set_entry_attributes(&root_context, "file", &Attributes::new().set_size(0)),
+            read_only
+        );
+        let mut context = Context::new_empty();
+        assert_eq!(
+            filesystem.lookup_file_entry(
+                &root_context,
+                "file",
+                &mut context,
+                Flags::from(AccessFlags::READ_WRITE)
+            ),
+            read_only
+        );
+        assert_eq!(fs::read(root.join("file")).unwrap(), b"data");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// The virtual file system holds the parent descriptor while a racing host
+    /// process renames that directory away and puts a link to an outside
+    /// directory in its place: the pinned descriptor keeps every entry
+    /// operation inside the moved directory.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn pinned_parent_survives_replacement_by_an_escaping_link() {
+        use std::thread;
+
+        let root = temp_root();
+        let outside = root.with_extension("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::create_dir(root.join("parent")).unwrap();
+        let filesystem = HostFileSystem::open(&root, HostFileSystemOptions::default()).unwrap();
+        let root_context = open_root_entry(&filesystem);
+
+        // Deterministic replacement after the parent was opened.
+        let mut parent = Context::new_empty();
+        filesystem
+            .lookup_directory_entry(&root_context, "parent", &mut parent)
+            .unwrap();
+        fs::rename(root.join("parent"), root.join("parent-moved")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("parent")).unwrap();
+        filesystem.create_file_entry(&parent, "pinned").unwrap();
+        filesystem
+            .create_directory_entry(&parent, "directory")
+            .unwrap();
+        filesystem
+            .create_symlink_entry(Path::new("pinned"), &parent, "link")
+            .unwrap();
+        filesystem
+            .rename_entry(&parent, "pinned", &parent, "renamed")
+            .unwrap();
+        assert!(root.join("parent-moved/renamed").is_file());
+        assert!(root.join("parent-moved/directory").is_dir());
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+        // A new lookup through the replaced name refuses the link.
+        let mut replaced = Context::new_empty();
+        assert_eq!(
+            filesystem.lookup_directory_entry(&root_context, "parent", &mut replaced),
+            Err(IoErrorKind::NotADirectory)
+        );
+        DirectoryOperations::close(&filesystem, &mut parent).unwrap();
+        fs::remove_file(root.join("parent")).unwrap();
+        fs::remove_dir_all(root.join("parent-moved")).unwrap();
+        fs::create_dir(root.join("parent")).unwrap();
+
+        // Concurrent replacement while lookups and creations run.
+        let replacing_root = root.clone();
+        let replacing_outside = outside.clone();
+        let replacer = thread::spawn(move || {
+            for _ in 0..300 {
+                let parent = replacing_root.join("parent");
+                let moved = replacing_root.join("parent-moved");
+                let _ = fs::rename(&parent, &moved);
+                let _ = std::os::unix::fs::symlink(&replacing_outside, &parent);
+                let _ = fs::remove_file(&parent);
+                let _ = fs::rename(&moved, &parent);
+            }
+        });
+        for _ in 0..300 {
+            let mut parent = Context::new_empty();
+            if filesystem
+                .lookup_directory_entry(&root_context, "parent", &mut parent)
+                .is_ok()
+            {
+                let _ = filesystem.create_file_entry(&parent, "pwned");
+                let _ = filesystem.create_directory_entry(&parent, "pwned-directory");
+                let _ = filesystem.remove_entry(&parent, "pwned");
+                let _ = filesystem.remove_entry(&parent, "pwned-directory");
+                DirectoryOperations::close(&filesystem, &mut parent).unwrap();
+            }
+        }
+        replacer.join().unwrap();
+        assert!(!outside.join("pwned").exists());
+        assert!(!outside.join("pwned-directory").exists());
+        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(outside);
     }
 
     #[cfg(target_os = "linux")]
