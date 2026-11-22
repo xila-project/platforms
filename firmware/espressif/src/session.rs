@@ -10,7 +10,7 @@
 //! console session for now. A graphical session can run beside it as a second
 //! task with its own shell and display.
 
-use alloc::vec;
+use alloc::{string::String, vec::Vec};
 
 use xila::{
     executable::{self, ExecutableContext, Standard},
@@ -24,6 +24,8 @@ pub struct Session {
     pub output: &'static str,
     pub error: &'static str,
     pub shell: &'static str,
+    /// The shell's arguments.
+    pub arguments: &'static [&'static str],
 }
 
 /// The graphical shell on the screen. It reads no terminal.
@@ -33,6 +35,14 @@ pub const GRAPHICAL: Session = Session {
     output: "/devices/standard_io/null",
     error: "/devices/standard_io/null",
     shell: crate::GRAPHICAL_SHELL_PATH,
+    arguments: &[],
+};
+
+/// The graphical shell on a touch screen without a keyboard: a text field
+/// that gets the focus opens the shell's on-screen keyboard.
+pub const GRAPHICAL_TOUCH: Session = Session {
+    arguments: &["--show-keyboard"],
+    ..GRAPHICAL
 };
 
 /// The command-line shell on the console.
@@ -42,6 +52,7 @@ pub const CONSOLE: Session = Session {
     output: "/devices/standard_io/output",
     error: "/devices/standard_io/error",
     shell: crate::SHELL_PATH,
+    arguments: &[],
 };
 
 /// Starts `session` as a child task of `parent`.
@@ -81,8 +92,14 @@ async fn run(
                 return;
             }
         };
+        let arguments: Vec<String> = session
+            .arguments
+            .iter()
+            .copied()
+            .map(String::from)
+            .collect();
         let shell =
-            match executable::execute(executable_context, session.shell, vec![], standard, None)
+            match executable::execute(executable_context, session.shell, arguments, standard, None)
                 .await
             {
                 Ok(shell) => shell,
