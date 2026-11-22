@@ -195,14 +195,15 @@ async fn main(task_manager: &'static xila::task::Manager) {
     let resolution = drivers_wasm::devices::graphics::get_resolution().unwrap();
 
     // - - Initialize the graphics manager
+    // CanvasScreenDevice flushes synchronously via putImageData, so one
+    // row-bounded partial tile avoids allocating two full-resolution buffers.
     let graphics_manager = graphics::initialize(
         time_manager,
         Box::leak(Box::new(screen_device)),
         Box::leak(Box::new(mouse_device)),
         graphics::InputKind::Pointer,
-        graphics::get_recommended_buffer_size(&resolution),
-        //graphics::get_minimal_buffer_size(&resolution),
-        true,
+        drivers_wasm::devices::graphics::draw_buffer_pixel_count(&resolution),
+        false,
     )
     .await;
     let graphics_manager: &'static graphics::Manager = Box::leak(Box::new(graphics_manager));

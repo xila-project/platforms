@@ -318,6 +318,161 @@ async fn dirty_rectangle_with_unaligned_width_preserves_canvas_color_order() {
     canvas.remove();
 }
 
+#[wasm_bindgen_test]
+async fn partial_row_tiles_compose_complete_frame_and_reject_short_buffers() {
+    const WIDTH: i16 = 17;
+    const HEIGHT: i16 = 11;
+    const TILE_ROWS: i16 = 4;
+
+    let canvas = canvas();
+    canvas.set_width(WIDTH as u32);
+    canvas.set_height(HEIGHT as u32);
+    let device = CanvasScreenDevice::new(canvas.clone()).await.unwrap();
+    let mut cx = Context::from_waker(Waker::noop());
+
+    // Flush the frame in horizontal row bands (like LVGL partial rendering).
+    let mut y = 0;
+    while y < HEIGHT {
+        let band_height = (HEIGHT - y).min(TILE_ROWS);
+        let mut area = Area::new(Point::new(0, y), Point::new(WIDTH - 1, y + band_height - 1));
+        assert_eq!(
+            device.control(
+                &mut cx,
+                SET_DRAWING_AREA::IDENTIFIER,
+                AnyByLayout::from_mutable(&mut area),
+                AnyByLayout::NONE,
+            ),
+            Poll::Ready(Ok(())),
+        );
+
+        let mut band = Vec::with_capacity((WIDTH * band_height) as usize);
+        for row in y..(y + band_height) {
+            for column in 0..WIDTH {
+                band.push(ColorARGB8888::new(
+                    255,
+                    (column * 13) as u8,
+                    (row * 21) as u8,
+                    ((column + row) * 7) as u8,
+                ));
+            }
+        }
+        let source = unsafe {
+            core::slice::from_raw_parts(
+                band.as_ptr().cast::<u8>(),
+                band.len() * core::mem::size_of::<ColorARGB8888>(),
+            )
+        };
+        assert_eq!(
+            device.write(&mut cx, source, 0),
+            Poll::Ready(Ok(band.len())),
+        );
+        y += band_height;
+    }
+
+    // A short buffer for the active area must be rejected cleanly.
+    let mut full_area = Area::new(Point::new(0, 0), Point::new(WIDTH - 1, HEIGHT - 1));
+    assert_eq!(
+        device.control(
+            &mut cx,
+            SET_DRAWING_AREA::IDENTIFIER,
+            AnyByLayout::from_mutable(&mut full_area),
+            AnyByLayout::NONE,
+        ),
+        Poll::Ready(Ok(())),
+    );
+    let short_pixel = [ColorARGB8888::new(255, 1, 2, 3)];
+    let short_bytes = unsafe {
+        core::slice::from_raw_parts(
+            short_pixel.as_ptr().cast::<u8>(),
+            core::mem::size_of::<ColorARGB8888>(),
+        )
+    };
+    assert!(matches!(
+        device.write(&mut cx, short_bytes, 0),
+        Poll::Ready(Err(_))
+    ));
+
+    let context: web_sys::CanvasRenderingContext2d = canvas
+        .get_context("2d")
+        .unwrap()
+        .unwrap()
+        .dyn_into()
+        .unwrap();
+    let pixels = context
+        .get_image_data(0.0, 0.0, WIDTH as f64, HEIGHT as f64)
+        .unwrap()
+        .data();
+    for row in 0..HEIGHT {
+        for column in 0..WIDTH {
+            let offset = ((row * WIDTH + column) * 4) as usize;
+            assert_eq!(
+                &pixels.0[offset..offset + 4],
+                &[
+                    (column * 13) as u8,
+                    (row * 21) as u8,
+                    ((column + row) * 7) as u8,
+                    255,
+                ],
+                "pixel ({column}, {row}) across partial row tiles",
+            );
+        }
+    }
+    canvas.remove();
+}
+
+#[wasm_bindgen_test]
+async fn lvgl_partial_display_redraws_after_viewport_rotation() {
+    use drivers_wasm::devices::graphics::draw_buffer_pixel_count;
+    use graphics::{Display, lvgl};
+
+    let canvas = canvas();
+    canvas.set_width(83);
+    canvas.set_height(803);
+    let device = Box::leak(Box::new(
+        CanvasScreenDevice::new(canvas.clone()).await.unwrap(),
+    ));
+    let context: web_sys::CanvasRenderingContext2d = canvas
+        .get_context("2d")
+        .unwrap()
+        .unwrap()
+        .dyn_into()
+        .unwrap();
+    let pixel = |x, y| context.get_image_data(x, y, 1.0, 1.0).unwrap().data().0;
+
+    unsafe {
+        lvgl::lv_init();
+        let display =
+            Display::new(device, draw_buffer_pixel_count(&Point::new(83, 803)), false).unwrap();
+        let raw_display = display.get_lvgl_display();
+        let screen = display.get_object();
+        lvgl::lv_obj_remove_style_all(screen);
+        lvgl::lv_obj_set_style_bg_opa(screen, lvgl::LV_OPA_COVER, 0);
+        lvgl::lv_obj_set_style_bg_color(screen, lvgl::lv_color_hex(0x123456), 0);
+        lvgl::lv_refr_now(raw_display);
+        assert_eq!(pixel(82.0, 802.0), [0x12, 0x34, 0x56, 255]);
+
+        // A browser orientation change swaps the dimensions of the canvas.
+        canvas.set_width(803);
+        canvas.set_height(83);
+        lvgl::lv_display_set_resolution(raw_display, 803, 83);
+        lvgl::lv_refr_now(raw_display);
+        assert_eq!(pixel(802.0, 82.0), [0x12, 0x34, 0x56, 255]);
+
+        let rectangle = lvgl::lv_obj_create(screen);
+        lvgl::lv_obj_remove_style_all(rectangle);
+        lvgl::lv_obj_set_pos(rectangle, 9, 77);
+        lvgl::lv_obj_set_size(rectangle, 17, 5);
+        lvgl::lv_obj_set_style_bg_opa(rectangle, lvgl::LV_OPA_COVER, 0);
+        lvgl::lv_obj_set_style_bg_color(rectangle, lvgl::lv_color_hex(0xabcdef), 0);
+        lvgl::lv_refr_now(raw_display);
+        assert_eq!(pixel(9.0, 77.0), [0xab, 0xcd, 0xef, 255]);
+        assert_eq!(pixel(25.0, 81.0), [0xab, 0xcd, 0xef, 255]);
+        assert_eq!(pixel(26.0, 81.0), [0x12, 0x34, 0x56, 255]);
+        assert_eq!(pixel(25.0, 82.0), [0x12, 0x34, 0x56, 255]);
+    }
+    canvas.remove();
+}
+
 fn mouse(canvas: &web_sys::EventTarget, kind: &str, x: i32, y: i32, buttons: u16) {
     let options = MouseEventInit::new();
     options.set_client_x(x);
