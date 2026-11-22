@@ -34,12 +34,11 @@ pub fn prepare(
             .map_err(|_| "invalid package or publisher signature")?,
         None => xila_package_reader::inspect_unsigned(bytes).map_err(|_| "invalid package")?,
     };
-    if manifest.name != name
-        || manifest.version != version
-        || manifest.target != "wasm32-wasip1"
-        || !xila_package_manifest::compatible(manifest.xila_version, RUNNING_XILA_VERSION)
-    {
+    if manifest.name != name || manifest.version != version || manifest.target != "wasm32-wasip1" {
         return Err("package is incompatible");
+    }
+    if !xila_package_manifest::compatible(manifest.xila_version, RUNNING_XILA_VERSION) {
+        return Err("package requires a Xila version incompatible with this runtime");
     }
     let entrypoint = manifest
         .application
@@ -243,7 +242,10 @@ mod tests {
             ),
         ] {
             let future = package_for_xila("wasm32-wasip1", incompatible, WASM, None);
-            assert!(prepare(&future, "xila.clock", "1.0.0", sha256(&future), None).is_err());
+            assert_eq!(
+                prepare(&future, "xila.clock", "1.0.0", sha256(&future), None).err(),
+                Some("package requires a Xila version incompatible with this runtime")
+            );
         }
         let mut corrupt = bytes.clone();
         let index = corrupt.windows(4).position(|w| w == b"\0asm").unwrap();
