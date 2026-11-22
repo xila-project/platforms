@@ -40,7 +40,7 @@ use esp_hal::{
     delay::Delay,
     dma::DmaDescriptor,
     gpio::{Level, Output, OutputConfig},
-    i2c::master::{Config as I2cConfiguration, I2c},
+    i2c::master::{BusTimeout, Config as I2cConfiguration, I2c, SoftwareTimeout},
     lcd_cam::{
         LcdCam,
         lcd::i8080::{Config as I8080Configuration, I8080},
@@ -49,7 +49,7 @@ use esp_hal::{
         DMA_CH0, GPIO0, GPIO3, GPIO4, GPIO5, GPIO6, GPIO8, GPIO9, GPIO15, GPIO16, GPIO17, GPIO18,
         GPIO45, GPIO46, GPIO47, I2C0, LCD_CAM,
     },
-    time::Rate,
+    time::{Duration, Rate},
 };
 use firmware::{Display, graphics::TouchInputDevice};
 use mipidsi::{
@@ -78,8 +78,13 @@ static mut DESCRIPTORS: [DmaDescriptor; DESCRIPTOR_COUNT] =
 /// answers on I²C; the panel's initialisation already took most of it.
 const TOUCH_START_MILLISECONDS: u32 = 200;
 
+/// Deadline of one touch I²C transaction. A 5-byte report takes about 0.2 ms
+/// at 400 kHz: LVGL's polling, which holds a critical section, cannot stall
+/// the system on a hung bus.
+const TOUCH_TRANSACTION_MILLISECONDS: u64 = 5;
+
 /// The touch controller's chip and vendor identifiers, read at start-up and
-/// logged once the logger runs; zero when it did not answer.
+/// logged once the logger runs.
 static TOUCH_IDENTIFIERS: AtomicU16 = AtomicU16::new(0);
 
 /// Why the screen could not start, logged once the logger runs.
@@ -126,13 +131,16 @@ pub(super) fn start(pins: Pins) -> Option<Display> {
     }
 }
 
+/// Starts the panel and the touch controller, then turns the backlight on.
+/// The graphical login needs touch, so a touch controller that does not answer
+/// is a failure too: the backlight stays off and the board runs headless.
 fn try_start(pins: Pins) -> Result<Display, String> {
-    // Dark until the panel holds a black frame.
+    // Dark until everything works and the panel holds a black frame.
     let mut backlight = Output::new(pins.backlight, Level::Low, OutputConfig::default());
     let reset = Output::new(pins.reset, Level::High, OutputConfig::default());
 
     let lcd_cam = LcdCam::new(pins.lcd_cam);
-    let (d0, d1, d2, d3, d4, d5, d6, d7) = pins.data;
+    let (data_0, data_1, data_2, data_3, data_4, data_5, data_6, data_7) = pins.data;
     let i8080 = I8080::new(
         lcd_cam.lcd,
         pins.dma,
@@ -141,18 +149,19 @@ fn try_start(pins: Pins) -> Result<Display, String> {
     .map_err(|error| format!("cannot configure the LCD bus: {error:?}"))?
     .with_dc(pins.command_data)
     .with_wrx(pins.write_clock)
-    .with_data0(d0)
-    .with_data1(d1)
-    .with_data2(d2)
-    .with_data3(d3)
-    .with_data4(d4)
-    .with_data5(d5)
-    .with_data6(d6)
-    .with_data7(d7);
+    .with_data0(data_0)
+    .with_data1(data_1)
+    .with_data2(data_2)
+    .with_data3(data_3)
+    .with_data4(data_4)
+    .with_data5(data_5)
+    .with_data6(data_6)
+    .with_data7(data_7);
     // SAFETY: this runs once, at start-up, and is the only user of the
-    // descriptors, which live in internal SRAM.
+    // descriptors.
     let descriptors = unsafe { &mut *addr_of_mut!(DESCRIPTORS) };
-    let bus = I8080Bus::new(i8080, descriptors);
+    let bus = I8080Bus::new(i8080, descriptors)
+        .map_err(|error| format!("cannot use the LCD bus: {error:?}"))?;
 
     // The reset also resets the touch controller.
     let mut display = Builder::new(ST7796, ParallelInterface::new(bus))
@@ -173,18 +182,15 @@ fn try_start(pins: Pins) -> Result<Display, String> {
             .set_pixels_raw(0, row, WIDTH - 1, row, &black_row)
             .map_err(|error| format!("cannot clear the panel: {error:?}"))?;
     }
-    // esp-hal's `Output` has no `Drop`: the pin keeps driving the backlight
-    // on after `backlight` goes out of scope.
-    backlight.set_high();
-
-    let screen: &'static Screen = Box::leak(Box::new(MipidsiScreenDevice::new(
-        display,
-        Point::new(WIDTH as i16, HEIGHT as i16),
-    )));
 
     let i2c = I2c::new(
         pins.i2c,
-        I2cConfiguration::default().with_frequency(Rate::from_khz(400)),
+        I2cConfiguration::default()
+            .with_frequency(Rate::from_khz(400))
+            .with_timeout(BusTimeout::Maximum)
+            .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(
+                TOUCH_TRANSACTION_MILLISECONDS,
+            ))),
     )
     .map_err(|error| format!("cannot configure the touch I²C bus: {error:?}"))?
     .with_sda(pins.touch_data)
@@ -201,10 +207,22 @@ fn try_start(pins: Pins) -> Result<Display, String> {
         },
     );
     Delay::new().delay_millis(TOUCH_START_MILLISECONDS);
-    if let Ok((chip, vendor)) = controller.identifiers() {
-        TOUCH_IDENTIFIERS.store(u16::from(chip) << 8 | u16::from(vendor), Ordering::Relaxed);
-    }
+    let (chip, vendor) = controller.identifiers().map_err(|error| {
+        format!(
+            "the FT6336U touch controller does not answer at {FT6336_ADDRESS:#04x} ({error:?}), \
+             and the graphical login needs touch"
+        )
+    })?;
+    TOUCH_IDENTIFIERS.store(u16::from(chip) << 8 | u16::from(vendor), Ordering::Relaxed);
     let touch: &'static Touch = Box::leak(Box::new(TouchInputDevice::new(controller)));
+
+    let screen: &'static Screen = Box::leak(Box::new(MipidsiScreenDevice::new(
+        display,
+        Point::new(WIDTH as i16, HEIGHT as i16),
+    )));
+    // esp-hal's `Output` has no `Drop`: the pin keeps driving the backlight
+    // on after `backlight` goes out of scope.
+    backlight.set_high();
 
     Ok(Display {
         screen,
@@ -225,12 +243,10 @@ pub(super) fn log_report() {
     log::information!(
         "Xila: ST7796 panel {WIDTH}x{HEIGHT} on the 8080 bus at {BUS_FREQUENCY_MEGAHERTZ} MHz, backlight on"
     );
-    match TOUCH_IDENTIFIERS.load(Ordering::Relaxed) {
-        0 => log::warning!("Xila: the FT6336U touch controller does not answer at 0x38"),
-        identifiers => log::information!(
-            "Xila: FT6336U touch controller (chip {:#04x}, vendor {:#04x})",
-            identifiers >> 8,
-            identifiers & 0xFF
-        ),
-    }
+    let identifiers = TOUCH_IDENTIFIERS.load(Ordering::Relaxed);
+    log::information!(
+        "Xila: FT6336U touch controller (chip {:#04x}, vendor {:#04x})",
+        identifiers >> 8,
+        identifiers & 0xFF
+    );
 }

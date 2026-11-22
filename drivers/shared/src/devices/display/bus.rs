@@ -9,11 +9,11 @@ pub trait ParallelBus {
     fn write(&mut self, command: Option<u8>, data: &[u8]) -> Result<(), Self::Error>;
 }
 
-impl<B: ParallelBus> ParallelBus for &mut B {
-    type Error = B::Error;
+impl<Bus: ParallelBus> ParallelBus for &mut Bus {
+    type Error = Bus::Error;
 
     fn write(&mut self, command: Option<u8>, data: &[u8]) -> Result<(), Self::Error> {
-        B::write(self, command, data)
+        Bus::write(self, command, data)
     }
 }
 
@@ -28,13 +28,13 @@ pub const STAGING_SIZE: usize = 512;
 ///   write of the caller's slice, without copying: with a DMA bus, that is one
 ///   DMA transfer.
 /// - Pixels that `mipidsi` converts itself are staged in a small buffer.
-pub struct ParallelInterface<B> {
-    bus: B,
+pub struct ParallelInterface<Bus> {
+    bus: Bus,
     staging: [u8; STAGING_SIZE],
 }
 
-impl<B: ParallelBus> ParallelInterface<B> {
-    pub const fn new(bus: B) -> Self {
+impl<Bus: ParallelBus> ParallelInterface<Bus> {
+    pub const fn new(bus: Bus) -> Self {
         Self {
             bus,
             staging: [0; STAGING_SIZE],
@@ -42,14 +42,14 @@ impl<B: ParallelBus> ParallelInterface<B> {
     }
 
     /// Gives the bus back.
-    pub fn release(self) -> B {
+    pub fn release(self) -> Bus {
         self.bus
     }
 }
 
-impl<B: ParallelBus> Interface for ParallelInterface<B> {
+impl<Bus: ParallelBus> Interface for ParallelInterface<Bus> {
     type Word = u8;
-    type Error = B::Error;
+    type Error = Bus::Error;
 
     const KIND: InterfaceKind = InterfaceKind::Parallel8Bit;
 

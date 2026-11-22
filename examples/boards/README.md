@@ -107,9 +107,13 @@ sessions run side by side, each with its own login: the graphical shell on the
 screen and the command-line shell on the USB console. The pins come from
 Wireless-Tag's datasheet; `src/firmware/screen.rs` lists them.
 
-From the repository root, after `mise run setup:espressif-rust`:
+From the repository root, after `mise run setup:espressif-rust`, install the
+locked npm packages once: Xila's graphics converts its fonts at build time
+with the `lv_font_conv` they provide, from `node_modules` at the repository
+root. Then build:
 
 ```sh
+npm ci
 mise run build:wt32-sc01-plus
 ```
 

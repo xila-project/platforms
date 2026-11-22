@@ -18,6 +18,8 @@
 
 extern crate alloc;
 
+#[cfg(feature = "graphics")]
+mod applications;
 mod board;
 mod flash;
 #[cfg(feature = "graphics")]
@@ -351,50 +353,31 @@ async fn start(task_manager: &'static task::Manager) {
                 time_manager,
             )
         }));
+    // The shells, in memory: nothing from an earlier boot is there.
     #[cfg(not(feature = "graphics"))]
-    mount_executables!(
+    let mounted = mount_executables!(
         executable_context,
         virtual_file_system,
         task,
         &[(&SHELL_PATH, command_line_shell::ShellExecutable)]
     )
-    .await
-    .expect("Failed to mount the executables");
+    .await;
     #[cfg(feature = "graphics")]
-    mount_executables!(
+    let mounted = mount_executables!(
         executable_context,
         virtual_file_system,
         task,
         &[
             (&SHELL_PATH, command_line_shell::ShellExecutable),
             (&GRAPHICAL_SHELL_PATH, graphical_shell::ShellExecutable),
-            // The native applications, where the seed image's shortcuts
-            // (`tools/fs_image/shortcuts`) expect them. The terminal starts
-            // the command-line shell from there.
-            (
-                &"/applications/executables/command_line_shell",
-                command_line_shell::ShellExecutable
-            ),
-            (
-                &"/applications/executables/activity",
-                activity::ActivityExecutable
-            ),
-            (
-                &"/applications/executables/file_manager",
-                file_manager::FileManagerExecutable
-            ),
-            (
-                &"/applications/executables/settings",
-                settings::SettingsExecutable
-            ),
-            (
-                &"/applications/executables/terminal",
-                terminal::TerminalExecutable
-            ),
         ]
     )
-    .await
-    .expect("Failed to mount the executables");
+    .await;
+    if let Err(error) = mounted {
+        log::error!("Xila: cannot mount the shells: {error}");
+    }
+    #[cfg(feature = "graphics")]
+    applications::mount(executable_context, virtual_file_system, task).await;
 
     task_manager
         .set_environment_variable(task, "Paths", "/system/executables:/")

@@ -51,11 +51,11 @@ impl<T> Exclusive<T> {
     }
 }
 
-struct State<DI: Interface, M: Model, RST: OutputPin>
+struct State<DisplayInterface: Interface, PanelModel: Model, ResetPin: OutputPin>
 where
-    M::ColorFormat: InterfacePixelFormat<DI::Word>,
+    PanelModel::ColorFormat: InterfacePixelFormat<DisplayInterface::Word>,
 {
-    display: Display<DI, M, RST>,
+    display: Display<DisplayInterface, PanelModel, ResetPin>,
     area: Area,
 }
 
@@ -65,31 +65,44 @@ where
 /// LVGL renders in that byte order (`RGB565_SWAPPED` on little-endian chips),
 /// so each flush is one `set_pixels_raw` call: one address window and one
 /// write of LVGL's buffer.
-pub struct MipidsiScreenDevice<DI: Interface, M: Model, RST: OutputPin>
+pub struct MipidsiScreenDevice<DisplayInterface: Interface, PanelModel: Model, ResetPin: OutputPin>
 where
-    M::ColorFormat: InterfacePixelFormat<DI::Word>,
+    PanelModel::ColorFormat: InterfacePixelFormat<DisplayInterface::Word>,
 {
     resolution: Point,
-    state: Exclusive<State<DI, M, RST>>,
+    state: Exclusive<State<DisplayInterface, PanelModel, ResetPin>>,
+    /// Set after a transfer failed: later frames are dropped.
+    failed: AtomicBool,
 }
 
-impl<DI, M, RST> MipidsiScreenDevice<DI, M, RST>
+impl<DisplayInterface, PanelModel, ResetPin>
+    MipidsiScreenDevice<DisplayInterface, PanelModel, ResetPin>
 where
-    DI: Interface<Word = u8>,
-    M: Model,
-    M::ColorFormat: InterfacePixelFormat<u8>,
-    RST: OutputPin,
+    DisplayInterface: Interface<Word = u8>,
+    PanelModel: Model,
+    PanelModel::ColorFormat: InterfacePixelFormat<u8>,
+    ResetPin: OutputPin,
 {
     /// Wraps an initialised display of `resolution` pixels, in its current
     /// orientation.
-    pub fn new(display: Display<DI, M, RST>, resolution: Point) -> Self {
+    pub fn new(
+        display: Display<DisplayInterface, PanelModel, ResetPin>,
+        resolution: Point,
+    ) -> Self {
         Self {
             resolution,
             state: Exclusive::new(State {
                 display,
                 area: Area::default(),
             }),
+            failed: AtomicBool::new(false),
         }
+    }
+
+    /// Whether a transfer to the panel failed. The device then drops every
+    /// frame, so that rendering, and the rest of the system, keep running.
+    pub fn has_failed(&self) -> bool {
+        self.failed.load(Ordering::Acquire)
     }
 
     fn check_area(&self, area: &Area) -> Result<()> {
@@ -110,12 +123,13 @@ where
     }
 }
 
-impl<DI, M, RST> DirectBaseOperations for MipidsiScreenDevice<DI, M, RST>
+impl<DisplayInterface, PanelModel, ResetPin> DirectBaseOperations
+    for MipidsiScreenDevice<DisplayInterface, PanelModel, ResetPin>
 where
-    DI: Interface<Word = u8> + Send,
-    M: Model + Send,
-    M::ColorFormat: InterfacePixelFormat<u8>,
-    RST: OutputPin + Send,
+    DisplayInterface: Interface<Word = u8> + Send,
+    PanelModel: Model + Send,
+    PanelModel::ColorFormat: InterfacePixelFormat<u8>,
+    ResetPin: OutputPin + Send,
 {
     fn read(&self, _: &mut Context<'_>, _: &mut [u8], _: Size) -> Poll<Result<usize>> {
         Poll::Ready(Err(IoErrorKind::Unsupported))
@@ -123,6 +137,9 @@ where
 
     fn write(&self, _: &mut Context<'_>, buffer: &[u8], _: Size) -> Poll<Result<usize>> {
         file_system::ready(|| {
+            if self.has_failed() {
+                return Ok(buffer.len());
+            }
             self.state.with(|state| {
                 let (start, end) = (state.area.get_point_1(), state.area.get_point_2());
                 let pixels =
@@ -132,16 +149,20 @@ where
                     .ok_or(IoErrorKind::InvalidArgument)?;
                 // `check_area` keeps the corners inside the screen, so they
                 // are non-negative.
-                state
-                    .display
-                    .set_pixels_raw(
-                        start.get_x() as u16,
-                        start.get_y() as u16,
-                        end.get_x() as u16,
-                        end.get_y() as u16,
-                        data,
-                    )
-                    .map_err(|_| IoErrorKind::InputOutput)?;
+                let result = state.display.set_pixels_raw(
+                    start.get_x() as u16,
+                    start.get_y() as u16,
+                    end.get_x() as u16,
+                    end.get_y() as u16,
+                    data,
+                );
+                // A failed transfer drops this frame and the next ones rather
+                // than failing the flush: the panel stays as it is, and the
+                // other sessions keep running.
+                if let Err(error) = result {
+                    self.failed.store(true, Ordering::Release);
+                    log::error!("The screen stopped after a failed transfer: {error:?}");
+                }
                 Ok(buffer.len())
             })
         })
@@ -176,20 +197,22 @@ where
     }
 }
 
-impl<DI, M, RST> MountOperations for MipidsiScreenDevice<DI, M, RST>
+impl<DisplayInterface, PanelModel, ResetPin> MountOperations
+    for MipidsiScreenDevice<DisplayInterface, PanelModel, ResetPin>
 where
-    DI: Interface<Word = u8> + Send,
-    M: Model + Send,
-    M::ColorFormat: InterfacePixelFormat<u8>,
-    RST: OutputPin + Send,
+    DisplayInterface: Interface<Word = u8> + Send,
+    PanelModel: Model + Send,
+    PanelModel::ColorFormat: InterfacePixelFormat<u8>,
+    ResetPin: OutputPin + Send,
 {
 }
 
-impl<DI, M, RST> DirectCharacterDevice for MipidsiScreenDevice<DI, M, RST>
+impl<DisplayInterface, PanelModel, ResetPin> DirectCharacterDevice
+    for MipidsiScreenDevice<DisplayInterface, PanelModel, ResetPin>
 where
-    DI: Interface<Word = u8> + Send,
-    M: Model + Send,
-    M::ColorFormat: InterfacePixelFormat<u8>,
-    RST: OutputPin + Send,
+    DisplayInterface: Interface<Word = u8> + Send,
+    PanelModel: Model + Send,
+    PanelModel::ColorFormat: InterfacePixelFormat<u8>,
+    ResetPin: OutputPin + Send,
 {
 }

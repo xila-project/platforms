@@ -251,3 +251,52 @@ fn screen_reports_its_resolution() {
         .unwrap();
     assert_eq!(resolution, Point::new(480, 320));
 }
+
+/// Fails every pixel write, as a bus whose DMA stopped would.
+struct FailingBus {
+    writes: Rc<RefCell<usize>>,
+}
+
+// SAFETY: the tests use the bus on one thread.
+unsafe impl Send for FailingBus {}
+
+impl ParallelBus for FailingBus {
+    type Error = ();
+
+    fn write(&mut self, command: Option<u8>, _: &[u8]) -> Result<(), Self::Error> {
+        *self.writes.borrow_mut() += 1;
+        // Commands pass, so that the panel initialises; pixel data fails.
+        if command.is_some() { Ok(()) } else { Err(()) }
+    }
+}
+
+#[test]
+fn a_failed_transfer_drops_frames_instead_of_failing_the_flush() {
+    let writes = Rc::new(RefCell::new(0));
+    let display = Builder::new(
+        ST7796,
+        ParallelInterface::new(FailingBus {
+            writes: writes.clone(),
+        }),
+    )
+    .display_size(320, 480)
+    .init(&mut NoDelay)
+    .unwrap();
+    let screen = MipidsiScreenDevice::new(display, Point::new(320, 480));
+    let mut area = Area::new(Point::new(0, 0), Point::new(9, 9));
+    screen
+        .control_sync(
+            SET_DRAWING_AREA::IDENTIFIER,
+            AnyByLayout::from_mutable(&mut area),
+            AnyByLayout::NONE,
+        )
+        .unwrap();
+    let pixels = vec![0; 10 * 10 * 2];
+    assert!(!screen.has_failed());
+    assert_eq!(screen.write_sync(&pixels, 0), Ok(pixels.len()));
+    assert!(screen.has_failed());
+    // Later frames do not reach the bus.
+    let writes_after_failure = *writes.borrow();
+    assert_eq!(screen.write_sync(&pixels, 0), Ok(pixels.len()));
+    assert_eq!(*writes.borrow(), writes_after_failure);
+}
