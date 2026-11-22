@@ -57,6 +57,7 @@ nanoaudio = { git = "https://github.com/AlixANNERAUD/nanoaudio.git", rev = "5960
 nanoaudio-cpal = { git = "https://github.com/AlixANNERAUD/nanoaudio.git", rev = "596076c64827fd8bf9e8319addc2f215e0cde8be", default-features = false }
 nanoaudio-web = { git = "https://github.com/AlixANNERAUD/nanoaudio.git", rev = "596076c64827fd8bf9e8319addc2f215e0cde8be", default-features = false }
 xila_version = { package = "xila-version", git = "https://github.com/xila-project/core", branch = "main" }
+native_loader = { package = "xila-native-loader", git = "https://github.com/xila-project/core", branch = "main" }
 little_fs = { package = "xila-little-fs", git = "https://github.com/xila-project/core", branch = "main" }
 virtual_file_system = { package = "xila-virtual-file-system", git = "https://github.com/xila-project/core", branch = "main" }
 graphics = { package = "xila-graphics", git = "https://github.com/xila-project/core", branch = "main" }

@@ -14,6 +14,7 @@ device = { workspace = true }
 drivers_shared = { package = "xila-drivers-shared", path = "../shared", default-features = false }
 file_system = { workspace = true }
 memory = { workspace = true }
+native_loader = { workspace = true }
 time = { workspace = true }
 task = { workspace = true }
 synchronization = { workspace = true }
@@ -52,6 +53,7 @@ log = { workspace = true }
 critical-section = { workspace = true, features = ["std"] }
 linked_list_allocator = { workspace = true }
 memory = { workspace = true }
+native_loader = { workspace = true }
 synchronization = { workspace = true }
 
 [lib]

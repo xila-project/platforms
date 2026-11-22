@@ -3,6 +3,8 @@
 pub mod console;
 pub mod devices;
 pub mod drive_file;
+#[cfg(unix)]
+pub mod executable_memory;
 pub mod executor;
 #[cfg(all(feature = "heaptrack", target_os = "linux"))]
 mod heaptrack;
