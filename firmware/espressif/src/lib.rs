@@ -329,14 +329,21 @@ async fn start(task_manager: &'static task::Manager) {
 
     // - Graphics, on boards with a screen.
     #[cfg(feature = "graphics")]
-    let graphics_manager = match display {
+    let (graphics_manager, bootsplash) = match display {
         Some(display) => {
             let manager = graphics::start(task_manager, task, time_manager, display).await;
             xila::graphics::appearance::restore_appearance(manager, virtual_file_system, task)
                 .await;
-            Some(manager)
+            let bootsplash = match xila::bootsplash::Bootsplash::new(manager).await {
+                Ok(bootsplash) => Some(bootsplash),
+                Err(error) => {
+                    log::warning!("Xila: cannot start the bootsplash: {error:?}");
+                    None
+                }
+            };
+            (Some(manager), bootsplash)
         }
-        None => None,
+        None => (None, None),
     };
     #[cfg(not(feature = "graphics"))]
     if display.is_some() {
@@ -465,6 +472,14 @@ async fn start(task_manager: &'static task::Manager) {
             break;
         }
         task::Manager::sleep(BOOT_REPORT_DRAIN_INTERVAL).await;
+    }
+    #[cfg(feature = "graphics")]
+    if let (Some(manager), Some(bootsplash)) = (graphics_manager, bootsplash) {
+        // Let the graphics task render the animation before launching login.
+        task::Manager::sleep(Duration::from_secs(1)).await;
+        if let Err(error) = bootsplash.stop(manager).await {
+            log::warning!("Xila: cannot stop the bootsplash: {error:?}");
+        }
     }
     // From now on a person may be typing on the console: keep the log quiet.
     console::set_interactive(true);
