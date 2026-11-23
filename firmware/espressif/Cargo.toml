@@ -33,6 +33,14 @@ activity = { package = "xila-activity", git = "https://github.com/xila-project/a
 file_manager = { package = "xila-file-manager", git = "https://github.com/xila-project/applications", branch = "main", optional = true }
 settings = { package = "xila-settings", git = "https://github.com/xila-project/applications", branch = "main", optional = true }
 terminal = { package = "xila-terminal", git = "https://github.com/xila-project/applications", branch = "main", optional = true }
+# WebAssembly host runtime. Lazy translation is the default on microcontrollers
+# so function bodies are translated at their first call rather than all at once
+# during load, lowering peak heap usage (`--translation eager` still overrides it).
+wasm = { package = "xila-wasm", git = "https://github.com/xila-project/applications", branch = "main", default-features = false, features = [
+  "host",
+  "memory_32",
+  "lazy_translation",
+], optional = true }
 
 [features]
 # Xila's graphics on the board's screen, the graphical shell and the native
@@ -44,8 +52,12 @@ graphics = [
   "dep:settings",
   "dep:terminal",
   "drivers_shared/touch-ft6336",
+  "wasm?/graphics",
   "xila/graphics",
 ]
+# WebAssembly runtime mounted at `/applications/executables/wasm`. Combined
+# with `graphics`, guests also receive the LVGL graphics host import.
+wasm = ["dep:wasm"]
 # Developer-only handler that runs raw ELF files from the file system as native
 # executables, with their images in `.dram2_uninit` (ESP32-C6 and ESP32-P4 only).
 # It does not sandbox them.

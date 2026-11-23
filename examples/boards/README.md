@@ -104,8 +104,10 @@ LCD_CAM peripheral, with DMA, through `mipidsi`: each LVGL flush is one
 buffer (40 rows, in internal SRAM, rendered in the panel's byte order). The
 FT6336U touch panel is polled over I²C, and the backlight is on GPIO45. Two
 sessions run side by side, each with its own login: the graphical shell on the
-screen and the command-line shell on the USB console. The pins come from
-Wireless-Tag's datasheet; `src/firmware/screen.rs` lists them.
+screen and the command-line shell on the USB console. The firmware mounts the
+WebAssembly runtime at `/applications/executables/wasm` with lazy function
+translation by default. The pins come from Wireless-Tag's datasheet and are
+listed in `src/firmware/screen.rs`.
 
 From the repository root, after `mise run setup:espressif-rust`, install the
 locked npm packages once: Xila's graphics converts its fonts at build time
@@ -134,6 +136,28 @@ size, `Xila: PSRAM self-test passed`, `Xila: LittleFS mounted`, the graphics
 and touch controller lines, the heap report and the `User name:` prompt.
 Once the shell session starts, the console shows only warnings and errors from
 the log, a few per second at most, so that they do not bury the session.
+
+To seed the `storage` partition with the native application shortcuts
+(Activity, File manager, Settings and Terminal), the official package registry,
+and the Calculator and Clock WebAssembly application bundles, build the raw
+4096-byte-block LittleFS image. The task reads the image size from the
+`storage` row of [partitions.csv](wt32-sc01-plus/partitions.csv).
+
+Until format-v2 releases are pinned, build the WebAssembly guests from the
+locked Applications revision, package them with `tools/bundle_applications.sh`,
+and set `XILA_BUNDLES_DIR` to the resulting bundle directory. See the
+[seed image documentation](../../tools/fs_image/README.md) for the bundle inputs.
+Writing the image at the partition offset replaces its existing contents.
+
+```sh
+XILA_BUNDLES_DIR=/path/to/bundles mise run image:wt32-sc01-plus
+mise run run:espflash -- write-bin --chip esp32s3 --port "$FLASH_PORT" \
+  --flash-size 16mb --flash-mode dio 0x310000 target/seed/wt32-sc01-plus/storage.img
+```
+
+The seeded image carries the first-installation marker so the firmware creates
+the default `administrator` account (empty password) on first boot without
+reformatting the partition.
 
 [board]: https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32p4/esp32-p4x-function-ev-board/user_guide.html
 [entropy]: https://github.com/esp-rs/esp-hal/issues/5982

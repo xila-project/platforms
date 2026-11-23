@@ -1,9 +1,11 @@
-//! The native applications on boards with a screen (feature `graphics`).
+//! The native applications (`graphics` feature) and WebAssembly runtime
+//! (`wasm` feature) mounted under `/applications/executables/`.
 //!
 //! They are mounted at `/applications/executables/<name>`, where the seed
-//! image's shortcuts (`tools/fs_image/shortcuts`) expect them; the terminal
-//! starts the command-line shell from there too. That directory is on the
-//! persistent LittleFS partition, so an entry may already be there:
+//! image's shortcuts (`tools/fs_image/shortcuts`) and application bundles
+//! expect them; the terminal starts the command-line shell from there too. That
+//! directory is on the persistent LittleFS partition, so an entry may already
+//! be there:
 //!
 //! - an executable entry, which an earlier boot mounted: it is replaced;
 //! - anything else (a file, a directory or a link): it is user data, so it is
@@ -19,50 +21,62 @@ use xila::{
     virtual_file_system::VirtualFileSystem,
 };
 
-/// Mounts the native applications.
+/// Mounts the native applications and WebAssembly runtime.
 pub(crate) async fn mount(
     context: &'static ExecutableContext,
     virtual_file_system: &'static VirtualFileSystem,
     task: task::TaskIdentifier,
 ) {
+    #[cfg(feature = "graphics")]
+    {
+        mount_one(
+            context,
+            virtual_file_system,
+            task,
+            "/applications/executables/command_line_shell",
+            command_line_shell::ShellExecutable,
+        )
+        .await;
+        mount_one(
+            context,
+            virtual_file_system,
+            task,
+            "/applications/executables/activity",
+            activity::ActivityExecutable,
+        )
+        .await;
+        mount_one(
+            context,
+            virtual_file_system,
+            task,
+            "/applications/executables/file_manager",
+            file_manager::FileManagerExecutable,
+        )
+        .await;
+        mount_one(
+            context,
+            virtual_file_system,
+            task,
+            "/applications/executables/settings",
+            settings::SettingsExecutable,
+        )
+        .await;
+        mount_one(
+            context,
+            virtual_file_system,
+            task,
+            "/applications/executables/terminal",
+            terminal::TerminalExecutable,
+        )
+        .await;
+    }
+    #[cfg(feature = "wasm")]
     mount_one(
         context,
         virtual_file_system,
         task,
-        "/applications/executables/command_line_shell",
-        command_line_shell::ShellExecutable,
-    )
-    .await;
-    mount_one(
-        context,
-        virtual_file_system,
-        task,
-        "/applications/executables/activity",
-        activity::ActivityExecutable,
-    )
-    .await;
-    mount_one(
-        context,
-        virtual_file_system,
-        task,
-        "/applications/executables/file_manager",
-        file_manager::FileManagerExecutable,
-    )
-    .await;
-    mount_one(
-        context,
-        virtual_file_system,
-        task,
-        "/applications/executables/settings",
-        settings::SettingsExecutable,
-    )
-    .await;
-    mount_one(
-        context,
-        virtual_file_system,
-        task,
-        "/applications/executables/terminal",
-        terminal::TerminalExecutable,
+        crate::WASM_PATH,
+        wasm::WasmExecutable,
     )
     .await;
 }

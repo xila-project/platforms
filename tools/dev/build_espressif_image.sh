@@ -47,6 +47,12 @@ build_esp32s3() {
     # Use Espressif's libclang and keep bindgen off the host's C library headers.
     export LIBCLANG_PATH="${clang_libraries[0]}"
     export BINDGEN_EXTRA_CLANG_ARGS_xtensa_esp32s3_none_elf=-ffreestanding
+    # bindgen passes no `--target` for host builds, such as the LVGL bindings
+    # that the WebAssembly runtime's build script reads, and Espressif's
+    # libclang defaults to a 32-bit target: name the host explicitly.
+    local host
+    host=$(rustup run esp rustc -vV | sed -n 's/^host: //p')
+    export "BINDGEN_EXTRA_CLANG_ARGS_${host//-/_}=--target=$host"
     rustup run esp cargo "${build_args[@]}" --target "$target" -Zbuild-std=core,alloc
 }
 

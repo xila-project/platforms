@@ -19,6 +19,7 @@ import tempfile
 import urllib.request
 
 ROOT = Path(__file__).resolve().parent.parent
+PROFILES = ("native", "browser", "wt32-sc01-plus")
 SAFE = re.compile(r"^[a-z][a-z0-9_]*$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -35,8 +36,8 @@ def fetch(item: dict, lockfile: Path, destination: Path) -> Path:
 
 
 def prepare(profile: str, lockfile: Path, output: Path, tool: Path) -> None:
-    if profile not in ("native", "browser"):
-        raise ValueError("profile must be native or browser")
+    if profile not in PROFILES:
+        raise ValueError(f"profile must be one of {', '.join(PROFILES)}")
     names = (ROOT / "tools/fs_image/profiles" / f"{profile}.txt").read_text().splitlines()
     names = [name for name in names if name]
     if len(names) != len(set(names)) or any(not SAFE.fullmatch(name) for name in names):
@@ -77,7 +78,7 @@ def prepare(profile: str, lockfile: Path, output: Path, tool: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", choices=("native", "browser"), required=True)
+    parser.add_argument("--profile", choices=PROFILES, required=True)
     parser.add_argument("--lockfile", type=Path, default=ROOT / "tools/fs_image/profiles/bundles.lock.json")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--tool", type=Path, required=True)
