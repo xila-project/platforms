@@ -36,7 +36,9 @@ settings. Joining a different network name removes them
 and switches to DHCP, so the saved profile has only the first two lines.
 Switching between different DHCP network names clears the previous address,
 route and DNS lease before reporting the new link up. Reconnecting to the
-same network name keeps the DHCP client and its lease.
+same network name keeps the DHCP client and its lease. Only the name is
+compared, so moving between two access points that share a name but serve
+different subnets keeps the old lease until the board reboots.
 
 To restore static addressing after switching networks, provision the
 five-line profile for the desired network and reboot. The firmware reads the
