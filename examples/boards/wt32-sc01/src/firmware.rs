@@ -1,6 +1,11 @@
 //! Wireless-Tag WT32-SC01 with the ESP32-WROVER-B module.
 
-use core::{mem::MaybeUninit, panic::PanicInfo};
+mod screen;
+
+use alloc::string::String;
+use core::{cell::RefCell, mem::MaybeUninit, panic::PanicInfo};
+
+use critical_section::Mutex;
 
 use drivers_espressif::{memory::MemoryManager, random::RandomDevice};
 use esp_hal::{
@@ -87,6 +92,24 @@ fn main() -> ! {
         }
     });
 
+    let (display, report) = match screen::start(screen::Pins {
+        spi: peripherals.SPI2,
+        dma: peripherals.DMA_SPI2,
+        data: peripherals.GPIO13,
+        clock: peripherals.GPIO14,
+        select: peripherals.GPIO15,
+        command_data: peripherals.GPIO21,
+        reset: peripherals.GPIO22,
+        backlight: peripherals.GPIO23,
+        i2c: peripherals.I2C0,
+        touch_data: peripherals.GPIO18,
+        touch_clock: peripherals.GPIO19,
+    }) {
+        Ok((display, identifiers)) => (Some(display), Ok(identifiers)),
+        Err(error) => (None, Err(error)),
+    };
+    critical_section::with(|section| SCREEN_REPORT.borrow(section).replace(Some(report)));
+
     firmware::run(Board {
         name: "WT32-SC01",
         console: serial.into(),
@@ -100,10 +123,23 @@ fn main() -> ! {
             external,
         },
         memory_check: Some(check_external_memory),
-        system_check: None,
-        display: None,
+        system_check: Some(log_screen_report),
+        display,
         sessions: &[session::CONSOLE],
     })
+}
+
+type ScreenReport = Result<(u8, u8), String>;
+static SCREEN_REPORT: Mutex<RefCell<Option<ScreenReport>>> = Mutex::new(RefCell::new(None));
+
+fn log_screen_report() {
+    match critical_section::with(|section| SCREEN_REPORT.borrow(section).take()) {
+        Some(Ok((chip, vendor))) => xila::log::information!(
+            "Xila: ST7796 on HSPI, FT6336U chip {chip:#04x}, vendor {vendor:#04x}"
+        ),
+        Some(Err(error)) => xila::log::error!("Xila: the screen is off, {error}"),
+        None => {}
+    }
 }
 
 fn check_external_memory(report: &MemoryReport) {

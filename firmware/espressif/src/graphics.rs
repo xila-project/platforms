@@ -113,11 +113,12 @@ pub(crate) async fn start(
 
     let resolution = manager.get_resolution().await.unwrap_or_default();
     log::information!(
-        "Xila: graphics on a {}x{} screen, {}-pixel draw buffer{}",
+        "Xila: graphics on a {}x{} screen, {}-pixel RGB565 draw buffer{} ({} bytes each)",
         resolution.get_x(),
         resolution.get_y(),
         display.draw_buffer_pixels,
-        if display.double_buffered { "s" } else { "" }
+        if display.double_buffered { "s" } else { "" },
+        display.draw_buffer_pixels * 2,
     );
 
     task_manager
@@ -127,4 +128,41 @@ pub(crate) async fn start(
         .await
         .expect("Failed to spawn the graphics loop");
     manager
+}
+
+/// Gives the classic board a touch target while measuring its boot heap.
+#[cfg(not(feature = "graphics"))]
+pub(crate) async fn show_touch_test(manager: &graphics::Manager) {
+    unsafe extern "C" fn show_touch(event: *mut lvgl::lv_event_t) {
+        // SAFETY: LVGL calls this while holding the graphics lock. The label
+        // belongs to the button that owns the event callback.
+        unsafe {
+            let label = lvgl::lv_event_get_user_data(event).cast();
+            lvgl::lv_label_set_text_static(label, c"Touch detected".as_ptr());
+        }
+    }
+
+    let _lock = manager.lock().await;
+    // SAFETY: the graphics lock is held and a display has been initialized.
+    unsafe {
+        let button = lvgl::lv_button_create(lvgl::lv_screen_active());
+        if button.is_null() {
+            return;
+        }
+        lvgl::lv_obj_set_size(button, 200, 80);
+        lvgl::lv_obj_set_pos(button, 40, 40);
+        let label = lvgl::lv_label_create(button);
+        if label.is_null() {
+            lvgl::lv_obj_delete(button);
+            return;
+        }
+        lvgl::lv_label_set_text_static(label, c"Touch test".as_ptr());
+        lvgl::lv_obj_center(label);
+        lvgl::lv_obj_add_event_cb(
+            button,
+            Some(show_touch),
+            lvgl::lv_event_code_t_LV_EVENT_CLICKED,
+            label.cast(),
+        );
+    }
 }

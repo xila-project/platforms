@@ -209,7 +209,7 @@ jobs:
           - board: wt32-sc01
             name: WT32-SC01
             xtensa: true
-            graphics: false
+            graphics: true
           - board: wt32-sc01-plus
             name: WT32-SC01 Plus
             xtensa: true
