@@ -118,6 +118,21 @@ pub(super) async fn apply_address(
     }
 }
 
+pub(super) async fn restart_dhcp(
+    file_system: &VirtualFileSystem,
+    task: TaskIdentifier,
+) -> Result<()> {
+    let mut interface =
+        File::open(file_system, task, INTERFACE_PATH, AccessFlags::Write.into()).await?;
+    let result = async {
+        interface.control(SET_DHCP_STATE, &false).await?;
+        apply_address(None, &mut interface).await
+    }
+    .await;
+    let closed = interface.close(file_system).await;
+    result.and(closed)
+}
+
 pub(super) async fn switch_to_dhcp(
     file_system: &VirtualFileSystem,
     task: TaskIdentifier,

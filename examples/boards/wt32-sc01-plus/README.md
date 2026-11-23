@@ -34,6 +34,14 @@ applies the leased address, default route and DNS server. Saving credentials
 for the same network name on the device keeps the existing static IPv4
 settings. Joining a different network name removes them
 and switches to DHCP, so the saved profile has only the first two lines.
+Switching between different DHCP network names clears the previous address,
+route and DNS lease before reporting the new link up. Reconnecting to the
+same network name keeps the DHCP client and its lease.
+
+To restore static addressing after switching networks, provision the
+five-line profile for the desired network and reboot. The firmware reads the
+profile's address settings at startup. Returning to the network through
+Settings continues to use DHCP.
 
 ## Hardware smoke test
 

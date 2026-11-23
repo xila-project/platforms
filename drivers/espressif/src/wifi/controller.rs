@@ -35,7 +35,10 @@ use virtual_file_system::VirtualFileSystem;
 
 use super::{
     INTERNAL_HEAP, MINIMUM_FREE_INTERNAL_HEAP, Peripherals, allocation, configuration,
-    profile::{Profile, StaticAddress, address_for_station, retry_station, validate_station},
+    profile::{
+        Profile, StaticAddress, address_for_station, needs_dhcp_restart, retry_station,
+        validate_station,
+    },
 };
 use crate::memory::MemoryManager;
 
@@ -244,6 +247,7 @@ pub(super) async fn run(
         file_system,
         task,
         address: profile.and_then(|profile| profile.address),
+        last_associated_network: None,
     };
 
     let mut start_now = match file_system.get_statistics(&STARTUP_MARKER).await {
@@ -362,6 +366,7 @@ struct Storage {
     file_system: &'static VirtualFileSystem,
     task: TaskIdentifier,
     address: Option<StaticAddress>,
+    last_associated_network: Option<WifiSsid>,
 }
 
 impl Storage {
@@ -597,18 +602,23 @@ async fn try_connect(
     update_state(|state| state.connection = WifiConnectionState::CONNECTING);
     let result = async {
         let information = associate(radio, station).await?;
-        if let Some(address) = storage.address
-            && address_for_station(preferred, Some(address), station).is_none()
-        {
-            if let Err(error) =
-                configuration::switch_to_dhcp(storage.file_system, storage.task, address).await
-            {
-                stop_association(radio).await;
-                log::warning!("Wi-Fi: cannot switch to DHCP ({error})");
-                return Err(WifiConnectionErrorKind::DRIVER);
+        let addressing = match storage.address {
+            Some(address) if address_for_station(preferred, Some(address), station).is_none() => {
+                configuration::switch_to_dhcp(storage.file_system, storage.task, address)
+                    .await
+                    .map(|()| storage.address = None)
             }
-            storage.address = None;
+            None if needs_dhcp_restart(storage.last_associated_network, &station.ssid) => {
+                configuration::restart_dhcp(storage.file_system, storage.task).await
+            }
+            _ => Ok(()),
+        };
+        if let Err(error) = addressing {
+            stop_association(radio).await;
+            log::warning!("Wi-Fi: cannot update addressing ({error})");
+            return Err(WifiConnectionErrorKind::DRIVER);
         }
+        storage.last_associated_network = Some(station.ssid);
         Ok(information)
     }
     .await;

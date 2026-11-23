@@ -1,7 +1,7 @@
 use core::{fmt::Write, net::Ipv4Addr};
 
 use file_system::{IoErrorKind, Result};
-use network::{WifiAuthentication, WifiClientConfiguration};
+use network::{WifiAuthentication, WifiClientConfiguration, WifiSsid};
 
 pub(super) const MAXIMUM_SIZE: usize = 160;
 
@@ -24,6 +24,10 @@ pub(super) fn address_for_station(
     station: &WifiClientConfiguration,
 ) -> Option<StaticAddress> {
     address.filter(|_| preferred.is_some_and(|preferred| preferred.ssid == station.ssid))
+}
+
+pub(super) fn needs_dhcp_restart(previous: Option<WifiSsid>, next: &WifiSsid) -> bool {
+    previous.is_some_and(|previous| previous.as_bytes() != next.as_bytes())
 }
 
 pub(super) fn retry_station(station: &WifiClientConfiguration) -> WifiClientConfiguration {
@@ -51,6 +55,24 @@ mod policy_tests {
             address_for_station(Some(&profile.station), profile.address, &other.station),
             None
         );
+    }
+
+    #[test]
+    fn dhcp_restarts_only_after_changing_network_names() {
+        let home = Profile::parse(b"home\npassword").unwrap().station;
+        let mut other_access_point = home.clone();
+        other_access_point.bssid = [1, 2, 3, 4, 5, 6];
+        other_access_point.use_bssid = 1;
+        other_access_point.ssid.bytes[31] = 1;
+        let hotspot = Profile::parse(b"hotspot\npassword").unwrap().station;
+
+        assert!(!needs_dhcp_restart(None, &home.ssid));
+        assert!(!needs_dhcp_restart(
+            Some(home.ssid),
+            &other_access_point.ssid
+        ));
+        assert!(needs_dhcp_restart(Some(home.ssid), &hotspot.ssid));
+        assert!(needs_dhcp_restart(Some(hotspot.ssid), &home.ssid));
     }
 
     #[test]
