@@ -73,9 +73,8 @@ neural-network = ["neural-network-core", "neural-network-all-ops"]
 neural-network-cmsis-nn = ["neural-network", "nanoglia/cmsis-nn"]
 neural-network-esp-nn = ["neural-network", "nanoglia/esp-nn"]
 # TensorFlow Lite dense classifiers, including the Digits model.
-neural-network-esp-nn-classifier = [
+neural-network-classifier = [
   "neural-network-core",
-  "nanoglia/esp-nn",
   "nanoglia/op-fully-connected",
   "nanoglia/op-softmax",
 ]

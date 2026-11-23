@@ -301,7 +301,7 @@ async fn start(task_manager: &'static task::Manager) {
                 .await,
         )
         .expect("Failed to create neural network device directory");
-        // The Wi-Fi heap policy prefers PSRAM for the model buffers and tensor arena.
+        // Allocations of 4 KiB or more prefer PSRAM, including the model buffers and tensor arena.
         drivers_shared::devices::neural_network::mount_loader(
             virtual_file_system,
             task,
