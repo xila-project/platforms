@@ -53,6 +53,7 @@ graphics = [
   "dep:terminal",
   "drivers_shared/touch-ft6336",
   "wasm?/graphics",
+  "xila/bootsplash",
   "xila/graphics",
 ]
 # WebAssembly runtime mounted at `/applications/executables/wasm`. Combined
