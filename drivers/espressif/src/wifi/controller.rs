@@ -648,13 +648,17 @@ async fn try_connect(
 fn station_configuration(configuration: &WifiClientConfiguration) -> Result<StationConfig> {
     let authentication = match configuration.authentication {
         WifiAuthentication::OPEN => AuthenticationMethodConfig::Open,
-        WifiAuthentication::WPA2_PERSONAL => AuthenticationMethodConfig::Wpa2Personal(
-            configuration
-                .credential
-                .as_bytes()?
-                .try_into()
-                .map_err(|_| IoErrorKind::InvalidArgument)?,
-        ),
+        // esp-radio cannot join with WPA3 (SAE), but a WPA2/WPA3 transition
+        // network also accepts WPA2 clients.
+        WifiAuthentication::WPA2_PERSONAL | WifiAuthentication::WPA2_WPA3_PERSONAL => {
+            AuthenticationMethodConfig::Wpa2Personal(
+                configuration
+                    .credential
+                    .as_bytes()?
+                    .try_into()
+                    .map_err(|_| IoErrorKind::InvalidArgument)?,
+            )
+        }
         _ => return Err(IoErrorKind::Unsupported),
     };
     let mut station = StationConfig::default()
@@ -741,7 +745,11 @@ fn set_radio_failure() {
 fn authentication_kind(method: AuthenticationMethod) -> WifiAuthentication {
     match method {
         AuthenticationMethod::None => WifiAuthentication::OPEN,
-        AuthenticationMethod::Wpa2Personal => WifiAuthentication::WPA2_PERSONAL,
+        // A WPA/WPA2 mixed network accepts WPA2 clients, which is how the
+        // station joins it.
+        AuthenticationMethod::Wpa2Personal | AuthenticationMethod::WpaWpa2Personal => {
+            WifiAuthentication::WPA2_PERSONAL
+        }
         AuthenticationMethod::Wpa3Personal => WifiAuthentication::WPA3_PERSONAL,
         AuthenticationMethod::Wpa2Wpa3Personal => WifiAuthentication::WPA2_WPA3_PERSONAL,
         _ => WifiAuthentication::UNSUPPORTED,
