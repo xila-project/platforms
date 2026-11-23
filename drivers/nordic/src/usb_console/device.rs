@@ -288,8 +288,8 @@ impl log::LoggerTrait for Logger {
     fn enabled(&self, level: log::Level) -> bool {
         match level {
             log::Level::Error => true,
-            log::Level::Warn => true,
-            log::Level::Info => true,
+            log::Level::Warning => true,
+            log::Level::Information => true,
             log::Level::Debug => false,
             log::Level::Trace => false,
         }

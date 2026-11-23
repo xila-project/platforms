@@ -79,6 +79,7 @@ testing = { package = "xila-testing", git = "https://github.com/xila-project/cor
   "environment",
 ] }
 device = { package = "xila-device", git = "https://github.com/xila-project/core", branch = "main" }
+testing_support = { package = "xila-testing-support", git = "https://github.com/xila-project/core", branch = "main" }
 
 # - Drivers
 drivers_core = { package = "xila-drivers-core", git = "https://github.com/xila-project/core", branch = "main" }

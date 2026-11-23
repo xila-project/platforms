@@ -40,6 +40,7 @@ profiling = ["task/profiling", "dep:miniserde"]
 task = { workspace = true, features = ["test_harness"] }
 little_fs = { workspace = true }
 critical-section = { workspace = true, features = ["std"] }
+testing_support = { workspace = true }
 
 [lib]
 name = "drivers_std"

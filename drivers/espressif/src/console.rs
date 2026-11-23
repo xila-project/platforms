@@ -244,7 +244,7 @@ pub fn set_interactive(interactive: bool) {
 
 fn importance(level: log::Level) -> LogImportance {
     match level {
-        log::Level::Error | log::Level::Warn => LogImportance::Problem,
+        log::Level::Error | log::Level::Warning => LogImportance::Problem,
         _ => LogImportance::Information,
     }
 }
@@ -298,7 +298,7 @@ impl log::LoggerTrait for Logger {
     fn enabled(&self, level: log::Level) -> bool {
         matches!(
             level,
-            log::Level::Error | log::Level::Warn | log::Level::Info
+            log::Level::Error | log::Level::Warning | log::Level::Information
         )
     }
 
@@ -311,8 +311,8 @@ impl log::LoggerTrait for Logger {
         // learn the level of the message.
         let (letter, color) = match record.level {
             log::Level::Error => ("E", "\x1b[0;41m"),
-            log::Level::Warn => ("W", "\x1b[0;43m"),
-            log::Level::Info => ("I", "\x1b[0;46m"),
+            log::Level::Warning => ("W", "\x1b[0;43m"),
+            log::Level::Information => ("I", "\x1b[0;46m"),
             log::Level::Debug => ("D", "\x1b[0;42m"),
             log::Level::Trace => ("T", "\x1b[0;100m"),
         };
