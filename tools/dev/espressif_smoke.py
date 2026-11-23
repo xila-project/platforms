@@ -215,8 +215,8 @@ def run(chip, qemu, image, runs, expect_wifi_profile=False):
 
 
 WIFI_TEST_NAME = b"QEMU smoke fixture"
-ESP32_S3_STORAGE_OFFSET = 0x190000
-ESP32_S3_STORAGE_LENGTH = 0x270000
+ESP32_S3_STORAGE_OFFSET = 0x210000
+ESP32_S3_STORAGE_LENGTH = 0x1F0000
 
 
 def add_wifi_profile(image, destination):
