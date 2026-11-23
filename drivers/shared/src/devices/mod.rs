@@ -1,3 +1,5 @@
+#[cfg(feature = "display-mipidsi")]
+pub mod display;
 mod hash;
 #[cfg(feature = "network")]
 mod http_client;
@@ -16,6 +18,8 @@ mod pointer_queue;
 ))]
 mod random;
 pub mod terminal;
+#[cfg(feature = "touch-ft6336")]
+pub mod touch;
 mod unsynchronized_time;
 
 pub use hash::*;

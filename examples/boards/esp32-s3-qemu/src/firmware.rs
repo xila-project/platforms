@@ -51,6 +51,7 @@ fn main() -> ! {
         },
         memory_check: None,
         system_check: Some(display::render),
+        display: None,
         sessions: &[session::CONSOLE],
     })
 }

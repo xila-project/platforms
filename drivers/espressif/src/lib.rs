@@ -81,6 +81,8 @@ pub mod console;
 pub mod executable_memory;
 #[cfg(feature = "executor")]
 pub mod executor;
+#[cfg(all(feature = "lcd-i8080", feature = "esp32s3"))]
+pub mod lcd;
 pub mod memory;
 #[cfg(feature = "power")]
 pub mod power;

@@ -2,6 +2,9 @@
 #![cfg_attr(all(target_os = "none", target_arch = "xtensa"), no_std, no_main)]
 
 #[cfg(all(target_os = "none", target_arch = "xtensa"))]
+extern crate alloc;
+
+#[cfg(all(target_os = "none", target_arch = "xtensa"))]
 mod firmware;
 
 #[cfg(not(all(target_os = "none", target_arch = "xtensa")))]

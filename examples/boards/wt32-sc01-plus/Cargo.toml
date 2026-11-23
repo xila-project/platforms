@@ -3,18 +3,31 @@ name = "xila-board-wt32-sc01-plus"
 version.workspace = true
 edition = "2024"
 rust-version.workspace = true
-description = "Wireless-Tag's WT32-SC01 Plus (ESP32-S3, 16 MB flash, 2 MB PSRAM)."
+description = "Wireless-Tag's WT32-SC01 Plus (ESP32-S3, 16 MB flash, 2 MB PSRAM, 3.5-inch touch screen)."
 
 # The board selects the chip: exactly one chip feature of each Espressif crate.
 [target.'cfg(all(target_os = "none", target_arch = "xtensa"))'.dependencies]
+critical-section = { workspace = true }
 drivers_espressif = { package = "xila-drivers-espressif", path = "../../../drivers/espressif", default-features = false, features = [
   "esp32s3",
+  "lcd-i8080",
+] }
+drivers_shared = { package = "xila-drivers-shared", path = "../../../drivers/shared", default-features = false, features = [
+  "display-mipidsi",
+  "touch-ft6336",
 ] }
 esp-bootloader-esp-idf = { version = "0.6", features = ["esp32s3"] }
 esp-hal = { version = "=1.2.2", features = ["esp32s3", "unstable"] }
 esp-storage = { version = "0.10", features = ["esp32s3"] }
-firmware = { package = "xila-firmware-espressif", path = "../../../firmware/espressif" }
-xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
+firmware = { package = "xila-firmware-espressif", path = "../../../firmware/espressif", features = [
+  "graphics",
+] }
+# `Display::set_pixels_raw` (almindor/mipidsi#205) is not released yet: switch
+# to the next crates.io release once it is out.
+mipidsi = { git = "https://github.com/almindor/mipidsi", rev = "5ed6df58d9b8a2b9037221bc03de1328340eaf47", default-features = false }
+xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false, features = [
+  "graphics_rendering_rgb565",
+] }
 
 [[bin]]
 name = "wt32_sc01_plus"

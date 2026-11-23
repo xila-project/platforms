@@ -2,6 +2,7 @@
 
 use drivers_espressif::{console::ConsolePort, random::RandomDevice};
 use esp_storage::FlashStorage;
+use xila::file_system::DirectCharacterDevice;
 
 use crate::session::Session;
 
@@ -31,8 +32,30 @@ pub struct Board {
     /// A board check that runs once the executables are mounted, before the
     /// heap report, for example a test frame on an emulated display.
     pub system_check: Option<fn()>,
+    /// The screen, on boards that have one. The firmware drives it when it is
+    /// built with the `graphics` feature.
+    pub display: Option<Display>,
     /// The sessions to start, each on its own terminal.
     pub sessions: &'static [Session],
+}
+
+/// A screen for Xila's graphics, with its optional pointer.
+pub struct Display {
+    /// The screen device: resolution, drawing area and pixel writes.
+    pub screen: &'static dyn DirectCharacterDevice,
+    /// A pointer, such as a touch panel, that LVGL polls.
+    pub pointer: Option<&'static dyn DirectCharacterDevice>,
+    /// Size of each LVGL draw buffer in pixels: LVGL renders in partial mode,
+    /// one area of at most this many pixels per flush.
+    pub draw_buffer_pixels: usize,
+    /// Whether LVGL renders into one buffer while the other is flushed.
+    pub double_buffered: bool,
+    /// Whether the screen takes RGB565 with the high byte first, as 8-bit
+    /// 8080 and SPI panels do: LVGL then renders in that byte order.
+    pub byte_swapped_rgb565: bool,
+    /// Whether to keep the draw buffers in internal SRAM, where DMA reads them
+    /// without cache maintenance and fast enough for the panel bus.
+    pub internal_draw_buffers: bool,
 }
 
 /// The memory the board gave the heap.

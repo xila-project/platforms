@@ -96,12 +96,24 @@ adds to the heap. The board's USB-C port is wired to the chip's built-in USB
 Serial/JTAG controller (USB identifier 303a:1001), with no USB to UART bridge,
 so the console, the logger and panic messages use that controller instead of
 UART0. At boot, a self-test allocates 1 MiB from the heap and checks that it
-lands in PSRAM and keeps its contents. The firmware boots headless for now: the
-display and touch screen are not driven yet.
+lands in PSRAM and keeps its contents.
 
-From the repository root, after `mise run setup:espressif-rust`:
+The 3.5-inch 480 × 320 ST7796 panel runs on the 8-bit 8080 bus of the chip's
+LCD_CAM peripheral, with DMA, through `mipidsi`: each LVGL flush is one
+`set_pixels_raw` call, one address window and one DMA transfer of LVGL's draw
+buffer (40 rows, in internal SRAM, rendered in the panel's byte order). The
+FT6336U touch panel is polled over I²C, and the backlight is on GPIO45. Two
+sessions run side by side, each with its own login: the graphical shell on the
+screen and the command-line shell on the USB console. The pins come from
+Wireless-Tag's datasheet; `src/firmware/screen.rs` lists them.
+
+From the repository root, after `mise run setup:espressif-rust`, install the
+locked npm packages once: Xila's graphics converts its fonts at build time
+with the `lv_font_conv` they provide, from `node_modules` at the repository
+root. Then build:
 
 ```sh
+npm ci
 mise run build:wt32-sc01-plus
 ```
 
@@ -118,7 +130,8 @@ mise run run:espflash -- flash --chip esp32s3 --port "$FLASH_PORT" \
 ```
 
 The first boot formats the 12.8 MB LittleFS partition. Look for the PSRAM
-size, `Xila: PSRAM self-test passed`, `Xila: LittleFS mounted`, the heap report and the `User name:` prompt.
+size, `Xila: PSRAM self-test passed`, `Xila: LittleFS mounted`, the graphics
+and touch controller lines, the heap report and the `User name:` prompt.
 Once the shell session starts, the console shows only warnings and errors from
 the log, a few per second at most, so that they do not bury the session.
 

@@ -132,13 +132,13 @@ description = "Test native and common platform drivers"
 tools."github:nextest-rs/nextest" = "cargo-nextest-{{ vars.nextest_version }}"
 run = """
 set -eu
-cargo nextest run --locked -p xila-drivers-espressif -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-drivers-nordic --features xila-drivers-native/audio,xila-drivers-shared/neural-network-cmsis-nn
-cargo test --locked -p xila-drivers-espressif -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-drivers-nordic --features xila-drivers-native/audio,xila-drivers-shared/neural-network-cmsis-nn --doc
+cargo nextest run --locked -p xila-drivers-espressif -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-drivers-nordic --features xila-drivers-native/audio,xila-drivers-shared/neural-network-cmsis-nn,xila-drivers-shared/display-mipidsi,xila-drivers-shared/touch-ft6336
+cargo test --locked -p xila-drivers-espressif -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-drivers-nordic --features xila-drivers-native/audio,xila-drivers-shared/neural-network-cmsis-nn,xila-drivers-shared/display-mipidsi,xila-drivers-shared/touch-ft6336 --doc
 """
 
 [tasks."clippy:drivers"]
 description = "Lint native and common platform drivers"
-run = "cargo clippy --locked -p xila-drivers-espressif -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-drivers-nordic --all-targets --features xila-drivers-native/audio,xila-drivers-shared/neural-network-cmsis-nn -- -D warnings"
+run = "cargo clippy --locked -p xila-drivers-espressif -p xila-drivers-native -p xila-drivers-std -p xila-drivers-shared -p xila-drivers-headless -p xila-drivers-nordic --all-targets --features xila-drivers-native/audio,xila-drivers-shared/neural-network-cmsis-nn,xila-drivers-shared/display-mipidsi,xila-drivers-shared/touch-ft6336 -- -D warnings"
 
 [tasks."clippy:browser"]
 description = "Lint browser drivers"
@@ -201,6 +201,7 @@ run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{
 [tasks."build:wt32-sc01-plus"]
 description = "Build the WT32-SC01 Plus firmware (examples/boards/wt32-sc01-plus) and merge it into a 16 MiB flash image"
 depends = ["setup:espflash"]
+tools.node = "{{ vars.node_version }}"
 run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' wt32-sc01-plus"
 
 [tasks."test:esp32-s3-qemu"]

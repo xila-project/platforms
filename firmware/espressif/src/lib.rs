@@ -18,8 +18,12 @@
 
 extern crate alloc;
 
+#[cfg(feature = "graphics")]
+mod applications;
 mod board;
 mod flash;
+#[cfg(feature = "graphics")]
+pub mod graphics;
 #[cfg(feature = "native-dev")]
 pub mod native;
 pub mod session;
@@ -39,7 +43,7 @@ use xila::{
     virtual_file_system::{self, AccessTimePolicy, File, MountOptions, mount_static},
 };
 
-pub use board::{Board, ExternalMemory, MemoryReport, StoragePartition, parse_decimal};
+pub use board::{Board, Display, ExternalMemory, MemoryReport, StoragePartition, parse_decimal};
 pub use drivers_espressif;
 
 /// The static internal heap reservation.
@@ -54,6 +58,9 @@ const BUILD_EPOCH: u64 = parse_decimal(env!("XILA_BUILD_EPOCH"));
 
 /// The command-line shell, which every board mounts.
 pub const SHELL_PATH: &str = "/system/executables/command_line_shell";
+
+/// The graphical shell, mounted when the firmware has the `graphics` feature.
+pub const GRAPHICAL_SHELL_PATH: &str = "/system/executables/graphical_shell";
 
 /// How long the startup task waits for the boot report to reach the console
 /// before it starts the sessions: at most 50 checks, 2 seconds in all.
@@ -117,6 +124,7 @@ async fn start(task_manager: &'static task::Manager) {
         memory,
         memory_check,
         system_check,
+        display,
         sessions,
     } = board;
 
@@ -315,11 +323,29 @@ async fn start(task_manager: &'static task::Manager) {
     }
     .expect("Failed to load the accounts");
 
+    // - Graphics, on boards with a screen.
+    #[cfg(feature = "graphics")]
+    let graphics_manager = match display {
+        Some(display) => {
+            let manager = graphics::start(task_manager, task, time_manager, display).await;
+            xila::graphics::appearance::restore_appearance(manager, virtual_file_system, task)
+                .await;
+            Some(manager)
+        }
+        None => None,
+    };
+    #[cfg(not(feature = "graphics"))]
+    if display.is_some() {
+        log::warning!("Xila: the board has a screen, but the firmware has no graphics");
+    }
+
     // - Executables.
     let executable_context: &'static executable::ExecutableContext =
         Box::leak(Box::new(executable::ExecutableContext {
             #[cfg(feature = "native-dev")]
             formats: native::FORMATS,
+            #[cfg(feature = "graphics")]
+            graphics_manager,
             ..executable::ExecutableContext::new(
                 task_manager,
                 users_manager,
@@ -327,14 +353,31 @@ async fn start(task_manager: &'static task::Manager) {
                 time_manager,
             )
         }));
-    mount_executables!(
+    // The shells, in memory: nothing from an earlier boot is there.
+    #[cfg(not(feature = "graphics"))]
+    let mounted = mount_executables!(
         executable_context,
         virtual_file_system,
         task,
         &[(&SHELL_PATH, command_line_shell::ShellExecutable)]
     )
-    .await
-    .expect("Failed to mount the executables");
+    .await;
+    #[cfg(feature = "graphics")]
+    let mounted = mount_executables!(
+        executable_context,
+        virtual_file_system,
+        task,
+        &[
+            (&SHELL_PATH, command_line_shell::ShellExecutable),
+            (&GRAPHICAL_SHELL_PATH, graphical_shell::ShellExecutable),
+        ]
+    )
+    .await;
+    if let Err(error) = mounted {
+        log::error!("Xila: cannot mount the shells: {error}");
+    }
+    #[cfg(feature = "graphics")]
+    applications::mount(executable_context, virtual_file_system, task).await;
 
     task_manager
         .set_environment_variable(task, "Paths", "/system/executables:/")
