@@ -1,3 +1,8 @@
+html {
+  /* Match the default LVGL background while the seed image loads. */
+  background-color: #09090b;
+}
+
 body,
 #sidebar {
   font-family: "Montserrat", Arial, Helvetica, sans-serif;
