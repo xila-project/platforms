@@ -18,6 +18,57 @@ pub(super) struct StaticAddress {
     pub name_server: Ipv4Addr,
 }
 
+pub(super) fn address_for_station(
+    preferred: Option<&WifiClientConfiguration>,
+    address: Option<StaticAddress>,
+    station: &WifiClientConfiguration,
+) -> Option<StaticAddress> {
+    address.filter(|_| preferred.is_some_and(|preferred| preferred.ssid == station.ssid))
+}
+
+pub(super) fn retry_station(station: &WifiClientConfiguration) -> WifiClientConfiguration {
+    let mut station = station.clone();
+    station.use_bssid = 0;
+    station.bssid = [0; 6];
+    station.channel = 0;
+    station
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::*;
+
+    #[test]
+    fn static_address_belongs_to_the_saved_network() {
+        let profile =
+            Profile::parse(b"home\npassword\n192.0.2.2/24\n192.0.2.1\n192.0.2.1").unwrap();
+        let other = Profile::parse(b"hotspot\npassword").unwrap();
+        assert_eq!(
+            address_for_station(Some(&profile.station), profile.address, &profile.station),
+            profile.address
+        );
+        assert_eq!(
+            address_for_station(Some(&profile.station), profile.address, &other.station),
+            None
+        );
+    }
+
+    #[test]
+    fn retry_uses_network_credentials_without_scan_pin() {
+        let mut station = Profile::parse(b"home\npassword").unwrap().station;
+        station.use_bssid = 1;
+        station.bssid = [1, 2, 3, 4, 5, 6];
+        station.channel = 6;
+        let retry = retry_station(&station);
+        assert_eq!(retry.use_bssid, 0);
+        assert_eq!(retry.bssid, [0; 6]);
+        assert_eq!(retry.channel, 0);
+        assert!(retry.ssid == station.ssid);
+        assert_eq!(retry.credential.as_bytes(), station.credential.as_bytes());
+        assert_eq!(station.channel, 6);
+    }
+}
+
 impl Profile {
     pub fn parse(contents: &[u8]) -> Result<Self> {
         if contents.len() > MAXIMUM_SIZE {

@@ -35,12 +35,13 @@ use virtual_file_system::VirtualFileSystem;
 
 use super::{
     INTERNAL_HEAP, MINIMUM_FREE_INTERNAL_HEAP, Peripherals, allocation, configuration,
-    profile::{Profile, StaticAddress, validate_station},
+    profile::{Profile, StaticAddress, address_for_station, retry_station, validate_station},
 };
 use crate::memory::MemoryManager;
 
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
 const DISCONNECTION_TIMEOUT: Duration = Duration::from_secs(3);
+const LINK_RECHECK_INTERVAL: Duration = Duration::from_secs(1);
 const SCAN_TIMEOUT: Duration = Duration::from_secs(10);
 const MAXIMUM_SCAN_RESULTS: usize = 16;
 const STARTUP_MARKER: &str = "/configuration/system/.wifi-starting";
@@ -239,7 +240,7 @@ pub(super) async fn run(
     profile: Option<Profile>,
 ) {
     let mut preferred = profile.as_ref().map(|profile| profile.station.clone());
-    let storage = Storage {
+    let mut storage = Storage {
         file_system,
         task,
         address: profile.and_then(|profile| profile.address),
@@ -322,13 +323,27 @@ pub(super) async fn run(
         let mut retry = Retry::new();
         let mut connection = preferred.clone();
         if let Some(station) = &connection {
-            try_connect(&mut radio, station, &mut retry).await;
+            try_connect(
+                &mut radio,
+                station,
+                &mut retry,
+                &mut storage,
+                preferred.as_ref(),
+            )
+            .await;
         }
         watchdog.disable();
         storage.finish_startup().await;
         update_state(|state| state.busy = false);
 
-        drive(&mut radio, &storage, &mut preferred, &mut connection, retry).await;
+        drive(
+            &mut radio,
+            &mut storage,
+            &mut preferred,
+            &mut connection,
+            retry,
+        )
+        .await;
         // Deinitializing the controller shuts down Wi-Fi and the modem clocks.
         allocation::internal(|| drop(radio));
         update_state(|state| {
@@ -395,7 +410,7 @@ impl Retry {
 
 async fn drive(
     radio: &mut WifiController<'_>,
-    storage: &Storage,
+    storage: &mut Storage,
     preferred: &mut Option<WifiClientConfiguration>,
     connection: &mut Option<WifiClientConfiguration>,
     mut retry: Retry,
@@ -403,17 +418,23 @@ async fn drive(
     let mut save_on_success = false;
     loop {
         let request = if StationControl::link_up() {
+            // The radio can disconnect between the SDK's state check and its event subscription.
             match select(
                 REQUEST.wait(),
-                allocation::poll_internal(radio.wait_for_disconnect_async()),
+                embassy_time::with_timeout(
+                    LINK_RECHECK_INTERVAL,
+                    allocation::poll_internal(radio.wait_for_disconnect_async()),
+                ),
             )
             .await
             {
                 Either::First(request) => Some(request),
                 Either::Second(event) => {
-                    let reason = event.map_or(WifiConnectionErrorKind::RADIO, |event| {
-                        classify(event.reason)
-                    });
+                    let reason = match event {
+                        Ok(Ok(event)) => classify(event.reason),
+                        Err(_) if radio.is_connected() => continue,
+                        _ => WifiConnectionErrorKind::RADIO,
+                    };
                     set_disconnected(reason);
                     if connection.is_some() {
                         retry.schedule();
@@ -466,7 +487,6 @@ async fn drive(
                 false
             }
             None => {
-                retry.deadline = None;
                 // Reserve this operation against an incoming control request.
                 update_state(|state| {
                     if state.busy {
@@ -477,20 +497,29 @@ async fn drive(
                 })
             }
         };
-        if attempt
-            && let Some(station) = connection
-            && try_connect(radio, station, &mut retry).await
-            && save_on_success
-        {
-            save_on_success = false;
-            *preferred = Some(station.clone());
-            match configuration::save(storage.file_system, storage.task, station, storage.address)
-                .await
+        if attempt && let Some(station) = connection {
+            if automatic {
+                retry.deadline = None;
+                *station = retry_station(station);
+            }
+            if try_connect(radio, station, &mut retry, storage, preferred.as_ref()).await
+                && save_on_success
             {
-                Ok(()) => log::information!("Wi-Fi: station profile saved"),
-                Err(error) => {
-                    update_state(|state| state.error = WifiConnectionErrorKind::DRIVER);
-                    log::warning!("Wi-Fi: cannot save station profile ({error})");
+                save_on_success = false;
+                *preferred = Some(retry_station(station));
+                match configuration::save(
+                    storage.file_system,
+                    storage.task,
+                    station,
+                    storage.address,
+                )
+                .await
+                {
+                    Ok(()) => log::information!("Wi-Fi: station profile saved"),
+                    Err(error) => {
+                        update_state(|state| state.error = WifiConnectionErrorKind::DRIVER);
+                        log::warning!("Wi-Fi: cannot save station profile ({error})");
+                    }
                 }
             }
         }
@@ -562,9 +591,28 @@ async fn try_connect(
     radio: &mut WifiController<'_>,
     station: &WifiClientConfiguration,
     retry: &mut Retry,
+    storage: &mut Storage,
+    preferred: Option<&WifiClientConfiguration>,
 ) -> bool {
     update_state(|state| state.connection = WifiConnectionState::CONNECTING);
-    match associate(radio, station).await {
+    let result = async {
+        let information = associate(radio, station).await?;
+        if let Some(address) = storage.address
+            && address_for_station(preferred, Some(address), station).is_none()
+        {
+            if let Err(error) =
+                configuration::switch_to_dhcp(storage.file_system, storage.task, address).await
+            {
+                stop_association(radio).await;
+                log::warning!("Wi-Fi: cannot switch to DHCP ({error})");
+                return Err(WifiConnectionErrorKind::DRIVER);
+            }
+            storage.address = None;
+        }
+        Ok(information)
+    }
+    .await;
+    match result {
         Ok(information) => {
             update_state(|state| {
                 state.connection = WifiConnectionState::CONNECTED;

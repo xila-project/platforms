@@ -86,7 +86,7 @@ pub async fn initialize(
     let mut interface = File::open(
         file_system,
         task,
-        "/devices/network/wlan0",
+        configuration::INTERFACE_PATH,
         AccessFlags::Write.into(),
     )
     .await?;

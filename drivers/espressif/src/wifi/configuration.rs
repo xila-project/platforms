@@ -1,12 +1,16 @@
 use file_system::{AccessFlags, CreateFlags, Flags, IoErrorKind, Kind, Permissions, Result};
 use network::{
-    ADD_DNS_SERVER, ADD_IP_ADDRESS, ADD_ROUTE, IpAddress, IpCidr, Route, SET_DHCP_STATE,
+    ADD_DNS_SERVER, ADD_IP_ADDRESS, ADD_ROUTE, GET_DHCP_STATE, GET_DNS_SERVER,
+    GET_DNS_SERVER_COUNT, GET_IP_ADDRESS, GET_IP_ADDRESS_COUNT, GET_ROUTE, GET_ROUTE_COUNT,
+    IpAddress, IpCidr, REMOVE_DNS_SERVER, REMOVE_IP_ADDRESS, REMOVE_ROUTE, Route, SET_DHCP_STATE,
     WifiClientConfiguration,
 };
 use task::TaskIdentifier;
 use virtual_file_system::{File, VirtualFileSystem};
 
 use super::profile::{MAXIMUM_SIZE, Profile, StaticAddress};
+
+pub(super) const INTERFACE_PATH: &str = "/devices/network/wlan0";
 
 const PATH: &str = "/configuration/system/wifi";
 const TEMPORARY: &str = "/configuration/system/.wifi-new";
@@ -112,6 +116,45 @@ pub(super) async fn apply_address(
     } else {
         interface.control(SET_DHCP_STATE, &true).await
     }
+}
+
+pub(super) async fn switch_to_dhcp(
+    file_system: &VirtualFileSystem,
+    task: TaskIdentifier,
+    address: StaticAddress,
+) -> Result<()> {
+    let mut interface =
+        File::open(file_system, task, INTERFACE_PATH, AccessFlags::Write.into()).await?;
+    let result = async {
+        let gateway = Route::new_default_ipv4(address.gateway.octets());
+        for index in 0..interface.control(GET_ROUTE_COUNT, &()).await? {
+            if interface.control(GET_ROUTE, &index).await? == gateway {
+                interface.control(REMOVE_ROUTE, &index).await?;
+                break;
+            }
+        }
+        let name_server = IpAddress::new_ipv4(address.name_server.octets());
+        for index in 0..interface.control(GET_DNS_SERVER_COUNT, &()).await? {
+            if interface.control(GET_DNS_SERVER, &index).await? == name_server {
+                interface.control(REMOVE_DNS_SERVER, &index).await?;
+                break;
+            }
+        }
+        let address = IpCidr::new_ipv4(address.address.octets(), address.prefix);
+        for index in 0..interface.control(GET_IP_ADDRESS_COUNT, &()).await? {
+            if interface.control(GET_IP_ADDRESS, &index).await? == address {
+                interface.control(REMOVE_IP_ADDRESS, &index).await?;
+                break;
+            }
+        }
+        if !interface.control(GET_DHCP_STATE, &()).await? {
+            apply_address(None, &mut interface).await?;
+        }
+        Ok(())
+    }
+    .await;
+    let closed = interface.close(file_system).await;
+    result.and(closed)
 }
 
 struct SecretBuffer<const LENGTH: usize>([u8; LENGTH]);
