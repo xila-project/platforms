@@ -292,6 +292,34 @@ async fn start(task_manager: &'static task::Manager) {
     )
     .await
     .expect("Failed to mount the devices");
+
+    #[cfg(feature = "neural-network")]
+    {
+        virtual_file_system::ignore_already_exists_error(
+            virtual_file_system
+                .create_directory(task, &"/devices/nn")
+                .await,
+        )
+        .expect("Failed to create neural network device directory");
+        // Allocations of 4 KiB or more prefer PSRAM, including the model buffers and tensor arena.
+        drivers_shared::devices::neural_network::mount_loader(
+            virtual_file_system,
+            task,
+            "/devices/nn/cpu",
+            drivers_shared::devices::neural_network::Target::Cpu,
+            256 * 1024,
+        )
+        .await
+        .expect("Failed to mount CPU neural network loader");
+        drivers_shared::devices::neural_network::mount_backend_information(
+            virtual_file_system,
+            task,
+            "/devices/nn/backend",
+        )
+        .await
+        .expect("Failed to mount neural network backend information");
+    }
+
     drivers_peripherals::mount_peripheral(
         virtual_file_system,
         task,

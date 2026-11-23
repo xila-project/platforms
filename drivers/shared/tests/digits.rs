@@ -1,4 +1,4 @@
-#![cfg(feature = "neural-network")]
+#![cfg(any(feature = "neural-network", feature = "neural-network-classifier"))]
 //! The model Digits ships, loaded at runtime through the platform loader node.
 extern crate critical_section;
 testing::instantiate_global_allocator!();
@@ -9,6 +9,12 @@ use virtual_file_system::File;
 
 #[task::test]
 async fn mnist_digits_run_through_the_portable_vfs_backend() {
+    #[cfg(all(feature = "neural-network-classifier", not(feature = "neural-network")))]
+    assert_eq!(
+        drivers_shared::devices::neural_network::backend_names(),
+        "rust"
+    );
+
     let tasks = Box::leak(Box::new(task::Manager::new()));
     let users = Box::leak(Box::new(users::Manager::new()));
     let time = Box::leak(Box::new(time::Manager::new(&testing::TimeDevice).unwrap()));

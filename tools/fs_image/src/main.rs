@@ -321,7 +321,8 @@ mod tests {
         use std::fs;
 
         let board_profile = profile("wt32-sc01-plus", NativeRuntime::Unix).unwrap();
-        assert_eq!(board_profile.applications, ["calculator", "clock"]);
+        let browser_profile = profile("wasm", NativeRuntime::Unix).unwrap();
+        assert_eq!(board_profile.applications, browser_profile.applications);
         let shortcut_names: Vec<&str> = board_profile
             .shortcuts
             .iter()
@@ -341,11 +342,9 @@ mod tests {
         let root = env::temp_dir().join(format!("xila-fs-image-wt32-test-{}", process::id()));
         let _ = fs::remove_dir_all(&root);
         let bundles = root.join("bundles");
-        for (package, executable) in [
-            ("xila.calculator", "calculator.wasm"),
-            ("xila.clock", "clock.wasm"),
-        ] {
-            let bundle = bundles.join(package);
+        for application in &board_profile.applications {
+            let bundle = bundles.join(format!("xila.{}", application.replace('_', "-")));
+            let executable = format!("{application}.wasm");
             fs::create_dir_all(bundle.join(".xila")).unwrap();
             fs::create_dir_all(bundle.join("executables")).unwrap();
             fs::write(bundle.join(".xila/manifest.json"), b"{}").unwrap();
@@ -421,14 +420,15 @@ mod tests {
             !read_file("/configuration/shared/applications/shortcuts/terminal.json").is_empty()
         );
         assert!(!read_file("/configuration/system/packages/repositories/xila.json").is_empty());
-        assert_eq!(
-            read_file("/applications/bundles/xila.calculator/executables/calculator.wasm"),
-            b"\0asm"
-        );
-        assert_eq!(
-            read_file("/applications/bundles/xila.clock/executables/clock.wasm"),
-            b"\0asm"
-        );
+        for application in &board_profile.applications {
+            let package = application.replace('_', "-");
+            assert_eq!(
+                read_file(&format!(
+                    "/applications/bundles/xila.{package}/executables/{application}.wasm"
+                )),
+                b"\0asm"
+            );
+        }
         for (path, mode) in [
             ("/system/accounts", 0o700),
             ("/system/accounts/.seed-pending", 0o644),

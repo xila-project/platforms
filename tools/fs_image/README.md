@@ -75,7 +75,7 @@ modification times do not enter the image.
 The native and browser profiles both contain Calculator, Clock, Digits, Pixel Painter, Synth, Text Editor and
 Weather. In the browser, Weather and `web_request` reach the network through the `fetch`-backed
 `https_client` device, so they only work against servers that allow cross-origin requests.
-Both include native application shortcuts. The `wt32-sc01-plus` profile contains Calculator and Clock
+Both include native application shortcuts. The `wt32-sc01-plus` profile includes the same seven Wasm applications
 with the Activity, File manager, Settings and Terminal shortcuts and the official registry, built as a
 raw 4096-byte-block LittleFS image sized to the board's `storage` partition in
 [partitions.csv](../../examples/boards/wt32-sc01-plus/partitions.csv). Set `EMBEDDED_I18N_LOCALE=en`, `fr`, `es`, `de`, `pt-BR`, `it`, `pl`, `ja` or `zh-CN`
