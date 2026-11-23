@@ -199,7 +199,8 @@ the log, a few per second at most, so that they do not bury the session.
 
 To seed the `storage` partition with the native application shortcuts
 (Activity, File manager, Settings and Terminal), the official package registry,
-and the Calculator and Clock WebAssembly application bundles, build the raw
+and the Calculator, Clock, Digits, Pixel Painter, Synth, Text Editor and Weather
+WebAssembly application bundles, build the raw
 4096-byte-block LittleFS image. The task reads the image size from the
 `storage` row of [partitions.csv](wt32-sc01-plus/partitions.csv).
 
@@ -207,6 +208,10 @@ Until format-v2 releases are pinned, build the WebAssembly guests from the
 locked Applications revision, package them with `tools/bundle_applications.sh`,
 and set `XILA_BUNDLES_DIR` to the resulting bundle directory. See the
 [seed image documentation](../../tools/fs_image/README.md) for the bundle inputs.
+Digits uses the neural network loader at `/devices/nn/cpu`. The firmware
+includes ESP-NN for supported quantized operators and runs the current
+floating-point Digits model with Nanoglia’s portable kernels. Weather requires
+a Wi-Fi connection.
 Writing the image at the partition offset replaces its existing contents.
 
 **Migration from the 3 MiB factory layout.** Back up your storage data before

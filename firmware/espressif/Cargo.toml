@@ -58,6 +58,7 @@ graphics = [
 # WebAssembly runtime mounted at `/applications/executables/wasm`. Combined
 # with `graphics`, guests also receive the LVGL graphics host import.
 wasm = ["dep:wasm"]
+neural-network = ["drivers_shared/neural-network-esp-nn"]
 wifi = [
   "drivers_espressif/wifi",
   "command_line_shell/network",

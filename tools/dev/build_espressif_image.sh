@@ -53,6 +53,10 @@ build_esp32s3() {
     export PATH="$gcc_bin:$PATH"
     export CC_xtensa_esp32s3_none_elf=xtensa-esp32s3-elf-gcc
     export CFLAGS_xtensa_esp32s3_none_elf=-mlongcalls
+    if [[ "$board" == wt32-sc01-plus ]]; then
+        # Keep ESP-NN assembly literal pools beside their Xtensa flash code.
+        CFLAGS_xtensa_esp32s3_none_elf+=" -mtext-section-literals"
+    fi
     # Use Espressif's libclang and keep bindgen off the host's C library headers.
     export LIBCLANG_PATH="${clang_libraries[0]}"
     export BINDGEN_EXTRA_CLANG_ARGS_xtensa_esp32s3_none_elf=-ffreestanding
