@@ -131,7 +131,7 @@ mise run run:espflash -- flash --chip esp32s3 --port "$FLASH_PORT" \
   --monitor target/espressif-emulator/wt32-sc01-plus.elf
 ```
 
-The first boot formats the 12.8 MB LittleFS partition. Look for the PSRAM
+The first boot formats the LittleFS partition, which has 3056 blocks of 4096 bytes. Look for the PSRAM
 size, `Xila: PSRAM self-test passed`, `Xila: LittleFS mounted`, the graphics
 and touch controller lines, the heap report and the `User name:` prompt.
 Once the shell session starts, the console shows only warnings and errors from
@@ -149,10 +149,15 @@ and set `XILA_BUNDLES_DIR` to the resulting bundle directory. See the
 [seed image documentation](../../tools/fs_image/README.md) for the bundle inputs.
 Writing the image at the partition offset replaces its existing contents.
 
+**Migration from the 3 MiB factory layout.** Back up your storage data before
+upgrading. Reflash the partition table with the firmware command above, then
+write the storage image at the new offset below or let the firmware format the
+partition on first boot. This migration erases the existing storage data.
+
 ```sh
 XILA_BUNDLES_DIR=/path/to/bundles mise run image:wt32-sc01-plus
 mise run run:espflash -- write-bin --chip esp32s3 --port "$FLASH_PORT" \
-  --flash-size 16mb --flash-mode dio 0x310000 target/seed/wt32-sc01-plus/storage.img
+  --flash-size 16mb --flash-mode dio 0x410000 target/seed/wt32-sc01-plus/storage.img
 ```
 
 The seeded image carries the first-installation marker so the firmware creates
