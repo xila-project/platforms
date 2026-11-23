@@ -67,7 +67,9 @@ build_esp32s3() {
 
 # rustup runs the esp toolchain directly: the mise Cargo wrapper is host-only.
 build_args=(build --locked -p "$package" --profile release-embedded "$@")
-# The flash size must match the board's partition table.
+# The flash size must match the board's partition table. Boards that do not
+# set a flash frequency use espflash's default for the chip.
+flash_frequency_arguments=()
 case "$board" in
     esp32-s3-qemu)
         chip=esp32s3
@@ -79,7 +81,10 @@ case "$board" in
     wt32-sc01-plus)
         chip=esp32s3
         target=xtensa-esp32s3-none-elf
-        flash_mode=dio
+        # The module's flash reads in quad I/O at 80 MHz, twice as fast as
+        # dual I/O for code and read-only data that miss the cache.
+        flash_mode=qio
+        flash_frequency_arguments=(--flash-freq 80mhz)
         flash_size=16mb
         build_esp32s3
         ;;
@@ -117,6 +122,7 @@ fi
 report="$root/$board-save-image.log"
 if ! "$root/tools/espflash-$espflash_version/espflash" save-image --skip-update-check \
     --chip "$chip" --flash-size "$flash_size" --flash-mode "$flash_mode" \
+    "${flash_frequency_arguments[@]}" \
     --partition-table "$partition_table" --partition-table-offset 0x8000 \
     --merge "$root/$board.elf" "$root/$board-flash.bin" \
     > "$report" 2>&1; then

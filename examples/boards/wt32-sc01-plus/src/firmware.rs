@@ -4,8 +4,9 @@
 //! - Console: the USB-C port is wired to the chip's USB Serial/JTAG controller
 //!   (303a:1001), with no USB to UART bridge, so the console, the logger and
 //!   panic messages use that controller.
-//! - Clocks: esp-hal's defaults. Enable the `boot-benchmark` feature to log
-//!   their speed once at boot.
+//! - Clocks: the CPU runs at 240 MHz, and the flash, in quad I/O mode, and
+//!   the PSRAM at 80 MHz. Enable the `boot-benchmark` feature to log their
+//!   speed once at boot.
 //! - PSRAM: added to the heap, and checked at boot by [`psram_self_test`].
 //! - Flash: 16 MB, partitioned by `partitions.csv`.
 //! - Screen: a 480 × 320 ST7796 panel on the 8080 bus, its backlight and an
@@ -41,11 +42,17 @@ const STORAGE: StoragePartition = StoragePartition {
     length: parse_decimal(env!("XILA_STORAGE_LENGTH")) as u32,
 };
 
-/// The CPU clock: esp-hal's default for the ESP32-S3.
-const CPU_CLOCK: CpuClock = CpuClock::_80MHz;
+/// The CPU clock. esp-hal's default for the ESP32-S3 is 80 MHz; 240 MHz is the
+/// chip's maximum and ESP-IDF's usual setting. The peripherals this board uses
+/// take their clocks from the 80 MHz APB clock, the crystal or the PLL, not
+/// from the CPU clock, so their rates do not change.
+const CPU_CLOCK: CpuClock = CpuClock::_240MHz;
 
-/// The PSRAM clock: esp-hal's default.
-const PSRAM_FREQUENCY: SpiRamFreq = SpiRamFreq::Freq40m;
+/// The PSRAM clock. esp-hal's default is 40 MHz. ESP-IDF supports quad PSRAM
+/// at 80 MHz with quad flash at 80 MHz on the ESP32-S3: both share one clock,
+/// and only 120 MHz needs the phase calibration that esp-hal does not do.
+/// esp-hal then divides an 80 MHz memory SPI core clock by one for both.
+const PSRAM_FREQUENCY: SpiRamFreq = SpiRamFreq::Freq80m;
 
 /// The flash clock. The PSRAM setup reprograms the flash clock divider too, so
 /// this, not the image header, sets the flash clock once the firmware runs.

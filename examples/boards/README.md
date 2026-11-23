@@ -119,20 +119,64 @@ npm ci
 mise run build:wt32-sc01-plus
 ```
 
-This writes the firmware to `target/espressif-emulator/wt32-sc01-plus.elf`
-and a merged 16 MiB image next to it. Connect the board's USB-C port, set
-`FLASH_PORT` to its device path (`/dev/ttyACM0` on Linux), and flash with the
-board's partition table:
+This writes the firmware to `target/espressif-emulator/wt32-sc01-plus.elf` and
+a merged 16 MiB flash image, `target/espressif-emulator/wt32-sc01-plus-flash.bin`.
+
+**The merged image overwrites the stored data.** It spans the whole flash,
+including the erased `storage` partition of
+[partitions.csv](wt32-sc01-plus/partitions.csv), where the LittleFS file system
+lives. A raw write of it at offset zero replaces that partition: the accounts,
+the installed applications and every stored file are lost. Use it only to
+provision a fresh or wiped board. To upgrade a board that already has the
+current partition layout and keep its storage, flash the ELF instead (it writes
+the boot loader, the partition table and the application, never the `storage`
+partition), or write only the application (below). A board with an older
+partition layout does not keep its storage this way: see the migration below.
+Connect the board's USB-C port and set `FLASH_PORT` to its device path
+(`/dev/ttyACM0` on Linux).
+
+Flash the ELF with the board's partition table:
 
 ```sh
 mise run run:espflash -- flash --chip esp32s3 --port "$FLASH_PORT" \
-  --flash-size 16mb --flash-mode dio \
+  --flash-size 16mb --flash-mode qio --flash-freq 80mhz \
   --partition-table examples/boards/wt32-sc01-plus/partitions.csv --partition-table-offset 0x8000 \
   --monitor target/espressif-emulator/wt32-sc01-plus.elf
 ```
 
+With espflash's bundled boot loader, the ELF command and the merged image
+write the same headers: DIO at 80 MHz for the second-stage boot loader, which
+the ROM requires and which switches the flash chip to quad I/O, and QIO at
+80 MHz for the application. A boot loader that you configured locally in
+espflash can bypass the selection of the bundled QIO boot loader.
+
+To write only the application, to the `factory` partition, and leave the
+installed boot loader, the partition table and the `storage` partition
+untouched, on a board whose partition table already matches
+[partitions.csv](wt32-sc01-plus/partitions.csv), build the application image and
+write it at the partition's offset, read from the partition table:
+
+```sh
+factory_offset=$(awk -F ',' '$1 == "factory" { gsub(/ /, "", $4); print $4 }' \
+  examples/boards/wt32-sc01-plus/partitions.csv)
+mise run run:espflash -- save-image --chip esp32s3 \
+  --flash-size 16mb --flash-mode qio --flash-freq 80mhz \
+  target/espressif-emulator/wt32-sc01-plus.elf \
+  target/espressif-emulator/wt32-sc01-plus-application.bin
+mise run run:espflash -- write-bin --chip esp32s3 --port "$FLASH_PORT" \
+  "$factory_offset" target/espressif-emulator/wt32-sc01-plus-application.bin
+```
+
+An application-only update keeps the flash mode of the boot loader that is
+already installed, so a board that was flashed with a DIO boot loader needs one
+`espflash flash` of the ELF, as above, to install the QIO boot loader.
+
+The CPU runs at 240 MHz, where esp-hal starts the ESP32-S3 at 80 MHz, and the
+flash and the PSRAM at 80 MHz, the flash in quad I/O mode.
+
 The boot benchmark is opt-in, so that normal boots stay fast and quiet. To
-include it, pass the board crate's `boot-benchmark` feature to the build:
+include it, pass the board crate's `boot-benchmark` feature to the build, then
+flash as above:
 
 ```sh
 mise run build:wt32-sc01-plus -- --features boot-benchmark
@@ -140,10 +184,12 @@ mise run build:wt32-sc01-plus -- --features boot-benchmark
 
 After the PSRAM self-test, the `Xila: boot benchmark` lines give the clocks,
 the flash read mode, and the time of a CPU loop (1,000,000 iterations), of a
-fixed 256 KiB flash read (a read-only buffer linked into every build with the
-feature, read from a cold cache) and of a 512 KiB PSRAM write and read. Each
-memory line reports the bytes and the throughput, so that builds compare on
-the same workload.
+fixed 256 KiB flash read and of a 512 KiB PSRAM write and read. The memory
+lines report the byte count and the throughput. The flash read covers a
+read-only buffer that the benchmark links into every build with the feature,
+read from a cold cache, so the figures compare between builds. The benchmark
+adds the buffer's 256 KiB to the application, and it is absent from the default
+build.
 
 The first boot formats the LittleFS partition, which has 3056 blocks of 4096 bytes. Look for the PSRAM
 size, `Xila: PSRAM self-test passed`, `Xila: LittleFS mounted`, the graphics
