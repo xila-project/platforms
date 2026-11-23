@@ -11,6 +11,8 @@
 //! informational messages are left out and warnings and errors are rate limited
 //! (see [`LogGate`]), and a message always starts on its own line.
 
+mod main_stack;
+
 use core::{
     cell::{Cell, RefCell},
     fmt,
@@ -55,6 +57,7 @@ struct OutputState {
     /// Whether the last queued byte ended a line.
     at_line_start: bool,
     log_gate: LogGate,
+    report_main_stack: bool,
 }
 
 impl OutputState {
@@ -79,6 +82,7 @@ static OUTPUT: Mutex<RefCell<OutputState>> = Mutex::new(RefCell::new(OutputState
     transmitting: false,
     at_line_start: true,
     log_gate: LogGate::new(),
+    report_main_stack: false,
 }));
 
 fn with_input<T>(function: impl FnOnce(&mut InputState) -> T) -> T {
@@ -164,6 +168,11 @@ impl DirectBaseOperations for StandardOutputDevice {
         }
 
         with_output(|output| {
+            if output.report_main_stack && !push_main_stack_report(output) {
+                output.writers.register(context.waker());
+                return Poll::Pending;
+            }
+
             // Give the shared output device room to write a translated
             // carriage return and line feed together.
             if output.queue.available_space() < buffer.len().min(2) {
@@ -235,11 +244,20 @@ fn monotonic_now() -> core::time::Duration {
     core::time::Duration::from_micros(Instant::now().duration_since_epoch().as_micros())
 }
 
+/// Starts main stack measurement early in application startup, after esp-hal
+/// has installed its stack guard.
+pub fn paint_main_stack() {
+    main_stack::paint();
+}
+
 /// Tells the logger whether an interactive session uses the console. See the
 /// module documentation.
 pub fn set_interactive(interactive: bool) {
     let now = monotonic_now();
-    with_output(|output| output.log_gate.set_interactive(interactive, now));
+    with_output(|output| {
+        output.log_gate.set_interactive(interactive, now);
+        output.report_main_stack = interactive;
+    });
 }
 
 fn importance(level: log::Level) -> LogImportance {
@@ -259,6 +277,24 @@ fn push_line(output: &mut OutputState, bytes: &[u8]) -> bool {
     output.push(separator);
     output.push(bytes);
     output.push(b"\r\n");
+    true
+}
+
+// Emit the measurement with the first shell output, ahead of the prompt and
+// before any input can be echoed. It shares the prompt's output backpressure.
+fn push_main_stack_report(output: &mut OutputState) -> bool {
+    if let Some((used, total)) = main_stack::high_water() {
+        let mut message = LogMessage(EchoBuffer::new());
+        let _ = fmt::write(
+            &mut message,
+            format_args!("Xila: main stack high-water {used} of {total} bytes (estimate)"),
+        );
+        if !push_line(output, message.0.as_bytes()) {
+            return false;
+        }
+        output.runner.wake();
+    }
+    output.report_main_stack = false;
     true
 }
 

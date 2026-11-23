@@ -3,27 +3,22 @@
 
 use core::{alloc::Layout, ops::Range, ptr::NonNull};
 
-use drivers_espressif::memory::MemoryManager;
-use firmware::MemoryReport;
+use drivers_espressif::memory::{MemoryManager, PSRAM_REGION};
 use xila::{
     log,
     memory::{CapabilityFlags, ManagerTrait},
 };
 
-/// Runs [`check`] on the board's PSRAM, as its memory check, when the heap
-/// uses it.
-pub(super) fn run(report: &MemoryReport) {
+/// Tests the PSRAM mapping when the board registered it with `heap`.
+pub fn run(heap: &MemoryManager, report: &crate::MemoryReport) {
     if let Some(external) = report.external
         && external.registered
     {
-        check(
-            firmware::heap(),
-            external.start..external.start + external.size,
-        );
+        check(heap, external.start..external.start + external.size);
     }
 }
 
-/// Size of the buffer that [`run`] checks.
+/// Size of the buffer that [`check`] checks.
 const SELF_TEST_SIZE: usize = 1024 * 1024;
 
 /// The pattern word at `address`: it differs between neighbouring words and
@@ -60,12 +55,14 @@ fn fill(words: NonNull<u32>, count: usize, value: impl Fn(usize) -> u32) {
     }
 }
 
-/// Region 1 of the heap, the external PSRAM.
-const PSRAM_REGION: usize = 1;
-
 /// Logs the PSRAM region of the heap at `stage` and returns its used bytes.
 fn log_psram_region(heap: &MemoryManager, stage: &str) -> usize {
-    match &heap.get_statistics().region_stats[PSRAM_REGION] {
+    match heap
+        .get_statistics()
+        .region_stats
+        .get(PSRAM_REGION)
+        .and_then(Option::as_ref)
+    {
         Some(region) => {
             log::information!(
                 "Xila: PSRAM self-test, heap region {PSRAM_REGION} {stage}: \

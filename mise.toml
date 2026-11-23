@@ -188,7 +188,7 @@ tools."github:esp-rs/espup" = "{{ vars.espup_version }}"
 run = """
 set -eu
 mkdir -p target/espressif-emulator
-espup install --targets esp32s3 --toolchain-version '{{ vars.rust_version }}.0' --skip-version-parse \
+espup install --targets esp32,esp32s3 --toolchain-version '{{ vars.rust_version }}.0' --skip-version-parse \
   --crosstool-toolchain-version '{{ vars.esp_gcc_version }}' \
   --export-file target/espressif-emulator/export-esp.sh
 """
@@ -231,6 +231,11 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets
   "riscv32imafc-unknown-none-elf",
 ] }
 run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' esp32-p4-function-ev-board"
+
+[tasks."build:wt32-sc01"]
+description = "Build the WT32-SC01 firmware and merge it into a 4 MiB flash image"
+depends = ["setup:espflash"]
+run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' wt32-sc01"
 
 [tasks."build:wt32-sc01-plus"]
 description = "Build the WT32-SC01 Plus firmware (examples/boards/wt32-sc01-plus) and merge it into a 16 MiB flash image"

@@ -26,20 +26,24 @@ mod flash;
 pub mod graphics;
 #[cfg(feature = "native-dev")]
 pub mod native;
+pub mod psram_self_test;
 pub mod session;
 
 use alloc::boxed::Box;
 use core::{cell::RefCell, mem::MaybeUninit, ptr::addr_of_mut, time::Duration};
 
 use critical_section::Mutex;
-use drivers_espressif::{console, memory::MemoryManager, power::BoardPower, time::TimeDevice};
+use drivers_espressif::{
+    console,
+    memory::{MemoryManager, PSRAM_REGION},
+    power::BoardPower,
+    time::TimeDevice,
+};
 use xila::{
     authentication,
     executable::{self, mount_executables},
     file_system::{AccessFlags, CreateFlags, Flags, Path},
-    little_fs, log,
-    memory::ManagerTrait,
-    memory_file_system, task, time, users,
+    little_fs, log, memory_file_system, task, time, users,
     virtual_file_system::{self, AccessTimePolicy, File, MountOptions, mount_static},
 };
 
@@ -95,12 +99,31 @@ static BOARD: Mutex<RefCell<Option<Board>>> = Mutex::new(RefCell::new(None));
 /// Hands the static internal heap reservation to the allocator and returns the
 /// allocator, for the board to add its PSRAM. Call it first, once.
 pub fn initialize_heap() -> &'static MemoryManager {
-    let heap = &__DRIVERS_ESPRESSIF_MEMORY_ALLOCATOR;
+    console::paint_main_stack();
+    let heap = heap();
     // SAFETY: the reservation is static SRAM that only the allocator uses;
     // `init_internal` fails when called a second time.
     assert!(
         unsafe { heap.init_internal(addr_of_mut!(HEAP).cast(), HEAP_SIZE) },
         "The heap was already initialized"
+    );
+    heap
+}
+
+/// Uses a board-provided internal SRAM reservation in place of the default.
+///
+/// # Safety
+///
+/// The reservation must be in DMA-capable internal data SRAM that remains
+/// accessible during flash operations. Call once, before starting firmware.
+pub unsafe fn initialize_heap_from_slice(
+    reservation: &'static mut [MaybeUninit<u8>],
+) -> &'static MemoryManager {
+    console::paint_main_stack();
+    let heap = heap();
+    assert!(
+        unsafe { heap.init_internal_from_slice(reservation) },
+        "Could not initialize the internal heap"
     );
     heap
 }
@@ -537,37 +560,39 @@ async fn start(task_manager: &'static task::Manager) {
         task::yield_now().await;
     }
 
-    let heap = &__DRIVERS_ESPRESSIF_MEMORY_ALLOCATOR;
+    let statistics = heap().get_statistics();
+    let internal_budget: usize = statistics
+        .region_stats
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != PSRAM_REGION)
+        .filter_map(|(_, region)| region.as_ref().map(|region| region.size))
+        .sum();
     log::information!(
         "Xila heap: {} bytes used, {} free, {} total ({}-byte budget)",
-        heap.get_used(),
-        heap.get_free(),
-        heap.get_total_size(),
-        HEAP_SIZE
+        statistics.current_usage,
+        statistics.size - statistics.current_usage,
+        statistics.size,
+        internal_budget
     );
-    if memory.external.is_some() {
-        let statistics = heap.get_statistics();
-        // Region 0 is the static internal heap reservation, region 1 the
-        // external PSRAM.
+    if memory.external.is_some() || statistics.region_stats.iter().flatten().count() > 1 {
         for (index, region) in statistics.region_stats.iter().enumerate() {
             if let Some(region) = region {
-                if index == 0 {
+                if index == PSRAM_REGION {
                     log::information!(
-                        "Xila heap region 0 (internal heap reservation of {HEAP_SIZE} bytes, \
-                         out of the chip's {} bytes of SRAM): \
-                         {} bytes used, {} free, {} total",
-                        memory.internal_sram_size,
+                        "Xila heap region {index} (external PSRAM): {} bytes used, {} free, {} total",
                         region.used,
                         region.free,
                         region.size
                     );
                 } else {
                     log::information!(
-                        "Xila heap region {index} (external PSRAM): \
-                         {} bytes used, {} free, {} total",
+                        "Xila heap region {index} (internal SRAM): {} bytes used, {} free, {} total \
+                         (of {} bytes of chip SRAM)",
                         region.used,
                         region.free,
-                        region.size
+                        region.size,
+                        memory.internal_sram_size,
                     );
                 }
             }

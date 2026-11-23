@@ -25,6 +25,7 @@ TIMEOUT = 60
 RNG_MARKER = "Random generator works"
 NATIVE_MARKER = "Xila: native executable memory self-test passed"
 LVGL_MARKER = "Xila: LVGL frame flushed"
+STACK_MARKER = "Xila: main stack high-water"
 SHELL_PROMPT_MARKER = "User name:"
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 # Each marker must appear in this order: the smoke check fails on the first one
@@ -36,6 +37,7 @@ MARKERS = [
     RNG_MARKER,
     LVGL_MARKER,
     "Xila heap: ",
+    STACK_MARKER,
     SHELL_PROMPT_MARKER,
 ]
 WIDTH, HEIGHT = 160, 120
@@ -67,6 +69,12 @@ def check_markers(log, chip):
     if used + free != total or used == 0:
         raise SmokeError(f"inconsistent heap statistics: {used} used + {free} free != {total}")
     print(f"Heap after boot: {used} bytes used, {free} free, {total} total", flush=True)
+    stack = re.search(r"Xila: main stack high-water (\d+) of (\d+) bytes", plain)
+    if stack is None:
+        raise SmokeError("malformed main stack high-water line")
+    used, total = map(int, stack.groups())
+    if not 0 < used < total:
+        raise SmokeError(f"invalid main stack reading: {used} of {total} bytes")
 
 
 async def capture_screen(screen):

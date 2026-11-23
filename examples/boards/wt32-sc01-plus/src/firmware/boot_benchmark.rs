@@ -127,7 +127,7 @@ fn cpu_loop() -> Duration {
 
 /// Sums every word of [`FLASH_BENCHMARK_BUFFER`] and returns the elapsed time.
 ///
-/// Nothing accesses the buffer before [`run`], and [`super::psram_self_test`]
+/// Nothing accesses the buffer before [`run`], and [`::firmware::psram_self_test`]
 /// streams 1 MiB through the data cache immediately beforehand, so every cache
 /// line is cold and fetched from flash.
 fn flash_read() -> Duration {

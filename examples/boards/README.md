@@ -12,6 +12,7 @@ random and power), backed by LittleFS in internal flash.
 | [`esp32-s3-qemu`](esp32-s3-qemu) | ESP32-S3 | 4 MB | UART0 | `mise run test:esp32-s3-qemu` (Espressif QEMU) |
 | [`esp32-c6-qemu`](esp32-c6-qemu) | ESP32-C6 | 4 MB | UART0 | `mise run test:esp32-c6-qemu` (Espressif QEMU) |
 | [`esp32-p4-function-ev-board`](esp32-p4-function-ev-board) | ESP32-P4 | 16 MB | UART0 | `mise run build:esp32-p4-function-ev-board` |
+| [`wt32-sc01`](wt32-sc01) | ESP32 | 4 MB | UART0 via CP210x | `mise run build:wt32-sc01` |
 | [`wt32-sc01-plus`](wt32-sc01-plus) | ESP32-S3 | 16 MB | USB Serial/JTAG | `mise run build:wt32-sc01-plus` |
 
 Each board crate:
@@ -27,6 +28,11 @@ Each board crate:
 `target/espressif-emulator/BOARD.elf` and merges a flash image,
 `target/espressif-emulator/BOARD-flash.bin`. To add a board, add a folder
 with these files, a `build:BOARD` task in `mise.toml` and a CI matrix entry.
+
+To compile and copy only the ELF, run
+`bash tools/dev/build_espressif_image.sh ESPFLASH_VERSION RUST_VERSION ESP_GCC_VERSION BOARD elf`
+from the Platforms root. Supply the version pins from `mise.toml`. The script
+uses the installed compiler and skips image packaging.
 
 Default account creation requires a secure entropy source and a freshly
 formatted file system. If you keep the account-free file system from the old
@@ -236,3 +242,49 @@ reformatting the partition.
 
 [board]: https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32p4/esp32-p4x-function-ev-board/user_guide.html
 [entropy]: https://github.com/esp-rs/esp-hal/issues/5982
+
+## Build and flash the WT32-SC01 firmware
+
+The classic Wireless-Tag WT32-SC01 uses the ESP32-WROVER-B module. It starts
+the command-line shell on UART0 at 115200 baud through the CP210x bridge.
+The 160 KiB runtime heap comprises 64 KiB in primary DRAM and 96 KiB in
+DRAM2 reclaimed after ESP-IDF bootloader handoff. The ESP32 can
+directly map 4 MiB of the module's 8 MiB of PSRAM. The firmware registers that
+mapping in a separate data heap and runs a 1 MiB allocation and readback
+test. This keeps pointers that may be used by hardware atomics or flash ROM
+routines in internal SRAM. The ESP32 target applies the compiler workaround
+for the PSRAM cache erratum. LittleFS C code uses the internal runtime heap. See the [Wireless-Tag datasheet][classic-board],
+[Espressif module datasheet][wrover] and [ESP32 external RAM guide][external-ram].
+
+```sh
+mise run setup:espressif-rust
+mise run build:wt32-sc01
+```
+
+WT32-SC01 modules carry ESP32 revision v1.0 silicon, older than esp-hal's
+default minimum (v3.0), so the build lowers `ESP_HAL_CONFIG_MIN_CHIP_REVISION`
+to v1.0; the PSRAM cache workaround above covers that revision's erratum.
+
+The factory application occupies the 1.5 MiB partition at `0x10000`.
+LittleFS uses the 2.44 MiB partition at `0x190000`.
+
+```sh
+espflash flash --chip esp32 --port /dev/ttyUSB0 \
+  --flash-size 4mb --flash-mode dio \
+  --partition-table examples/boards/wt32-sc01/partitions.csv --partition-table-offset 0x8000 \
+  --monitor target/espressif-emulator/wt32-sc01.elf
+```
+
+Look for `Xila: board WT32-SC01`, `Xila: PSRAM 4194304 bytes (registered: true)`,
+`Xila: PSRAM self-test passed`, `Xila: LittleFS mounted`,
+`Random generator works`, the two internal heap regions, and
+`Xila: main stack high-water … bytes (estimate)` before the `User name:`
+prompt. The estimate covers execution from early application startup through
+the shell's first console output. A freshly formatted file system creates the default
+`administrator` account with an empty password. The display and touch
+bring-up is tracked in [issue #177][classic-issue].
+
+[classic-board]: https://files.seeedstudio.com/products/102991455/WT32-SC01-datasheet.pdf
+[wrover]: https://documentation.espressif.com/esp32-wrover-b_datasheet_en.html
+[external-ram]: https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/external-ram.html
+[classic-issue]: https://github.com/xila-project/platforms/issues/177

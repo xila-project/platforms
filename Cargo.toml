@@ -141,6 +141,7 @@ members = [
   "examples/boards/esp32-c6-qemu",
   "examples/boards/esp32-p4-function-ev-board",
   "examples/boards/esp32-s3-qemu",
+  "examples/boards/wt32-sc01",
   "examples/boards/wt32-sc01-plus",
   "examples/nano_33_ble",
   "examples/wasm",

@@ -1,3 +1,12 @@
+[target.xtensa-esp32-none-elf]
+# ESP32 revision v1.x can lose PSRAM writes without the cache workaround.
+# LittleFS C is built without it. The board's global heap supplies internal
+# SRAM only, so LittleFS never accesses PSRAM.
+rustflags = [
+  "-C",
+  "llvm-args=-mfix-esp32-psram-cache-issue -mfix-esp32-psram-cache-strategy=memw",
+]
+
 [target.xtensa-esp32s3-espidf]
 linker = "ldproxy"
 # runner = "espflash --monitor" # Select this runner for espflash v1.x.x
