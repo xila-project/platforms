@@ -31,6 +31,11 @@ xila = { git = "https://github.com/xila-project/core", branch = "main", default-
   "graphics_rendering_rgb565",
 ] }
 
+[features]
+# Logs CPU, flash and PSRAM timings once at boot, right after the PSRAM
+# self-test. Off by default so production boots stay fast and quiet.
+boot-benchmark = []
+
 [[bin]]
 name = "wt32_sc01_plus"
 path = "src/main.rs"
