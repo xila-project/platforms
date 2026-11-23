@@ -29,11 +29,10 @@ checkout and out of shell commands and console transcripts.
 5. IPv4 DNS server, in the form `192.0.2.2`.
 
 Use all three address lines together and substitute addresses for the actual
-test network. Omitting the address lines enables Core's DHCP client. The
-pinned Core revision starts the DHCP exchange but does not apply the lease,
-so use a static profile for traffic tests until Core includes the lease fix.
-Saving credentials for the same network name on the device keeps the
-existing static IPv4 settings. Joining a different network name removes them
+test network. Omitting the address lines enables Core's DHCP client, which
+applies the leased address, default route and DNS server. Saving credentials
+for the same network name on the device keeps the existing static IPv4
+settings. Joining a different network name removes them
 and switches to DHCP, so the saved profile has only the first two lines.
 
 ## Hardware smoke test
@@ -47,9 +46,9 @@ and switches to DHCP, so the saved profile has only the first two lines.
    signal strength. Reboot to check that the system remembered the network.
    For a console-only image, provision the root-owned profile privately in
    LittleFS and reboot. A valid profile logs `Wi-Fi: station profile loaded`.
-3. For end-to-end traffic, use the five-line profile. Check that `ip address`
-   shows `Enabled, Up` and the selected IPv4 address. Check the gateway with
-   `ip route`. Run `ping -c 4 <gateway>`, ping the board from a peer and run
+3. For end-to-end traffic, use either a DHCP profile or the five-line static
+   profile. Check that `ip address` shows `Enabled, Up` and the leased or
+   selected IPv4 address. Check the gateway with `ip route`. Run `ping -c 4 <gateway>`, ping the board from a peer and run
    `dns_resolve <known hostname>`.
 4. Power off the test access point and watch for `Wi-Fi: link lost (…)`.
    Bring it back and verify that the board reconnects without a reboot. Use
