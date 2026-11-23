@@ -86,6 +86,10 @@ case "$board" in
     wt32-sc01)
         chip=esp32
         target=xtensa-esp32-none-elf
+        # WT32-SC01 modules ship with ESP32 revision v1.0 silicon, older than
+        # esp-hal's default minimum (v3.0). The PSRAM cache workaround in
+        # .cargo/config.toml covers the revision v1 erratum.
+        export ESP_HAL_CONFIG_MIN_CHIP_REVISION=100
         flash_mode=dio
         flash_size=4mb
         build_xtensa

@@ -261,6 +261,10 @@ mise run setup:espressif-rust
 mise run build:wt32-sc01
 ```
 
+WT32-SC01 modules carry ESP32 revision v1.0 silicon, older than esp-hal's
+default minimum (v3.0), so the build lowers `ESP_HAL_CONFIG_MIN_CHIP_REVISION`
+to v1.0; the PSRAM cache workaround above covers that revision's erratum.
+
 The factory application occupies the 1.5 MiB partition at `0x10000`.
 LittleFS uses the 2.44 MiB partition at `0x190000`.
 
