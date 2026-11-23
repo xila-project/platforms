@@ -50,8 +50,12 @@ fn main() -> ! {
     let heap = unsafe { firmware::initialize_heap_from_slice(reservation) };
     // SAFETY: the bootloader has handed over to the application; this
     // separate, DMA-capable reservation is passed to the heap only once.
+    let reclaimed = unsafe {
+        core::slice::from_raw_parts_mut((&raw mut RECLAIMED_HEAP).cast(), RECLAIMED_HEAP_SIZE)
+    };
     assert!(
-        unsafe { heap.init_reclaimed_internal(&mut *(&raw mut RECLAIMED_HEAP)) },
+        // SAFETY: the reclaimed reservation is registered with the heap once.
+        unsafe { heap.init_reclaimed_internal(reclaimed) },
         "Could not register reclaimed internal SRAM"
     );
 
