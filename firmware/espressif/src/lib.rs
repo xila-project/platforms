@@ -108,6 +108,10 @@ pub fn run(board: Board) -> ! {
     unreachable!()
 }
 
+/// How long the bootsplash stays on screen at least, so its animation is seen.
+#[cfg(feature = "graphics")]
+const BOOTSPLASH_MINIMUM_DURATION: Duration = Duration::from_secs(1);
+
 #[xila::task::run(
     task_path = xila::task,
     executor = drivers_espressif::executor::Executor::take(),
@@ -335,7 +339,7 @@ async fn start(task_manager: &'static task::Manager) {
             xila::graphics::appearance::restore_appearance(manager, virtual_file_system, task)
                 .await;
             let bootsplash = match xila::bootsplash::Bootsplash::new(manager).await {
-                Ok(bootsplash) => Some(bootsplash),
+                Ok(bootsplash) => Some((bootsplash, time_manager.monotonic_now())),
                 Err(error) => {
                     log::warning!("Xila: cannot start the bootsplash: {error:?}");
                     None
@@ -474,9 +478,13 @@ async fn start(task_manager: &'static task::Manager) {
         task::Manager::sleep(BOOT_REPORT_DRAIN_INTERVAL).await;
     }
     #[cfg(feature = "graphics")]
-    if let (Some(manager), Some(bootsplash)) = (graphics_manager, bootsplash) {
-        // Let the graphics task render the animation before launching login.
-        task::Manager::sleep(Duration::from_secs(1)).await;
+    if let (Some(manager), Some((bootsplash, started))) = (graphics_manager, bootsplash) {
+        // Keep the animation on screen for at least a second: only wait for
+        // what the rest of the boot has not already taken.
+        let shown = time_manager.monotonic_now().saturating_sub(started);
+        if let Some(remaining) = BOOTSPLASH_MINIMUM_DURATION.checked_sub(shown) {
+            task::Manager::sleep(remaining).await;
+        }
         if let Err(error) = bootsplash.stop(manager).await {
             log::warning!("Xila: cannot stop the bootsplash: {error:?}");
         }
