@@ -314,7 +314,10 @@ mod tests {
 
     #[test]
     fn wt32_sc01_plus_profile_and_raw_image_carry_bundles_shortcuts_registry_and_seed_marker() {
-        use file_system::{AccessFlags, BaseOperations, Context, FileSystemOperations};
+        use file_system::{
+            AccessFlags, AttributeFlags, Attributes, BaseOperations, Context, FileSystemOperations,
+            Permissions,
+        };
         use std::fs;
 
         let board_profile = profile("wt32-sc01-plus", NativeRuntime::Unix).unwrap();
@@ -351,7 +354,17 @@ mod tests {
         }
 
         let image_path = root.join("storage.img");
-        let partition_size: u64 = 3312 * 4096;
+        let partition_table =
+            include_str!("../../../examples/boards/wt32-sc01-plus/partitions.csv");
+        let partition_size = partition_table
+            .lines()
+            .find_map(|line| {
+                let mut fields = line.split(',').map(str::trim);
+                (fields.next() == Some("storage")).then(|| fields.nth(3).unwrap())
+            })
+            .unwrap();
+        let partition_size =
+            u64::from_str_radix(partition_size.strip_prefix("0x").unwrap(), 16).unwrap();
         let geometry = Geometry::raw(4096);
         let staging = tools_image::stage(&board_profile, &bundles).unwrap();
         tools_image::build_with(&image_path, partition_size, Some(staging.path()), geometry)
@@ -416,6 +429,39 @@ mod tests {
             read_file("/applications/bundles/xila.clock/executables/clock.wasm"),
             b"\0asm"
         );
+        for (path, mode) in [
+            ("/system/accounts", 0o700),
+            ("/system/accounts/.seed-pending", 0o644),
+            (
+                "/configuration/shared/applications/shortcuts/activity.json",
+                0o644,
+            ),
+            (
+                "/applications/bundles/xila.calculator/executables/calculator.wasm",
+                0o644,
+            ),
+        ] {
+            let mut attributes = Attributes::new().set_mask(AttributeFlags::all());
+            file_system
+                .get_attributes(path.as_ref(), &mut attributes)
+                .unwrap();
+            assert_eq!(
+                attributes.get_permissions(),
+                Permissions::from_octal(mode).as_ref(),
+                "{path}"
+            );
+            assert_eq!(
+                attributes.get_user(),
+                Some(&users::UserIdentifier::ROOT),
+                "{path}"
+            );
+            assert_eq!(
+                attributes.get_group(),
+                Some(&users::GroupIdentifier::ROOT),
+                "{path}"
+            );
+        }
+
         let mut missing_debug = Context::new_empty();
         assert!(
             file_system

@@ -19,9 +19,8 @@ cargo run -p xila-fs-image -- populated.img 16777216 --root ./root
 # Seed a profile from verified application bundle directories (xila.clock/, ...).
 cargo run -p xila-fs-image -- native.img 16777216 --bundle native --bundles-dir bundles
 cargo run -p xila-fs-image -- browser.img 16777216 --bundle wasm --bundles-dir bundles
-# Seed a raw LittleFS partition image for the WT32-SC01 Plus (13,565,952 bytes, 4096-byte blocks).
-cargo run -p xila-fs-image -- storage.img 13565952 --layout raw --block-size 4096 \
-  --bundle wt32-sc01-plus --bundles-dir bundles
+# Seed the WT32-SC01 Plus storage partition with locally built bundles.
+XILA_BUNDLES_DIR="$PWD/bundles" mise run image:wt32-sc01-plus
 ```
 
 A `native` image lists the Debug shortcut only for a native runtime that
@@ -78,8 +77,8 @@ Weather. In the browser, Weather and `web_request` reach the network through the
 `https_client` device, so they only work against servers that allow cross-origin requests.
 Both include native application shortcuts. The `wt32-sc01-plus` profile contains Calculator and Clock
 with the Activity, File manager, Settings and Terminal shortcuts and the official registry, built as a
-raw 4096-byte-block LittleFS partition image (`13,565,952` bytes, 3312 blocks) for the board's `storage`
-flash partition (`0x310000`). Set `EMBEDDED_I18N_LOCALE=en`, `fr`, `es`, `de`, `pt-BR`, `it`, `pl`, `ja` or `zh-CN`
+raw 4096-byte-block LittleFS image sized to the board's `storage` partition in
+[partitions.csv](../../examples/boards/wt32-sc01-plus/partitions.csv). Set `EMBEDDED_I18N_LOCALE=en`, `fr`, `es`, `de`, `pt-BR`, `it`, `pl`, `ja` or `zh-CN`
 while building both guests and images. No passwords or random salts are included.
 An explicit pending marker allows runtime account initialization to finish after
 an interruption; existing saved credentials are preserved.

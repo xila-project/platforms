@@ -182,16 +182,17 @@ async fn start(task_manager: &'static task::Manager) {
         flash::LittleFsPartition::new(flash_storage, storage),
     ));
     let little_file_system_options = little_fs::Options::new(CACHE_SIZE).set_block_cycles(500);
-    // Keep existing data: format only when the partition holds no valid file
-    // system (a fresh, erased image in the emulator, or a new board).
     let (file_system, formatted) =
         match little_fs::FileSystem::new(drive, little_file_system_options) {
             Ok(file_system) => (file_system, false),
-            Err(_) => (
-                little_fs::FileSystem::new_format(drive, little_file_system_options)
-                    .expect("Failed to format and mount LittleFS"),
-                true,
-            ),
+            Err(error) => {
+                log::warning!("Xila: LittleFS mount failed ({error:?}); formatting storage");
+                (
+                    little_fs::FileSystem::new_format(drive, little_file_system_options)
+                        .expect("Failed to format and mount LittleFS"),
+                    true,
+                )
+            }
         };
     log::information!("Xila: LittleFS mounted");
     task::yield_now().await;

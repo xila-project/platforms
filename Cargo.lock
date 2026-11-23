@@ -6737,6 +6737,7 @@ dependencies = [
  "xila-file-system",
  "xila-little-fs",
  "xila-tools-image",
+ "xila-users",
 ]
 
 [[package]]

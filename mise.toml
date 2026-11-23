@@ -120,17 +120,33 @@ cargo run --locked -p xila-fs-image -- target/seed/browser/seed.img 16777216 --b
 description = "Create a raw 4096-byte LittleFS storage image for the WT32-SC01 Plus from bundles.lock.json, or from XILA_BUNDLES_DIR"
 run = '''
 set -eu
-mkdir -p target/seed/wt32-sc01-plus
+partition_size=$(awk -F ',' '$1 == "storage" { print $5 }' examples/boards/wt32-sc01-plus/partitions.csv)
+if [ -z "$partition_size" ]; then
+  echo "Missing storage partition size in partitions.csv" >&2
+  exit 1
+fi
+output=target/seed/wt32-sc01-plus
+if [ -L target/seed ] || [ -L "$output" ]; then
+  echo "Refusing a symbolic link in the seed output path" >&2
+  exit 1
+fi
+mkdir -p "$output"
+staging=$(mktemp -d "$output/.image.XXXXXXXX")
+trap 'rm -rf -- "$staging"' EXIT
 bundles="${XILA_BUNDLES_DIR:-}"
 if [ -z "$bundles" ]; then
-  bundles=target/seed/wt32-sc01-plus/bundles
-  rm -rf "$bundles"
+  bundles="$staging/bundles"
   cargo build --locked -p xila-prepare-applications
-  python3 tools/prepare_seed.py --profile wt32-sc01-plus --output "$bundles" \
-    --tool "${CARGO_TARGET_DIR:-target}/debug/xila-prepare-applications"
+  if ! python3 tools/prepare_seed.py --profile wt32-sc01-plus --output "$bundles" \
+    --tool "${CARGO_TARGET_DIR:-target}/debug/xila-prepare-applications"; then
+    echo "Released bundle preparation failed. Build bundles locally and set XILA_BUNDLES_DIR as described in examples/boards/README.md." >&2
+    exit 1
+  fi
 fi
-cargo run --locked -p xila-fs-image -- target/seed/wt32-sc01-plus/storage.img 13565952 \
+cargo run --locked -p xila-fs-image -- "$staging/storage.img" "$((partition_size))" \
   --layout raw --block-size 4096 --bundle wt32-sc01-plus --bundles-dir "$bundles"
+python3 -c 'import os, sys; os.replace(sys.argv[1], sys.argv[2])' \
+  "$staging/storage.img" "$output/storage.img"
 '''
 
 [tasks."firmware:test"]

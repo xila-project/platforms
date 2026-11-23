@@ -102,11 +102,12 @@ The 3.5-inch 480 × 320 ST7796 panel runs on the 8-bit 8080 bus of the chip's
 LCD_CAM peripheral, with DMA, through `mipidsi`: each LVGL flush is one
 `set_pixels_raw` call, one address window and one DMA transfer of LVGL's draw
 buffer (40 rows, in internal SRAM, rendered in the panel's byte order). The
-FT6336U touch panel is polled over I²C, and the backlight is on GPIO45. Two sessions run side by side, each with its own login: the graphical shell on the
-screen and the command-line shell on the USB console. The firmware also mounts the
+FT6336U touch panel is polled over I²C, and the backlight is on GPIO45. Two
+sessions run side by side, each with its own login: the graphical shell on the
+screen and the command-line shell on the USB console. The firmware mounts the
 WebAssembly runtime at `/applications/executables/wasm` with lazy function
-translation by default. The pins come from
-Wireless-Tag's datasheet; `src/firmware/screen.rs` lists them.
+translation by default. The pins come from Wireless-Tag's datasheet and are
+listed in `src/firmware/screen.rs`.
 
 From the repository root, after `mise run setup:espressif-rust`, install the
 locked npm packages once: Xila's graphics converts its fonts at build time
@@ -139,11 +140,17 @@ the log, a few per second at most, so that they do not bury the session.
 To seed the `storage` partition with the native application shortcuts
 (Activity, File manager, Settings and Terminal), the official package registry,
 and the Calculator and Clock WebAssembly application bundles, build the raw
-4096-byte-block LittleFS image (`13,565,952` bytes) and write it at `0x310000`
-(warning: this replaces existing contents of the `storage` partition):
+4096-byte-block LittleFS image. The task reads the image size from the
+`storage` row of [partitions.csv](wt32-sc01-plus/partitions.csv).
+
+Until format-v2 releases are pinned, build the WebAssembly guests from the
+locked Applications revision, package them with `tools/bundle_applications.sh`,
+and set `XILA_BUNDLES_DIR` to the resulting bundle directory. See the
+[seed image documentation](../../tools/fs_image/README.md) for the bundle inputs.
+Writing the image at the partition offset replaces its existing contents.
 
 ```sh
-mise run image:wt32-sc01-plus
+XILA_BUNDLES_DIR=/path/to/bundles mise run image:wt32-sc01-plus
 mise run run:espflash -- write-bin --chip esp32s3 --port "$FLASH_PORT" \
   --flash-size 16mb --flash-mode dio 0x310000 target/seed/wt32-sc01-plus/storage.img
 ```

@@ -10,6 +10,7 @@ tools_image = { workspace = true }
 [dev-dependencies]
 file_system = { workspace = true }
 little_fs = { workspace = true }
+users = { workspace = true }
 
 [[bin]]
 name = "fs_image"
