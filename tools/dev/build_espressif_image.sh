@@ -4,7 +4,7 @@
 # target/espressif-emulator/BOARD-flash.bin, next to a copy of the firmware,
 # target/espressif-emulator/BOARD.elf, for `espflash flash`.
 #
-#   tools/dev/build_espressif_image.sh ESPFLASH_VERSION RUST_VERSION ESP_GCC_VERSION BOARD
+#   tools/dev/build_espressif_image.sh ESPFLASH_VERSION RUST_VERSION ESP_GCC_VERSION BOARD [elf] [CARGO_ARGUMENTS...]
 #
 # BOARD is a folder of examples/boards: esp32-s3-qemu, esp32-c6-qemu,
 # esp32-p4-function-ev-board or wt32-sc01-plus.
@@ -17,7 +17,15 @@ espflash_version=$1
 rust_version=$2
 esp_gcc_version=$3
 board=$4
-output=${5:-image}
+# An optional fifth argument `elf` stops after the firmware ELF, without the
+# flash image; every argument after it (or after BOARD) goes to Cargo.
+output=image
+if [[ ${5:-} == elf || ${5:-} == image ]]; then
+    output=$5
+    shift 5
+else
+    shift 4
+fi
 directory="examples/boards/$board"
 test -f "$directory/Cargo.toml" || { echo "Unknown Espressif board: $board" >&2; exit 2; }
 package="xila-board-$board"
@@ -58,7 +66,7 @@ build_esp32s3() {
 }
 
 # rustup runs the esp toolchain directly: the mise Cargo wrapper is host-only.
-build_args=(build --locked -p "$package" --profile release-embedded)
+build_args=(build --locked -p "$package" --profile release-embedded "$@")
 # The flash size must match the board's partition table.
 case "$board" in
     esp32-s3-qemu)

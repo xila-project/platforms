@@ -131,6 +131,20 @@ mise run run:espflash -- flash --chip esp32s3 --port "$FLASH_PORT" \
   --monitor target/espressif-emulator/wt32-sc01-plus.elf
 ```
 
+The boot benchmark is opt-in, so that normal boots stay fast and quiet. To
+include it, pass the board crate's `boot-benchmark` feature to the build:
+
+```sh
+mise run build:wt32-sc01-plus -- --features boot-benchmark
+```
+
+After the PSRAM self-test, the `Xila: boot benchmark` lines give the clocks,
+the flash read mode, and the time of a CPU loop (1,000,000 iterations), of a
+fixed 256 KiB flash read (a read-only buffer linked into every build with the
+feature, read from a cold cache) and of a 512 KiB PSRAM write and read. Each
+memory line reports the bytes and the throughput, so that builds compare on
+the same workload.
+
 The first boot formats the LittleFS partition, which has 3056 blocks of 4096 bytes. Look for the PSRAM
 size, `Xila: PSRAM self-test passed`, `Xila: LittleFS mounted`, the graphics
 and touch controller lines, the heap report and the `User name:` prompt.

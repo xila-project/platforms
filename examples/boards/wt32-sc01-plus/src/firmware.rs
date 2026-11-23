@@ -4,6 +4,8 @@
 //! - Console: the USB-C port is wired to the chip's USB Serial/JTAG controller
 //!   (303a:1001), with no USB to UART bridge, so the console, the logger and
 //!   panic messages use that controller.
+//! - Clocks: esp-hal's defaults. Enable the `boot-benchmark` feature to log
+//!   their speed once at boot.
 //! - PSRAM: added to the heap, and checked at boot by [`psram_self_test`].
 //! - Flash: 16 MB, partitioned by `partitions.csv`.
 //! - Screen: a 480 × 320 ST7796 panel on the 8080 bus, its backlight and an
@@ -17,14 +19,17 @@ use core::{fmt::Write, panic::PanicInfo};
 
 use drivers_espressif::random::RandomDevice;
 use esp_hal::{
+    clock::CpuClock,
     peripherals::USB_DEVICE,
-    psram::{Psram, PsramConfig, PsramMode},
+    psram::{FlashFreq, Psram, PsramConfig, PsramMode, SpiRamFreq},
     timer::systimer::SystemTimer,
     usb::usb_serial_jtag::UsbSerialJtag,
 };
 use esp_storage::FlashStorage;
 use firmware::{Board, ExternalMemory, MemoryReport, StoragePartition, parse_decimal, session};
 
+#[cfg(feature = "boot-benchmark")]
+mod boot_benchmark;
 mod psram_self_test;
 mod screen;
 
@@ -36,9 +41,19 @@ const STORAGE: StoragePartition = StoragePartition {
     length: parse_decimal(env!("XILA_STORAGE_LENGTH")) as u32,
 };
 
+/// The CPU clock: esp-hal's default for the ESP32-S3.
+const CPU_CLOCK: CpuClock = CpuClock::_80MHz;
+
+/// The PSRAM clock: esp-hal's default.
+const PSRAM_FREQUENCY: SpiRamFreq = SpiRamFreq::Freq40m;
+
+/// The flash clock. The PSRAM setup reprograms the flash clock divider too, so
+/// this, not the image header, sets the flash clock once the firmware runs.
+const FLASH_FREQUENCY: FlashFreq = FlashFreq::FlashFreq80m;
+
 #[esp_hal::main]
 fn main() -> ! {
-    let peripherals = esp_hal::init(esp_hal::Config::default());
+    let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CPU_CLOCK));
     let heap = firmware::initialize_heap();
 
     // Quad SPI PSRAM. Probing for octal PSRAM first, as the automatic mode
@@ -47,6 +62,8 @@ fn main() -> ! {
         peripherals.PSRAM,
         PsramConfig {
             mode: PsramMode::QuadSpi,
+            ram_frequency: PSRAM_FREQUENCY,
+            flash_frequency: FLASH_FREQUENCY,
             ..PsramConfig::default()
         },
     );
@@ -97,7 +114,7 @@ fn main() -> ! {
                 registered,
             }),
         },
-        memory_check: Some(psram_self_test::run),
+        memory_check: Some(check_memory),
         system_check: Some(screen::log_report),
         sessions: if display.is_some() {
             &[session::CONSOLE, session::GRAPHICAL_TOUCH]
@@ -114,6 +131,14 @@ fn main() -> ! {
             scheduler_interrupt: peripherals.FROM_CPU_INTR0,
         }),
     )
+}
+
+/// The board's memory check: the PSRAM self-test, followed by the boot
+/// benchmark when the `boot-benchmark` feature is enabled.
+fn check_memory(report: &MemoryReport) {
+    psram_self_test::run(report);
+    #[cfg(feature = "boot-benchmark")]
+    boot_benchmark::run(report);
 }
 
 /// Writes the panic message to the console. esp-println writes to UART0,
