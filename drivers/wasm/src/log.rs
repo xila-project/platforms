@@ -36,8 +36,8 @@ impl LoggerTrait for Logger {
         let message = format!("{} | {}", record.target, record.arguments);
         match record.level {
             Level::Error => error(&message),
-            Level::Warn => warn(&message),
-            Level::Info => info(&message),
+            Level::Warning => warn(&message),
+            Level::Information => info(&message),
             Level::Debug => (),
             Level::Trace => (),
         }
