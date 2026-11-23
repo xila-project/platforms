@@ -209,7 +209,8 @@ locked Applications revision, package them with `tools/bundle_applications.sh`,
 and set `XILA_BUNDLES_DIR` to the resulting bundle directory. See the
 [seed image documentation](../../tools/fs_image/README.md) for the bundle inputs.
 Digits uses the neural network loader at `/devices/nn/cpu`. The firmware
-includes ESP-NN for supported quantized operators and runs the current
+supports fully connected and softmax operators, with ESP-NN available for
+quantized models. It runs the current
 floating-point Digits model with Nanoglia’s portable kernels. Weather requires
 a Wi-Fi connection.
 Writing the image at the partition offset replaces its existing contents.

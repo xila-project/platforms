@@ -292,6 +292,7 @@ async fn start(task_manager: &'static task::Manager) {
     )
     .await
     .expect("Failed to mount the devices");
+
     #[cfg(feature = "neural-network")]
     {
         virtual_file_system::ignore_already_exists_error(
@@ -299,8 +300,8 @@ async fn start(task_manager: &'static task::Manager) {
                 .create_directory(task, &"/devices/nn")
                 .await,
         )
-        .expect("Failed to create NN device directory");
-        // Larger allocations, including the Digits model and tensor arena, prefer PSRAM.
+        .expect("Failed to create neural network device directory");
+        // The Wi-Fi heap policy prefers PSRAM for the model buffers and tensor arena.
         drivers_shared::devices::neural_network::mount_loader(
             virtual_file_system,
             task,

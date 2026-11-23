@@ -72,6 +72,13 @@ neural-network-all-ops = ["nanoglia/all-ops"]
 neural-network = ["neural-network-core", "neural-network-all-ops"]
 neural-network-cmsis-nn = ["neural-network", "nanoglia/cmsis-nn"]
 neural-network-esp-nn = ["neural-network", "nanoglia/esp-nn"]
+# TensorFlow Lite dense classifiers, including the Digits model.
+neural-network-esp-nn-classifier = [
+  "neural-network-core",
+  "nanoglia/esp-nn",
+  "nanoglia/op-fully-connected",
+  "nanoglia/op-softmax",
+]
 # Screen device over a `mipidsi` display, and its 8080 parallel bus adapter.
 display-mipidsi = ["dep:embedded-hal", "dep:log", "dep:mipidsi"]
 # FocalTech FT6336U capacitive touch controller on I²C.

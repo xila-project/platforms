@@ -1,4 +1,7 @@
-#![cfg(feature = "neural-network")]
+#![cfg(any(
+    feature = "neural-network",
+    feature = "neural-network-esp-nn-classifier"
+))]
 //! The model Digits ships, loaded at runtime through the platform loader node.
 extern crate critical_section;
 testing::instantiate_global_allocator!();
