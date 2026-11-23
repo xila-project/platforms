@@ -32,7 +32,9 @@ Use all three address lines together and substitute addresses for the actual
 test network. Omitting the address lines enables Core's DHCP client. The
 pinned Core revision starts the DHCP exchange but does not apply the lease,
 so use a static profile for traffic tests until Core includes the lease fix.
-Saving credentials on the device preserves the existing static IPv4 settings.
+Saving credentials for the same network name on the device keeps the
+existing static IPv4 settings. Joining a different network name removes them
+and switches to DHCP, so the saved profile has only the first two lines.
 
 ## Hardware smoke test
 
