@@ -84,9 +84,11 @@ TIMG0 timer 0 and software interrupt 0. The Xila executor remains on the first
 core and keeps SYSTIMER alarm 0. The radio's C hooks and scheduler task stacks
 require cache-accessible internal SRAM. Rust allocations made by radio
 threads, interrupts and calls into the radio library also use internal SRAM.
-Normal Xila thread allocations retain access to the 2 MiB PSRAM.
+Normal Xila thread allocations prefer the 2 MiB PSRAM when it is available.
 
-The Wi-Fi firmware reserves 216 KiB (221,184 bytes) for the internal heap.
+The Wi-Fi firmware reserves 196 KiB (200,704 bytes) for the internal heap.
+The board linker enforces a 40 KiB main stack. LittleFS copies flash transfers
+through an internal SRAM buffer so the ROM can access them with caches suspended.
 The radio caps frame buffers at six static receive, twelve dynamic receive
 and eight dynamic transmit. At about 1.6 KB per frame they can account for
 roughly 42 KB, plus scheduler stacks, management frames and WPA state.
