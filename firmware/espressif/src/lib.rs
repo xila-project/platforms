@@ -103,13 +103,13 @@ pub fn heap() -> &'static MemoryManager {
 }
 
 #[cfg(feature = "wifi")]
-static WIFI: Mutex<RefCell<Option<drivers_espressif::wifi::Peripherals>>> =
+static WIFI: Mutex<RefCell<Option<drivers_espressif::wifi::Hardware>>> =
     Mutex::new(RefCell::new(None));
 
 /// Starts Xila and makes the board's optional ESP32-S3 radio available after mounting storage.
 #[cfg(feature = "wifi")]
-pub fn run_with_wifi(board: Board, peripherals: drivers_espressif::wifi::Peripherals) -> ! {
-    critical_section::with(|section| WIFI.borrow(section).replace(Some(peripherals)));
+pub fn run_with_wifi(board: Board, radio: drivers_espressif::wifi::Hardware) -> ! {
+    critical_section::with(|section| WIFI.borrow(section).replace(Some(radio)));
     run(board)
 }
 
@@ -383,9 +383,9 @@ async fn start(task_manager: &'static task::Manager) {
             )
             .await
             {
-                Ok(manager) => manager,
+                Ok(manager) => Some(manager),
                 Err(error) => {
-                    log::warning!("Wi-Fi: startup failed ({error:?})");
+                    log::warning!("Wi-Fi: startup failed ({error})");
                     None
                 }
             },

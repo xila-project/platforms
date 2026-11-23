@@ -1,80 +1,88 @@
 # WT32-SC01 Plus Wi-Fi
 
-The board enables the ESP32-S3 station driver for 2.4 GHz open and WPA2 Personal
-networks. The radio starts only when the firmware finds a valid station profile
-on LittleFS. Startup continues to the login prompt if the profile is absent
-or if Wi-Fi initialization returns an error.
+The board starts its ESP32-S3 station in 2.4 GHz mode and exposes
+`/devices/network/wlan0`. It can scan and associate with open and WPA2 Personal
+networks. The Settings Wi-Fi panel can turn the radio on and off, scan, connect
+and disconnect when the graphical firmware includes Settings. Core owns
+Ethernet frame processing, IP addressing and DNS.
 
 ## Station profile
 
-Create `/configuration/system/wifi` in the board's LittleFS storage partition
-with owner root (user ID 0) and mode `0600`. Provision the file privately in
-the storage image. Use a local file outside the checkout and keep its contents
-out of shell commands, console transcripts, source control and CI artifacts.
+A successful connection requested by Settings or another client saves
+`/configuration/system/wifi` in LittleFS as root (user ID 0) with mode
+`0600`. An unsuccessful attempt leaves the previous profile in place. The
+firmware uses the saved profile at the next boot. With no profile, the radio
+starts idle and can scan. An explicit disconnect stops retries for the current
+radio session. A failed attempt or lost link retries after 2, 4, 8, 16 and
+32 seconds, then at intervals of up to 60 seconds. Turning the radio off ends
+association, retries and scanning after the current operation completes.
 
-The first line is the network name (1–32 bytes). The second is the WPA2
-passphrase (8–63 printable ASCII bytes or a 64-digit hexadecimal key). Use an
-empty second line for an open network. Finish each line with a newline.
-The two-line format enables Core's DHCP client. The pinned Core starts DHCP
-and exchanges packets but does not apply the lease to the interface. For an
-end-to-end connectivity test with this revision, append three lines in this
-order to select static IPv4 instead.
+For a manual profile, use the following lines in order. The file accepts LF
+or CRLF and at most 160 bytes. Keep credentials in a private file outside the
+checkout and out of shell commands and console transcripts.
 
-1. An unused IPv4 address with prefix length for the test subnet.
-2. The router's IPv4 address.
-3. A reachable DNS server's IPv4 address.
+1. Network name, 1 to 32 bytes, without carriage returns, line feeds or NULs.
+2. WPA2 passphrase, 8 to 63 printable ASCII bytes, or a 64-digit hexadecimal
+   key. Supply an empty line for an open network.
+3. Optional static IPv4 address and prefix, in the form `192.0.2.10/24`.
+4. IPv4 gateway, in the form `192.0.2.1`.
+5. IPv4 DNS server, in the form `192.0.2.2`.
 
-With this profile, the board mounts `/devices/network/wlan0` and sends and
-receives Ethernet frames through Core's smoltcp stack. Core also owns IP
-addresses, routes and DNS. The network device implements Core's
-`CONNECT_WIFI_CLIENT`, `DISCONNECT_WIFI_CLIENT`, `IS_LINK_UP` and the Wi-Fi
-connection state, information and error queries.
+Use all three address lines together and substitute addresses for the actual
+test network. Omitting the address lines enables Core's DHCP client. The
+pinned Core revision starts the DHCP exchange but does not apply the lease,
+so use a static profile for traffic tests until Core includes the lease fix.
+Saving credentials on the device preserves the existing static IPv4 settings.
 
 ## Hardware smoke test
 
-1. Boot with no profile. Expect `Wi-Fi: no station configuration; radio disabled`
-   and `User name:`.
-2. Provision a five-line profile using a test access point on a permitted 2.4 GHz
-   channel and restart. Expect `Wi-Fi: wlan0 ready; internal heap free before
-   startup …, after startup … bytes` and `User name:`. A successful association
-   logs `Wi-Fi: station connected` if it completes before the console filters
-   informational messages. After login, `ip address` should show `wlan0` as
-   `Enabled, Up` with the selected address. `ip route` should show the gateway.
-3. Run `ping -c 4 <gateway>`, ping the board from a peer on the same test
-   network, and run `dns_resolve <known hostname>`. Expect ICMP replies in both
-   directions and an address from DNS.
-4. Send `DISCONNECT_WIFI_CLIENT` with unit input on `/devices/network/wlan0`
-   from a test client using Core's device controls. Check that
-   `GET_WIFI_CONNECTION_STATE` reports `DISCONNECTED` and `IS_LINK_UP` is false.
-   With the access point reachable, send `CONNECT_WIFI_CLIENT` with an in-memory
-   `WifiClientConfiguration` read privately from the profile. Wait for
-   `CONNECTED` and repeat the ping. Turning off the access point also exercises
-   the unsolicited link-loss path, which logs `Wi-Fi: link lost (…)`.
-5. Repeat boot with an incorrect passphrase and with the test access point
-   absent. Expect `Wi-Fi: connection failed (authentication)` or
-   `Wi-Fi: connection failed (access point not found)`, according to the
-   disconnect reason the access point and radio report. Confirm the link stays
-   down and the console reaches login. A timed-out attempt reports
-   `Wi-Fi: connection failed (timeout)`. Check captures for credential leakage
-   before sharing them.
+1. Boot without a profile. Check for `Wi-Fi: wlan0 registered`,
+   `Wi-Fi: radio on; internal heap free before startup …, after startup … bytes`
+   and the login prompt. Check that `ip address` shows `wlan0`, link down,
+   with the station MAC from the board's eFuse.
+2. On a graphical image with Settings, open Network → Wi-Fi, scan, select a
+   2.4 GHz test network and connect. Verify the connection state, channel and
+   signal strength. Reboot to check that the system remembered the network.
+   For a console-only image, provision the root-owned profile privately in
+   LittleFS and reboot. A valid profile logs `Wi-Fi: station profile loaded`.
+3. For end-to-end traffic, use the five-line profile. Check that `ip address`
+   shows `Enabled, Up` and the selected IPv4 address. Check the gateway with
+   `ip route`. Run `ping -c 4 <gateway>`, ping the board from a peer and run
+   `dns_resolve <known hostname>`.
+4. Power off the test access point and watch for `Wi-Fi: link lost (…)`.
+   Bring it back and verify that the board reconnects without a reboot. Use
+   Settings to disconnect and verify link down. Toggle the radio off and on,
+   then scan again. With a wrong passphrase, check for
+   `Wi-Fi: connection failed (authentication); retry scheduled` or the timeout
+   or access-point error reported by the radio. Check shared captures for
+   credential leakage.
+
+The firmware records a startup marker before initializing the physical radio.
+A timer-group watchdog covers initialization and the first saved-profile
+association, including a vendor stall. If startup is interrupted, the next
+boot leaves the radio off and logs
+`Wi-Fi: previous startup was interrupted; radio stays off`. An explicit radio
+enable in Settings retries startup. ESP32-S3 QEMU has no emulated radio. Its
+Wi-Fi-enabled CI build reads a valid profile, reports radio unavailability
+and reaches login.
 
 ## Internal SRAM
 
-esp-radio 1.0.0-beta.1 and esp-rtos 0.4.0 use esp-hal 1.2.2. The radio needs a
-preemptive scheduler. esp-rtos uses TIMG0 timer 0 and software interrupt 0 on
-the first core. Xila's executor stays on the scheduler's main thread and keeps
-its SYSTIMER alarm 0. The second core remains parked. Radio C allocations and
-radio task stacks use the existing Xila heap's internal DMA-capable region.
-The board still registers its 2 MiB of PSRAM for eligible Xila allocations.
+esp-radio 1.0.0-beta.1 and esp-rtos 0.4.0 use esp-hal 1.2.2. The scheduler uses
+TIMG0 timer 0 and software interrupt 0. The Xila executor remains on the first
+core and keeps SYSTIMER alarm 0. The radio's C hooks and scheduler task stacks
+require cache-accessible internal SRAM. Rust allocations made by radio
+threads, interrupts and calls into the radio library also use internal SRAM.
+Normal Xila thread allocations retain access to the 2 MiB PSRAM.
 
-The radio-enabled firmware reserves 216 KiB (221,184 bytes) of internal SRAM
-for the heap, down from 256 KiB, to leave room for the radio's linked code and
-data and the executor's main stack. The driver caps the radio at six static RX,
-twelve dynamic RX and eight dynamic TX buffers. At about 1.6 KB per frame,
-their combined maximum payload storage is roughly 42 KB, including about 10 KB
-of static RX buffers. Scheduler stacks, management frames, WPA state and
-allocator overhead are additional. Startup requires 96 KiB of free internal heap
-before turning on the radio. The two startup counters show actual heap use at
-driver initialization and interface registration. Association and traffic
-can allocate additional buffers, so record the heap report at login and measure
-under load on hardware before raising buffer counts.
+The Wi-Fi firmware reserves 216 KiB (221,184 bytes) for the internal heap.
+The radio caps frame buffers at six static receive, twelve dynamic receive
+and eight dynamic transmit. At about 1.6 KB per frame they can account for
+roughly 42 KB, plus scheduler stacks, management frames and WPA state.
+Startup checks for 96 KiB of free internal heap. Record the startup heap
+counters and the memory report at login, then measure under traffic.
+
+Core's synchronous smoltcp device API offers no receive wake callback. The
+Core runner polls at least every 20 ms while idle, and the driver raises the
+radio receive queue from five to twelve frames to absorb bursts. An
+interrupt-driven receive path needs a wake interface from Core.

@@ -157,7 +157,7 @@ def stop(emulator, failed):
         print(f"QEMU (process {emulator.pid}) did not exit after being killed", file=sys.stderr)
 
 
-def run(chip, qemu, image, runs):
+def run(chip, qemu, image, runs, expect_wifi_profile=False):
     # Espressif QEMU exposes the virtual RGB panel on the S3 machine.
     check_display = chip == "esp32s3"
     runs.mkdir(parents=True, exist_ok=True)
@@ -193,6 +193,14 @@ def run(chip, qemu, image, runs):
                 if "Xila panic:" in log:
                     raise SmokeError("the firmware panicked")
             check_markers(log, chip)
+            if expect_wifi_profile:
+                profile_position = log.find("Wi-Fi: station profile loaded")
+                failure_position = log.find("Wi-Fi: startup failed")
+                login_position = log.find(SHELL_PROMPT_MARKER)
+                if not 0 <= profile_position < failure_position < login_position:
+                    raise SmokeError("valid Wi-Fi profile did not take the unavailable-radio path")
+                if WIFI_TEST_NAME.decode() in log:
+                    raise SmokeError("the Wi-Fi name appeared in the boot log")
             if check_display:
                 check_frame(screendump(directory, deadline))
             failed = False
@@ -203,6 +211,37 @@ def run(chip, qemu, image, runs):
         finally:
             stop(emulator, failed)
     sys.stdout.write(uart.read_text(errors="replace"))
+    return flash
+
+
+WIFI_TEST_NAME = b"QEMU smoke fixture"
+ESP32_S3_STORAGE_OFFSET = 0x190000
+ESP32_S3_STORAGE_LENGTH = 0x270000
+
+
+def add_wifi_profile(image, destination):
+    """Install a valid, synthetic open-network profile into the first boot's LittleFS."""
+    from littlefs import LittleFS, UserContext
+
+    data = bytearray(image.read_bytes())
+    offset = ESP32_S3_STORAGE_OFFSET
+    if len(data) != offset + ESP32_S3_STORAGE_LENGTH:
+        raise SmokeError("ESP32-S3 emulator flash does not match the test partition layout")
+    storage = UserContext(buffer=data[offset:])
+    filesystem = LittleFS(
+        context=storage, block_size=4096, block_count=ESP32_S3_STORAGE_LENGTH // 4096,
+        read_size=256, prog_size=256, cache_size=256, lookahead_size=16,
+    )
+    path = "/configuration/system/wifi"
+    with filesystem.open(path, "wb") as profile:
+        profile.write(WIFI_TEST_NAME + b"\n\n")
+    # Core's LittleFS attribute 1 contains the inode, four timestamps, root
+    # owner/group, mode 0600, regular file kind and its reserved byte.
+    filesystem.setattr(path, 1, struct.pack("<5Q3H2B", 0x100000, 0, 0, 0, 0, 0, 0, 0o600, 1, 0))
+    filesystem.unmount()
+    data[offset:] = storage.buffer
+    destination.write_bytes(data)
+    return destination
 
 
 if __name__ == "__main__":
@@ -213,7 +252,12 @@ if __name__ == "__main__":
     parser.add_argument("runs", type=Path)
     args = parser.parse_args()
     try:
-        run(args.chip, str(args.qemu.resolve()), args.image.resolve(), args.runs.resolve())
+        qemu = str(args.qemu.resolve())
+        runs = args.runs.resolve()
+        flash = run(args.chip, qemu, args.image.resolve(), runs)
+        if args.chip == "esp32s3":
+            provisioned = add_wifi_profile(flash, flash.with_name("flash-with-wifi-profile.bin"))
+            run(args.chip, qemu, provisioned, runs, expect_wifi_profile=True)
     except SmokeError as error:
         print(f"{args.chip} smoke check failed: {error}", file=sys.stderr)
         sys.exit(1)

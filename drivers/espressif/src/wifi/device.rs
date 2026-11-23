@@ -4,7 +4,7 @@ use smoltcp::{
     time::Instant,
 };
 
-use super::controller::StationControl;
+use super::{allocation, controller::StationControl};
 
 pub(super) struct StationDevice(pub Interface);
 
@@ -16,8 +16,9 @@ impl Device for StationDevice {
         if !StationControl::link_up() {
             return None;
         }
-        self.0
-            .receive()
+        // Core's smoltcp device has no waker parameter. Its runner polls every
+        // 20 ms when idle; the radio queues up to twelve frames in between.
+        allocation::internal(|| self.0.receive())
             .map(|(receive, transmit)| (ReceiveToken(receive), TransmitToken(transmit)))
     }
 
@@ -25,7 +26,7 @@ impl Device for StationDevice {
         if !StationControl::link_up() {
             return None;
         }
-        self.0.transmit().map(TransmitToken)
+        allocation::internal(|| self.0.transmit()).map(TransmitToken)
     }
 
     fn capabilities(&self) -> DeviceCapabilities {
@@ -42,7 +43,7 @@ pub(super) struct ReceiveToken(WifiRxToken);
 
 impl RxToken for ReceiveToken {
     fn consume<R, F: FnOnce(&[u8]) -> R>(self, consume: F) -> R {
-        self.0.consume_token(|buffer| consume(buffer))
+        allocation::internal(|| self.0.consume_token(|buffer| consume(buffer)))
     }
 }
 
@@ -50,6 +51,6 @@ pub(super) struct TransmitToken(WifiTxToken);
 
 impl TxToken for TransmitToken {
     fn consume<R, F: FnOnce(&mut [u8]) -> R>(self, length: usize, consume: F) -> R {
-        self.0.consume_token(length, consume)
+        allocation::internal(|| self.0.consume_token(length, consume))
     }
 }

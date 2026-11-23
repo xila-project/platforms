@@ -6620,6 +6620,7 @@ dependencies = [
  "embedded-io-async 0.7.0",
  "esp-hal",
  "esp-radio",
+ "esp-radio-rtos-driver",
  "esp-rtos",
  "smoltcp",
  "static_cell",

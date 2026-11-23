@@ -2,6 +2,7 @@
 rust_version = "1.97.0"
 espup_version = "0.19.0"
 esp_gcc_version = "16.1.0_20260609"
+littlefs_python_version = "0.19.0"
 esp_qemu_version = "9.2.2_20261109"
 espflash_version = "4.7.0"
 node_version = "24.22.0"
@@ -238,10 +239,10 @@ tools.node = "{{ vars.node_version }}"
 run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' wt32-sc01-plus"
 
 [tasks."test:esp32-s3-qemu"]
-description = "Boot the ESP32-S3 QEMU board headless in Espressif QEMU and check LittleFS, RNG, LVGL, the heap and the shell login prompt"
+description = "Boot the ESP32-S3 QEMU board headless in Espressif QEMU and check LittleFS, RNG, LVGL, the heap and login with and without a Wi-Fi profile"
 depends = ["build:esp32-s3-qemu"]
 tools.uv = "{{ vars.uv_version }}"
-run = "uv run --no-project python -I tools/dev/espressif_smoke.py target/espressif-emulator/tools/qemu-{{ vars.esp_qemu_version }}/qemu/bin/qemu-system-xtensa target/espressif-emulator/esp32-s3-qemu-flash.bin target/espressif-emulator/runs"
+run = "uv run --no-project --with littlefs-python=={{ vars.littlefs_python_version }} python -I tools/dev/espressif_smoke.py target/espressif-emulator/tools/qemu-{{ vars.esp_qemu_version }}/qemu/bin/qemu-system-xtensa target/espressif-emulator/esp32-s3-qemu-flash.bin target/espressif-emulator/runs"
 
 [tasks."test:esp32-c6-qemu"]
 description = "Boot the ESP32-C6 QEMU board headless in Espressif QEMU and check LittleFS, the heap and the shell login prompt"

@@ -36,6 +36,7 @@ esp-radio = { version = "=1.0.0-beta.1", default-features = false, features = [
   "unstable",
   "wifi",
 ], optional = true }
+esp-radio-rtos-driver = { version = "=0.4.2", optional = true }
 esp-rtos = { version = "=0.4.0", features = [
   "esp-radio",
   "esp32s3",
@@ -48,6 +49,10 @@ native_loader = { workspace = true, optional = true }
 peripherals = { workspace = true, optional = true }
 task = { workspace = true, optional = true }
 virtual_file_system = { workspace = true, optional = true }
+
+[dev-dependencies]
+file_system = { workspace = true }
+network = { workspace = true }
 
 [features]
 default = ["gpio", "i2c", "spi", "uart"]
@@ -98,6 +103,7 @@ wifi = [
   "dep:embassy-sync",
   "dep:embassy-time",
   "dep:esp-radio",
+  "dep:esp-radio-rtos-driver",
   "dep:esp-rtos",
   "dep:file_system",
   "dep:log",

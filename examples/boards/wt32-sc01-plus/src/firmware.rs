@@ -108,11 +108,11 @@ fn main() -> ! {
     };
     firmware::run_with_wifi(
         board,
-        drivers_espressif::wifi::Peripherals {
+        drivers_espressif::wifi::Hardware::Station(drivers_espressif::wifi::Peripherals {
             radio: peripherals.WIFI,
             scheduler_timer: peripherals.TIMG0,
             scheduler_interrupt: peripherals.FROM_CPU_INTR0,
-        },
+        }),
     )
 }
 

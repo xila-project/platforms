@@ -36,7 +36,7 @@ fn main() -> ! {
         .with_tx(peripherals.GPIO43)
         .with_rx(peripherals.GPIO44);
 
-    firmware::run(Board {
+    let board = Board {
         name: "ESP32-S3 (Espressif QEMU)",
         console: serial.into(),
         flash_storage: FlashStorage::new(peripherals.FLASH),
@@ -53,7 +53,8 @@ fn main() -> ! {
         system_check: Some(display::render),
         display: None,
         sessions: &[session::CONSOLE],
-    })
+    };
+    firmware::run_with_wifi(board, drivers_espressif::wifi::Hardware::Unavailable)
 }
 
 #[panic_handler]
