@@ -232,7 +232,10 @@ impl ManagerTrait for MemoryManager {
         layout: Layout,
     ) -> Option<NonNull<u8>> {
         let capabilities = self.effective_capabilities(capabilities);
-        unsafe { self.inner.allocate(allocation_capabilities(capabilities), layout) }
+        unsafe {
+            self.inner
+                .allocate(allocation_capabilities(capabilities), layout)
+        }
     }
 
     unsafe fn deallocate(&self, pointer: NonNull<u8>, layout: Layout) {

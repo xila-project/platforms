@@ -86,7 +86,7 @@ require cache-accessible internal SRAM. Rust allocations made by radio
 threads, interrupts and calls into the radio library also use internal SRAM.
 Normal Xila thread allocations prefer the 2 MiB PSRAM when it is available.
 
-The Wi-Fi firmware reserves 196 KiB (200,704 bytes) for the internal heap.
+The Wi-Fi firmware reserves 188 KiB (192,512 bytes) for the internal heap.
 The board linker enforces a 40 KiB main stack. LittleFS copies flash transfers
 through an internal SRAM buffer so the ROM can access them with caches suspended.
 The radio caps frame buffers at six static receive, twelve dynamic receive

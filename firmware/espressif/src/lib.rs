@@ -52,7 +52,7 @@ pub const HEAP_SIZE: usize = 256 * 1024;
 // The radio and scheduler add internal code and data. Leave room for the
 // executor's main stack in the shared instruction/data SRAM bank.
 #[cfg(feature = "wifi")]
-pub const HEAP_SIZE: usize = 196 * 1024;
+pub const HEAP_SIZE: usize = 188 * 1024;
 static mut HEAP: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
 
 /// LittleFS cache: a divisor of the 4096-byte flash page.
@@ -400,6 +400,38 @@ async fn start(task_manager: &'static task::Manager) {
             None => None,
         }
     };
+
+    #[cfg(feature = "wifi")]
+    if let Some(manager) = network_manager {
+        let http_client = Box::leak(Box::new(drivers_shared::devices::HttpClientDevice::new(
+            manager,
+            task_manager,
+        )));
+        let https_client = Box::leak(Box::new(drivers_shared::devices::HttpsClientDevice::new(
+            random_device,
+            manager,
+            task_manager,
+        )));
+        // The PSRAM-first global allocator also serves the TLS record buffers.
+        mount_static!(
+            virtual_file_system,
+            task,
+            &[
+                (
+                    &"/devices/network/http_client",
+                    CharacterDevice,
+                    *http_client
+                ),
+                (
+                    &"/devices/network/https_client",
+                    CharacterDevice,
+                    *https_client
+                ),
+            ]
+        )
+        .await
+        .expect("Failed to mount HTTP client devices");
+    }
 
     // - Executables.
     let executable_context: &'static executable::ExecutableContext =
