@@ -217,6 +217,14 @@ impl MemoryManager {
     }
 }
 
+fn allocation_capabilities(capabilities: CapabilityFlags) -> CapabilityFlags {
+    #[cfg(feature = "wifi")]
+    if capabilities.is_empty() && crate::wifi::internal_allocation_required() {
+        return CapabilityFlags::AlwaysAccessible;
+    }
+    capabilities
+}
+
 impl ManagerTrait for MemoryManager {
     unsafe fn allocate(
         &self,
@@ -224,7 +232,10 @@ impl ManagerTrait for MemoryManager {
         layout: Layout,
     ) -> Option<NonNull<u8>> {
         let capabilities = self.effective_capabilities(capabilities);
-        unsafe { self.inner.allocate(capabilities, layout) }
+        unsafe {
+            self.inner
+                .allocate(allocation_capabilities(capabilities), layout)
+        }
     }
 
     unsafe fn deallocate(&self, pointer: NonNull<u8>, layout: Layout) {
@@ -240,8 +251,12 @@ impl ManagerTrait for MemoryManager {
     ) -> Option<NonNull<u8>> {
         let capabilities = self.effective_capabilities(capabilities);
         unsafe {
-            self.inner
-                .reallocate(capabilities, old_pointer, old_layout, new_layout)
+            self.inner.reallocate(
+                allocation_capabilities(capabilities),
+                old_pointer,
+                old_layout,
+                new_layout,
+            )
         }
     }
 

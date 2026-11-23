@@ -81,7 +81,7 @@ fn main() -> ! {
         touch_clock: peripherals.GPIO5,
     });
 
-    firmware::run(Board {
+    let board = Board {
         name: "WT32-SC01 Plus",
         console: console.into(),
         flash_storage: FlashStorage::new(peripherals.FLASH),
@@ -105,7 +105,15 @@ fn main() -> ! {
             &[session::CONSOLE]
         },
         display,
-    })
+    };
+    firmware::run_with_wifi(
+        board,
+        drivers_espressif::wifi::Hardware::Station(drivers_espressif::wifi::Peripherals {
+            radio: peripherals.WIFI,
+            scheduler_timer: peripherals.TIMG0,
+            scheduler_interrupt: peripherals.FROM_CPU_INTR0,
+        }),
+    )
 }
 
 /// Writes the panic message to the console. esp-println writes to UART0,

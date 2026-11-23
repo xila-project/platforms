@@ -47,7 +47,12 @@ pub use board::{Board, Display, ExternalMemory, MemoryReport, StoragePartition, 
 pub use drivers_espressif;
 
 /// The static internal heap reservation.
+#[cfg(not(feature = "wifi"))]
 pub const HEAP_SIZE: usize = 256 * 1024;
+// The radio and scheduler add internal code and data. Leave room for the
+// executor's main stack in the shared instruction/data SRAM bank.
+#[cfg(feature = "wifi")]
+pub const HEAP_SIZE: usize = 188 * 1024;
 static mut HEAP: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
 
 /// LittleFS cache: a divisor of the 4096-byte flash page.
@@ -75,7 +80,15 @@ const LIFECYCLE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 static TASK_MANAGER: task::Manager = task::Manager::new();
 
+#[cfg(not(feature = "wifi"))]
 drivers_espressif::instantiate_global_allocator!();
+// Prefer PSRAM for ordinary allocations when present to reserve internal
+// memory for the radio and other allocations with hardware constraints.
+#[cfg(feature = "wifi")]
+static __DRIVERS_ESPRESSIF_MEMORY_ALLOCATOR: MemoryManager =
+    MemoryManager::with_large_allocation_threshold(Some(0));
+#[cfg(feature = "wifi")]
+drivers_espressif::instantiate_global_allocator!(&__DRIVERS_ESPRESSIF_MEMORY_ALLOCATOR);
 
 static BOARD: Mutex<RefCell<Option<Board>>> = Mutex::new(RefCell::new(None));
 
@@ -95,6 +108,17 @@ pub fn initialize_heap() -> &'static MemoryManager {
 /// The allocator behind the global heap.
 pub fn heap() -> &'static MemoryManager {
     &__DRIVERS_ESPRESSIF_MEMORY_ALLOCATOR
+}
+
+#[cfg(feature = "wifi")]
+static WIFI: Mutex<RefCell<Option<drivers_espressif::wifi::Hardware>>> =
+    Mutex::new(RefCell::new(None));
+
+/// Starts Xila and makes the board's optional ESP32-S3 radio available after mounting storage.
+#[cfg(feature = "wifi")]
+pub fn run_with_wifi(board: Board, radio: drivers_espressif::wifi::Hardware) -> ! {
+    critical_section::with(|section| WIFI.borrow(section).replace(Some(radio)));
+    run(board)
 }
 
 /// Starts Xila on `board`. Call it from the board's entry point, after
@@ -353,6 +377,61 @@ async fn start(task_manager: &'static task::Manager) {
     if display.is_some() {
         log::warning!("Xila: the board has a screen, but the firmware has no graphics");
     }
+    #[cfg(feature = "wifi")]
+    let network_manager = {
+        let peripherals = critical_section::with(|section| WIFI.borrow(section).take());
+        match peripherals {
+            Some(peripherals) => match drivers_espressif::wifi::initialize(
+                peripherals,
+                heap(),
+                task_manager,
+                virtual_file_system,
+                time_manager,
+                random_device,
+            )
+            .await
+            {
+                Ok(manager) => Some(manager),
+                Err(error) => {
+                    log::warning!("Wi-Fi: startup failed ({error})");
+                    None
+                }
+            },
+            None => None,
+        }
+    };
+
+    #[cfg(feature = "wifi")]
+    if let Some(manager) = network_manager {
+        let http_client = Box::leak(Box::new(drivers_shared::devices::HttpClientDevice::new(
+            manager,
+            task_manager,
+        )));
+        let https_client = Box::leak(Box::new(drivers_shared::devices::HttpsClientDevice::new(
+            random_device,
+            manager,
+            task_manager,
+        )));
+        // The PSRAM-first global allocator also serves the TLS record buffers.
+        mount_static!(
+            virtual_file_system,
+            task,
+            &[
+                (
+                    &"/devices/network/http_client",
+                    CharacterDevice,
+                    *http_client
+                ),
+                (
+                    &"/devices/network/https_client",
+                    CharacterDevice,
+                    *https_client
+                ),
+            ]
+        )
+        .await
+        .expect("Failed to mount HTTP client devices");
+    }
 
     // - Executables.
     let executable_context: &'static executable::ExecutableContext =
@@ -361,6 +440,8 @@ async fn start(task_manager: &'static task::Manager) {
             formats: native::FORMATS,
             #[cfg(feature = "graphics")]
             graphics_manager,
+            #[cfg(feature = "wifi")]
+            network_manager,
             ..executable::ExecutableContext::new(
                 task_manager,
                 users_manager,

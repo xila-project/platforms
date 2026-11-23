@@ -97,3 +97,6 @@ pub mod shared;
 pub mod peripherals;
 
 pub extern crate memory as memory_exported;
+
+#[cfg(feature = "wifi")]
+pub mod wifi;

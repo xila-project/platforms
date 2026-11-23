@@ -17,7 +17,9 @@ esp-println = { version = "0.18", default-features = false, features = [
   "uart",
 ] }
 esp-storage = { version = "0.10", features = ["esp32s3"] }
-firmware = { package = "xila-firmware-espressif", path = "../../../firmware/espressif" }
+firmware = { package = "xila-firmware-espressif", path = "../../../firmware/espressif", features = [
+  "wifi",
+] }
 xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false, features = [
   "graphics_rendering_rgb565",
 ] }

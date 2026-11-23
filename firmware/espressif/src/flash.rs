@@ -19,6 +19,14 @@ use crate::StoragePartition;
 
 const BLOCK: u32 = FlashStorage::ERASE_SIZE as u32;
 
+// The ROM flash routines may suspend the cache, making PSRAM unavailable.
+// Keep the transfer buffer on the internal SRAM stack and copy outside the
+// ROM call, even when the caller's buffer is already word-aligned.
+const TRANSFER_SIZE: usize = super::CACHE_SIZE;
+
+#[repr(align(4))]
+struct TransferBuffer([u8; TRANSFER_SIZE]);
+
 /// The board's storage partition as a block device.
 pub(super) struct LittleFsPartition {
     flash: Mutex<CriticalSectionRawMutex, RefCell<FlashStorage<'static>>>,
@@ -46,9 +54,24 @@ impl DirectBaseOperations for LittleFsPartition {
     fn read(&self, _: &mut Context<'_>, buffer: &mut [u8], position: Size) -> Poll<Result<usize>> {
         file_system::ready(|| {
             let address = self.address(position, buffer.len() as Size)?;
-            self.flash
-                .lock(|flash| ReadNorFlash::read(&mut *flash.borrow_mut(), address, buffer))
-                .map_err(|_| IoErrorKind::InputOutput)?;
+            let alignment = <FlashStorage<'_> as ReadNorFlash>::READ_SIZE;
+            if !((address as usize).is_multiple_of(alignment)
+                && buffer.len().is_multiple_of(alignment))
+            {
+                return Err(IoErrorKind::InputOutput);
+            }
+            self.flash.lock(|flash| -> Result<()> {
+                let mut flash = flash.borrow_mut();
+                let mut transfer = TransferBuffer([0; TRANSFER_SIZE]);
+                for (index, chunk) in buffer.chunks_mut(TRANSFER_SIZE).enumerate() {
+                    let offset = address + (index * TRANSFER_SIZE) as u32;
+                    let scratch = &mut transfer.0[..chunk.len()];
+                    ReadNorFlash::read(&mut *flash, offset, scratch)
+                        .map_err(|_| IoErrorKind::InputOutput)?;
+                    chunk.copy_from_slice(scratch);
+                }
+                Ok(())
+            })?;
             Ok(buffer.len())
         })
     }
@@ -56,9 +79,24 @@ impl DirectBaseOperations for LittleFsPartition {
     fn write(&self, _: &mut Context<'_>, buffer: &[u8], position: Size) -> Poll<Result<usize>> {
         file_system::ready(|| {
             let address = self.address(position, buffer.len() as Size)?;
-            self.flash
-                .lock(|flash| NorFlash::write(&mut *flash.borrow_mut(), address, buffer))
-                .map_err(|_| IoErrorKind::InputOutput)?;
+            let alignment = <FlashStorage<'_> as NorFlash>::WRITE_SIZE;
+            if !((address as usize).is_multiple_of(alignment)
+                && buffer.len().is_multiple_of(alignment))
+            {
+                return Err(IoErrorKind::InputOutput);
+            }
+            self.flash.lock(|flash| -> Result<()> {
+                let mut flash = flash.borrow_mut();
+                let mut transfer = TransferBuffer([0; TRANSFER_SIZE]);
+                for (index, chunk) in buffer.chunks(TRANSFER_SIZE).enumerate() {
+                    let offset = address + (index * TRANSFER_SIZE) as u32;
+                    let scratch = &mut transfer.0[..chunk.len()];
+                    scratch.copy_from_slice(chunk);
+                    NorFlash::write(&mut *flash, offset, scratch)
+                        .map_err(|_| IoErrorKind::InputOutput)?;
+                }
+                Ok(())
+            })?;
             Ok(buffer.len())
         })
     }
