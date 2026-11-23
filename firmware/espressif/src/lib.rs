@@ -52,7 +52,7 @@ pub const HEAP_SIZE: usize = 256 * 1024;
 // The radio and scheduler add internal code and data. Leave room for the
 // executor's main stack in the shared instruction/data SRAM bank.
 #[cfg(feature = "wifi")]
-pub const HEAP_SIZE: usize = 216 * 1024;
+pub const HEAP_SIZE: usize = 196 * 1024;
 static mut HEAP: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
 
 /// LittleFS cache: a divisor of the 4096-byte flash page.
@@ -80,7 +80,15 @@ const LIFECYCLE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 static TASK_MANAGER: task::Manager = task::Manager::new();
 
+#[cfg(not(feature = "wifi"))]
 drivers_espressif::instantiate_global_allocator!();
+// Prefer PSRAM for ordinary allocations when present to reserve internal
+// memory for the radio and other allocations with hardware constraints.
+#[cfg(feature = "wifi")]
+static __DRIVERS_ESPRESSIF_MEMORY_ALLOCATOR: MemoryManager =
+    MemoryManager::with_large_allocation_threshold(Some(0));
+#[cfg(feature = "wifi")]
+drivers_espressif::instantiate_global_allocator!(&__DRIVERS_ESPRESSIF_MEMORY_ALLOCATOR);
 
 static BOARD: Mutex<RefCell<Option<Board>>> = Mutex::new(RefCell::new(None));
 

@@ -17,6 +17,7 @@ espflash_version=$1
 rust_version=$2
 esp_gcc_version=$3
 board=$4
+output=${5:-image}
 directory="examples/boards/$board"
 test -f "$directory/Cargo.toml" || { echo "Unknown Espressif board: $board" >&2; exit 2; }
 package="xila-board-$board"
@@ -99,6 +100,11 @@ case "$board" in
 esac
 
 cp "$CARGO_TARGET_DIR/$target/release-embedded/$binary" "$root/$board.elf"
+
+if [[ "$output" == elf ]]; then
+    echo "Firmware: $root/$board.elf"
+    exit 0
+fi
 
 report="$root/$board-save-image.log"
 if ! "$root/tools/espflash-$espflash_version/espflash" save-image --skip-update-check \

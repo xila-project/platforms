@@ -238,6 +238,10 @@ depends = ["setup:espflash"]
 tools.node = "{{ vars.node_version }}"
 run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' wt32-sc01-plus"
 
+[tasks."build:wt32-sc01-plus-elf"]
+description = "Build the WT32-SC01 Plus firmware ELF"
+run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' wt32-sc01-plus elf"
+
 [tasks."test:esp32-s3-qemu"]
 description = "Boot the ESP32-S3 QEMU board headless in Espressif QEMU and check LittleFS, RNG, LVGL, the heap and login with and without a Wi-Fi profile"
 depends = ["build:esp32-s3-qemu"]
