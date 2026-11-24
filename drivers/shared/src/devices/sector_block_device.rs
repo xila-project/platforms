@@ -85,7 +85,9 @@ impl<S: SectorStorage> SectorBlockDevice<S> {
         if position > capacity {
             return Err(IoErrorKind::InvalidArgument);
         }
-        let length = buffer.len().min((capacity - position) as usize);
+        // Compare in `Size`: on a 32-bit target, the bytes left on a card of
+        // 4 GiB or more do not fit in `usize`.
+        let length = (buffer.len() as Size).min(capacity - position) as usize;
         let buffer = &mut buffer[..length];
 
         let mut state = self
@@ -311,6 +313,38 @@ mod tests {
             device.read_sync(&mut back, capacity + 1),
             Err(IoErrorKind::InvalidArgument)
         );
+    }
+
+    /// Sectors that read as zeros and accept no write: a large card without
+    /// the memory for it.
+    struct EmptyStorage(u32);
+
+    impl SectorStorage for EmptyStorage {
+        fn sector_count(&self) -> u32 {
+            self.0
+        }
+
+        fn read_sector(&mut self, _: u32, sector: &mut [u8; SECTOR_SIZE]) -> Result<()> {
+            sector.fill(0);
+            Ok(())
+        }
+
+        fn write_sector(&mut self, _: u32, _: &[u8; SECTOR_SIZE]) -> Result<()> {
+            Err(IoErrorKind::PermissionDenied)
+        }
+    }
+
+    #[test]
+    fn read_on_a_card_larger_than_4_gibibytes_is_complete() {
+        // 8 GiB: the bytes left after a position below 4 GiB exceed `u32`.
+        let device = SectorBlockDevice::new(EmptyStorage(16 * 1024 * 1024));
+        assert_eq!(device.capacity(), 8 * 1024 * 1024 * 1024);
+
+        let mut back = [0xFFu8; 1000];
+        assert_eq!(device.read_sync(&mut back, 0), Ok(back.len()));
+        assert_eq!(device.read_sync(&mut back, 700), Ok(back.len()));
+        assert_eq!(device.read_sync(&mut back, device.capacity() - 10), Ok(10));
+        assert_eq!(back[..10], [0; 10]);
     }
 
     #[test]
