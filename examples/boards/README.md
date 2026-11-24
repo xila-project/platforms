@@ -353,12 +353,12 @@ espflash flash --chip esp32 --port /dev/ttyUSB0 \
 The firmware mounts the WebAssembly runtime at `/applications/executables/wasm`
 with lazy translation and mounts the CPU neural network loader at
 `/devices/nn/cpu` for Digits. Guest startup and model loading require the
-board's PSRAM allocator support for large allocations. The Weather bundle
-requires Wi-Fi. The radio and HTTPS build falls below the 40 KiB main-stack
-minimum, and the required factory partition leaves too little room for all
-three bundles on the 4 MiB flash.
+board's PSRAM allocator support for large allocations. Wi-Fi is not enabled:
+the radio and HTTPS build falls below the 40 KiB main-stack minimum, and the
+factory partition it needs leaves too little storage on the 4 MiB flash
+(#200). Weather therefore stays on the WT32-SC01 Plus.
 
-The raw LittleFS image seeds Calculator, Digits and Weather, the official
+The raw LittleFS image seeds Calculator and Digits, the official
 package registry, and the native shortcuts for Activity, File Manager,
 Settings and Terminal. The task reads the image size from the `storage` row
 in [partitions.csv](wt32-sc01/partitions.csv). Until format-v2 releases are

@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn wt32_sc01_profile_seeds_selected_bundles_and_native_shortcuts() {
         let profile = profile("wt32-sc01", NativeRuntime::host()).unwrap();
-        assert_eq!(profile.applications, ["calculator", "digits", "weather"]);
+        assert_eq!(profile.applications, ["calculator", "digits"]);
         let shortcut_names: Vec<&str> = profile
             .shortcuts
             .iter()
