@@ -80,8 +80,8 @@ Weather. In the browser, Weather and `web_request` reach the network through the
 Both include native application shortcuts. The `wt32-sc01` and `wt32-sc01-plus`
 profiles share the Activity, File Manager, Settings and Terminal shortcuts and
 seed the official registry. The classic profile includes Calculator and
-Digits; Weather needs Wi-Fi, which the classic board lacks (#200). The Plus profile includes all seven WebAssembly applications.
-Each board task writes a raw 4096-byte-block LittleFS image to
+Digits; Weather needs Wi-Fi, which the classic board lacks (#200). The Plus
+profile includes all seven WebAssembly applications. Each board task writes a raw 4096-byte-block LittleFS image to
 `target/seed/<board>/storage.img`, sized to the `storage` partition in the
 board's partition table ([`wt32-sc01`](../../examples/boards/wt32-sc01/partitions.csv),
 [`wt32-sc01-plus`](../../examples/boards/wt32-sc01-plus/partitions.csv)).
