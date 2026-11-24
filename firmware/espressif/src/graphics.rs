@@ -174,10 +174,10 @@ unsafe extern "C" fn round_area_even_width(event: *mut lvgl::lv_event_t) {
 /// # Safety
 /// `event` must be an `LV_EVENT_INVALIDATE_AREA` or `LV_EVENT_FLUSH_START`
 /// display event.
-unsafe fn event_area(event: *mut lvgl::lv_event_t) -> (&'static lvgl::lv_area_t, u32) {
-    // SAFETY: both events carry a valid `lv_area_t`, which the caller only
-    // uses while it handles the event.
-    let area = unsafe { &*lvgl::lv_event_get_param(event).cast::<lvgl::lv_area_t>() };
+unsafe fn event_area(event: *mut lvgl::lv_event_t) -> (lvgl::lv_area_t, u32) {
+    // SAFETY: both events carry a valid `lv_area_t`, copied before the event
+    // ends.
+    let area = unsafe { *lvgl::lv_event_get_param(event).cast::<lvgl::lv_area_t>() };
     let pixels = (area.x2 - area.x1 + 1).max(0) * (area.y2 - area.y1 + 1).max(0);
     (area, pixels as u32)
 }
@@ -194,7 +194,7 @@ unsafe extern "C" fn record_display_performance(event: *mut lvgl::lv_event_t) {
             tracker.on_invalidate(pixels, || unsafe {
                 graphics::invalidation::get_invalidated_class_name(
                     lvgl::lv_display_get_default(),
-                    area,
+                    &area,
                 )
                 .and_then(|name| name.to_str().ok())
             });
