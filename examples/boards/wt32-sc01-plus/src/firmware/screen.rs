@@ -11,7 +11,7 @@
 //! | LCD_WR (write clock) | 47 |
 //! | LCD_RS (command or data) | 0, also the BOOT button |
 //! | LCD_RESET, also TP_RST | 4 |
-//! | BL_PWM (backlight, active high) | 45 |
+//! | BL_PWM (backlight, active high, dimmed by LEDC PWM) | 45 |
 //! | TP_SDA, TP_SCL | 6, 5 |
 //! | TP_INT | 7 (not used: the controller is polled) |
 //!
@@ -41,12 +41,12 @@ use esp_hal::{
     },
     peripherals::{
         DMA_CH0, GPIO0, GPIO3, GPIO4, GPIO5, GPIO6, GPIO8, GPIO9, GPIO15, GPIO16, GPIO17, GPIO18,
-        GPIO45, GPIO46, GPIO47, I2C0, LCD_CAM,
+        GPIO45, GPIO46, GPIO47, I2C0, LCD_CAM, LEDC,
     },
     time::Rate,
 };
 use firmware::{
-    Display,
+    Display, backlight,
     panel::{self, HEIGHT, WIDTH},
 };
 use mipidsi::options::ColorInversion;
@@ -88,13 +88,14 @@ pub(super) struct Pins {
     pub command_data: GPIO0<'static>,
     pub reset: GPIO4<'static>,
     pub backlight: GPIO45<'static>,
+    pub ledc: LEDC<'static>,
     pub i2c: I2C0<'static>,
     pub touch_data: GPIO6<'static>,
     pub touch_clock: GPIO5<'static>,
 }
 
-/// Initialises the panel, clears it, turns the backlight on and starts the
-/// touch controller. On failure, the board runs without its screen:
+/// Initialises the panel, clears it, turns the dimmable backlight on and
+/// starts the touch controller. On failure, the board runs without its screen:
 /// [`log_report`] logs why.
 pub(super) fn start(pins: Pins) -> Option<Display> {
     match try_start(pins) {
@@ -113,7 +114,7 @@ pub(super) fn start(pins: Pins) -> Option<Display> {
 /// is a failure too: the backlight stays off and the board runs headless.
 fn try_start(pins: Pins) -> Result<Display, String> {
     // Dark until everything works and the panel holds a black frame.
-    let mut backlight = Output::new(pins.backlight, Level::Low, OutputConfig::default());
+    let backlight = backlight::start(pins.ledc, pins.backlight)?;
     let reset = Output::new(pins.reset, Level::High, OutputConfig::default());
 
     let lcd_cam = LcdCam::new(pins.lcd_cam);
@@ -140,7 +141,7 @@ fn try_start(pins: Pins) -> Result<Display, String> {
     let bus = I8080Bus::new(i8080, descriptors)
         .map_err(|error| format!("cannot use the LCD bus: {error:?}"))?;
 
-    let (display, (chip, vendor)) = panel::start(
+    let (mut display, (chip, vendor)) = panel::start(
         ParallelInterface::new(bus),
         reset,
         pins.i2c,
@@ -150,9 +151,8 @@ fn try_start(pins: Pins) -> Result<Display, String> {
         DRAW_BUFFER_ROWS,
     )?;
     TOUCH_IDENTIFIERS.store(u16::from(chip) << 8 | u16::from(vendor), Ordering::Relaxed);
-    // esp-hal's `Output` has no `Drop`: the pin keeps driving the backlight
-    // on after `backlight` goes out of scope.
-    backlight.set_high();
+    // Full brightness until the saved appearance sets the user's level.
+    backlight::attach(&mut display, backlight)?;
 
     Ok(display)
 }
