@@ -9,6 +9,7 @@ description = "Wireless-Tag's WT32-SC01 (ESP32, 4 MB flash, 8 MB PSRAM)."
 [target.'cfg(all(target_os = "none", target_arch = "xtensa"))'.dependencies]
 drivers_espressif = { package = "xila-drivers-espressif", path = "../../../drivers/espressif", default-features = false, features = [
   "esp32",
+  "gpio",
   "spi-display",
 ] }
 critical-section = { workspace = true }

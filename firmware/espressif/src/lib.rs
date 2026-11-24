@@ -188,6 +188,7 @@ async fn start(task_manager: &'static task::Manager) {
         system_check,
         sd_card,
         display,
+        gpio,
         sessions,
     } = board;
 
@@ -365,6 +366,12 @@ async fn start(task_manager: &'static task::Manager) {
     if let Some(slot) = sd_card {
         sd_card::start(slot, virtual_file_system, task, time_manager).await;
         task::yield_now().await;
+    }
+
+    if let Some(gpio) = gpio {
+        drivers_espressif::shared::mount_pin_devices(virtual_file_system, task, gpio)
+            .await
+            .expect("Failed to mount the GPIO devices");
     }
 
     // The ESP32-S3 smoke test checks that the device returns changing values.

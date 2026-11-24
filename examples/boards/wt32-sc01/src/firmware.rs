@@ -1,5 +1,6 @@
 //! Wireless-Tag WT32-SC01 with the ESP32-WROVER-B module.
 
+mod gpio;
 mod screen;
 
 use alloc::string::String;
@@ -131,6 +132,7 @@ fn main() -> ! {
         memory_check: Some(check_external_memory),
         system_check: Some(log_screen_report),
         sd_card: None,
+        gpio: Some(gpio::controller()),
         sessions: if display.is_some() {
             &[session::CONSOLE, session::GRAPHICAL]
         } else {
