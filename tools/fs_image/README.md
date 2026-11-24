@@ -81,8 +81,9 @@ Both include native application shortcuts. The `wt32-sc01` and `wt32-sc01-plus`
 profiles share the Activity, File Manager, Settings and Terminal shortcuts and
 seed the official registry. The Plus profile also includes the same seven Wasm
 applications. Each board task writes a raw 4096-byte-block LittleFS image to
-`target/seed/<board>/storage.img`, sized to the `storage` partition in its
-[partition table](../../examples/boards/README.md).
+`target/seed/<board>/storage.img`, sized to the `storage` partition in the
+board's partition table ([`wt32-sc01`](../../examples/boards/wt32-sc01/partitions.csv),
+[`wt32-sc01-plus`](../../examples/boards/wt32-sc01-plus/partitions.csv)).
 Set `EMBEDDED_I18N_LOCALE=en`, `fr`, `es`, `de`, `pt-BR`, `it`, `pl`, `ja` or `zh-CN`
 while building both guests and images. No passwords or random salts are included.
 An explicit pending marker allows runtime account initialization to finish after

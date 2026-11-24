@@ -130,7 +130,7 @@ pub(crate) async fn start(
     manager
 }
 
-/// Gives the classic board a touch target while measuring its boot heap.
+/// Shows a touch target on boards that have a display but no graphical shell.
 #[cfg(not(feature = "graphics"))]
 pub(crate) async fn show_touch_test(manager: &graphics::Manager) {
     unsafe extern "C" fn show_touch(event: *mut lvgl::lv_event_t) {

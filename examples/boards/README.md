@@ -303,7 +303,9 @@ LittleFS uses the remaining 1.6875 MiB at `0x250000`.
 
 **Migration from the 1.5 MiB factory layout.** Back up your storage data before
 upgrading. Flash the firmware with the new partition table, then reflash the
-storage image at the new offset. Restore any saved files after the upgrade.
+storage image at the new offset. Without a storage image, the firmware cannot
+mount the moved partition and formats it on first boot. Restore any saved files
+after the upgrade.
 
 ```sh
 espflash flash --chip esp32 --port /dev/ttyUSB0 \
@@ -315,8 +317,9 @@ espflash flash --chip esp32 --port /dev/ttyUSB0 \
 Build and write the raw LittleFS image to populate the application menu with
 Activity, File Manager, Settings and Terminal. The task reads the image size
 from the `storage` row in [partitions.csv](wt32-sc01/partitions.csv).
-The classic firmware runs native applications, so its seed image contains no
-WebAssembly bundles. Writing the storage image replaces the partition contents.
+The classic firmware does not enable the WebAssembly runtime (the firmware's
+`wasm` feature), so its seed image contains only native application shortcuts
+and no WebAssembly bundles. Writing the storage image replaces the partition contents.
 
 ```sh
 mise run image:wt32-sc01

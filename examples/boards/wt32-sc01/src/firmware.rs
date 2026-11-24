@@ -48,7 +48,9 @@ pub(crate) fn external_heap() -> &'static MemoryManager {
     &EXTERNAL_HEAP
 }
 
-/// esp-hal starts the ESP32 at 80 MHz by default; the chip runs at 240 MHz.
+/// esp-hal starts the ESP32 at 80 MHz by default; run it at its 240 MHz
+/// maximum. The display bus and UART take their clocks from the 80 MHz APB
+/// clock, so their rates do not change.
 const CPU_CLOCK: CpuClock = CpuClock::_240MHz;
 
 #[esp_hal::main]
