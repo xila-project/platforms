@@ -26,6 +26,7 @@ board's console port explicitly.
 import argparse
 import ipaddress
 import string
+import sys
 from pathlib import Path
 
 from serial_shell import run_commands, strip_ansi_sequences
@@ -181,6 +182,11 @@ def main():
         if value:
             text = text.replace(value, MASK)
     print(text[-1500:])
+    # The writes only succeed in a root shell: the firmware ignores a Wi-Fi
+    # file that root does not own. Report a failed login or sudo instead of
+    # exiting as if the board had been provisioned.
+    if not any(line.strip() == "root" for line in text.splitlines()):
+        sys.exit("error: the shell did not report root after sudo; the Wi-Fi file was not provisioned")
 
 
 if __name__ == "__main__":
