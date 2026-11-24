@@ -58,7 +58,8 @@ Other keys, such as `$schema`, are ignored.
   without a password. `/configuration/system` is root's.
 
 A window fills its parent, so without the desk an application window fills
-the whole screen: there is no status bar, dock or window title.
+the whole screen: there is no status bar, dock or window title. On a touch
+display, Core's on-screen keyboard opens when one of its text fields is tapped.
 
 ## Setting it up
 
@@ -72,12 +73,6 @@ the whole screen: there is no status bar, dock or window title.
 
 ## Limitations
 
-- **Text input on touch-only boards.** The on-screen keyboard currently comes
-  from the graphical shell (`--show-keyboard`), so a startup application on a
-  board without a keyboard, such as the WT32-SC01 Plus, gets no keyboard for
-  its text fields. Moving the keyboard into Core's graphics subsystem, for
-  every application, is separate upcoming work; until then choose an
-  application that needs no text input.
 - **Memory.** The application saves the graphical shell's running state: its
   login screen, desk, dock, status bar and task. The graphical shell itself
   stays mounted: the mount is one small in-memory file entry and the code is

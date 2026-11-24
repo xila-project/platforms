@@ -131,7 +131,7 @@ fn main() -> ! {
         memory_check: Some(check_external_memory),
         system_check: Some(log_screen_report),
         sessions: if display.is_some() {
-            &[session::CONSOLE, session::GRAPHICAL_TOUCH]
+            &[session::CONSOLE, session::GRAPHICAL]
         } else {
             &[session::CONSOLE]
         },

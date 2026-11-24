@@ -83,8 +83,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
 
     use alloc::boxed::Box;
     use alloc::format;
-    use alloc::string::ToString;
-    use alloc::vec;
+    use alloc::vec::Vec;
     use core::sync::atomic::{AtomicBool, Ordering};
     use drivers_wasm::devices::{DriveDevice, graphics::GraphicsDevices};
     use wasm_bindgen::{JsCast, closure::Closure};
@@ -216,6 +215,13 @@ async fn main(task_manager: &'static xila::task::Manager) {
         )
         .await
         .unwrap();
+
+    // Touch screens get the system on-screen keyboard; Core opens it when a
+    // text area is tapped.
+    if drivers_wasm::devices::graphics::has_touch_screen().unwrap_or(false) {
+        log::information!("Touch screen detected.");
+        graphics_manager.enable_on_screen_keyboard().await;
+    }
 
     let bootsplash = Bootsplash::new(graphics_manager).await.unwrap();
 
@@ -586,14 +592,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
 
     bootsplash.stop(graphics_manager).await.unwrap();
 
-    let has_touch_screen = drivers_wasm::devices::graphics::has_touch_screen().unwrap_or(false);
-
-    let arguments = if has_touch_screen {
-        log::information!("Touch screen detected.");
-        vec!["--show-keyboard".to_string()]
-    } else {
-        vec![]
-    };
+    let arguments: Vec<alloc::string::String> = Vec::new();
 
     // Everything already running is a runtime service; the shell (or the
     // startup application) and what it launches are stopped by the lifecycle.

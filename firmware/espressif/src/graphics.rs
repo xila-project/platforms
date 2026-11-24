@@ -98,6 +98,12 @@ pub(crate) async fn start(
     let manager: &'static graphics::Manager = Box::leak(Box::new(manager));
     graphics::set_ffi_manager(manager);
 
+    // On ESP boards the graphics pointer is the built-in touch panel, and
+    // the console input belongs to the separate serial session.
+    if display.pointer.is_some() {
+        manager.enable_on_screen_keyboard().await;
+    }
+
     if display.byte_swapped_rgb565 {
         let _lock = manager.lock().await;
         // SAFETY: the graphics lock is held, and the default display is the
