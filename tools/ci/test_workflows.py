@@ -563,8 +563,8 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         proposals = sorted(flag for flag in script.split() if flag.startswith('--enable-'))
         # Exactly the proposals Applications' host engine enables.
         self.assertEqual(proposals, sorted([
-            '--enable-bulk-memory', '--enable-extended-const', '--enable-multivalue',
-            '--enable-mutable-globals', '--enable-nontrapping-float-to-int',
+            '--enable-bulk-memory', '--enable-custom-page-sizes', '--enable-extended-const',
+            '--enable-multivalue', '--enable-mutable-globals', '--enable-nontrapping-float-to-int',
             '--enable-reference-types', '--enable-sign-ext', '--enable-tail-call']))
         self.assertIn('-Oz', script.split())
 
