@@ -14,6 +14,23 @@
 //! - anywhere else, such as constants in flash, which the DMA cannot read, or
 //!   unaligned PSRAM: copied through a staging buffer on the stack, in internal
 //!   SRAM, one chunk per transfer.
+//!
+//! # Setup cycles
+//!
+//! ESP32-S3 erratum LCD-239: in the 8080 format, the first data value and the
+//! number of data values that the peripheral sends can be wrong if the data
+//! phase starts two LCD_CLK cycles or less after the transaction starts. The
+//! count is `(setup + command + dummy cycles) * (LCD_CLK cycles per LCD_PCLK
+//! cycle)`. esp-hal divides LCD_CLK by two, and the bus sends no dummy cycle.
+//! A write without a command, such as the pixels that follow `RAMWR`, thus
+//! has only its setup cycles before its data. With esp-hal's default of one
+//! setup cycle, the count is two: the panel can receive a wrong first pixel,
+//! or one pixel more or less than the address window holds. The image of a
+//! partial update then moves by one pixel in its window, which shows as a
+//! line on the left or right edge of the updated area.
+//!
+//! [`configuration`] sets [`SETUP_CYCLES`] setup cycles, so every transaction
+//! satisfies the erratum. Build the [`I8080`] driver with it.
 
 use core::marker::PhantomData;
 
@@ -21,11 +38,32 @@ use drivers_shared::devices::display::ParallelBus;
 use esp_hal::{
     Blocking,
     dma::{BurstConfig, DmaDescriptor, DmaError, DmaTxBuffer, Preparation, aligned::DmaAlignedRef},
-    lcd_cam::lcd::i8080::{Command, I8080},
+    lcd_cam::lcd::i8080::{Command, Config, I8080},
+    time::Rate,
 };
 
 /// Bytes per DMA descriptor: at most 4095, kept a multiple of 4.
 pub const DESCRIPTOR_CHUNK_SIZE: usize = 4092;
+
+/// LCD_CLK cycles per LCD_PCLK cycle: esp-hal always divides LCD_CLK by two.
+const CLOCK_CYCLES_PER_BUS_CYCLE: usize = 2;
+
+/// Setup cycles before each transaction, in LCD_PCLK cycles. The write clock
+/// does not pulse during them. See the module documentation.
+pub const SETUP_CYCLES: usize = 2;
+
+// Erratum LCD-239: a transaction without a command and without dummy cycles
+// needs more than two LCD_CLK cycles before its data.
+const _: () = assert!(SETUP_CYCLES * CLOCK_CYCLES_PER_BUS_CYCLE > 2);
+
+/// The configuration of the [`I8080`] driver for an [`I8080Bus`] with a write
+/// clock of `frequency`: esp-hal's defaults, with [`SETUP_CYCLES`] setup
+/// cycles.
+pub fn configuration(frequency: Rate) -> Config {
+    Config::default()
+        .with_frequency(frequency)
+        .with_setup_cycles(SETUP_CYCLES)
+}
 
 /// Bytes per transfer of data that has to be staged in internal SRAM.
 const STAGING_SIZE: usize = 256;
@@ -172,8 +210,8 @@ pub struct I8080Bus {
 }
 
 impl I8080Bus {
-    /// Takes a configured [`I8080`] and descriptors, which must be in
-    /// internal SRAM. They bound one transfer to
+    /// Takes an [`I8080`] built with [`configuration`] and descriptors, which
+    /// must be in internal SRAM. They bound one transfer to
     /// `descriptors.len() * DESCRIPTOR_CHUNK_SIZE` bytes; longer writes are
     /// split into several transfers.
     pub fn new(
