@@ -65,7 +65,7 @@ pub struct OpenedSdCard {
 }
 
 impl OpenedSdCard {
-    /// Describes `device`, a block device of 512-byte blocks.
+    /// Describes `device`, a block device that reports 4096-byte blocks.
     pub fn new<D: xila::file_system::DirectBlockDevice>(
         description: String,
         device: &'static D,
@@ -257,7 +257,8 @@ pub(super) async fn start(
 /// permissions, so only root could use the card. The firmware changes the
 /// root only while it still has no permissions: on the first mount after a
 /// format, including a format by an earlier firmware. A later change by root
-/// stays. This is the only write to the card at boot without a request.
+/// stays, except a change back to no permissions: the next boot shares the
+/// root again. This is the only write to the card at boot without a request.
 async fn share_new_root(virtual_file_system: &VirtualFileSystem, task: task::TaskIdentifier) {
     let permissions = match virtual_file_system
         .get_statistics_for_task(task, &MOUNT_PATH)

@@ -147,7 +147,8 @@ measured.
   user can create files and directories in it, and only the owner of an
   entry can remove or rename it. LittleFS creates the root without
   permissions, so the firmware sets them at the first mount. It does not
-  change them after that.
+  change them after that, unless root removes all permissions from the root:
+  the next boot shares it again.
 - A card that does not hold LittleFS is not mounted and not changed. The boot
   log says so.
 
@@ -208,4 +209,4 @@ back in … ms`, or the reason for the failure. The firmware removes the file
 
 | Card | Date | Result |
 |---|---|---|
-| SanDisk SDXC "SN64G", 59.47 GiB (manufacturer `0x03`, revision 128, 2019-10) | 2026-11-24 | Detection, format, mount and persistence pass. Test file with 512-byte LittleFS blocks (before the change to 4096-byte blocks): 256 KiB written in 1129 ms (227 KiB/s), read in 1458 ms (176 KiB/s). |
+| SanDisk SDXC "SN64G", 59.47 GiB (manufacturer `0x03`, revision 128, 2019-10) | 2026-11-24 | Detection, format, mount and persistence pass. Test file with 512-byte LittleFS blocks (before the change to 4096-byte blocks): 256 KiB written in 1129 ms (227 KiB/s), read in 1458 ms (176 KiB/s). With 4096-byte blocks: written in 1022 ms (250 KiB/s), read in 378 ms (677 KiB/s). The `administrator` user can list, write and read files on the card. |
