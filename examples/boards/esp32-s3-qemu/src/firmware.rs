@@ -52,6 +52,7 @@ fn main() -> ! {
         memory_check: None,
         system_check: Some(display::render),
         display: None,
+        sd_card: None,
         sessions: &[session::CONSOLE],
     };
     firmware::run_with_wifi(board, drivers_espressif::wifi::Hardware::Unavailable)

@@ -9,6 +9,12 @@
 //!   speed once at boot.
 //! - PSRAM: added to the heap, and checked at boot by [`firmware::psram_self_test`].
 //! - Flash: 16 MB, partitioned by `partitions.csv`.
+//! - microSD card: a slot that carries the card's clock on GPIO 39, command
+//!   on GPIO 40, data 0 on GPIO 38 and data 3 (chip select) on GPIO 41. The
+//!   firmware reads the card in native SD mode with a 1-bit bus, at boot only:
+//!   the slot has no card-detect line. GPIO 38 also carries the RS-485
+//!   connector's receive line (see the board's README), which this firmware
+//!   does not use.
 //! - Screen: a 480 × 320 ST7796 panel on the 8080 bus, its dimmable backlight and an
 //!   FT6336U touch panel, in [`screen`]. The graphical shell runs on it, and
 //!   the command-line shell on the console, as two sessions.
@@ -16,18 +22,23 @@
 //!   function translation by default; large Wasmi buffers (4096 bytes and up,
 //!   including guest linear memory and module source) land in PSRAM.
 
+use alloc::{boxed::Box, format};
 use core::{fmt::Write, panic::PanicInfo};
 
-use drivers_espressif::random::RandomDevice;
+use drivers_espressif::{random::RandomDevice, sd_card::SdCard};
+use drivers_shared::devices::SectorBlockDevice;
 use esp_hal::{
     clock::CpuClock,
-    peripherals::USB_DEVICE,
+    peripherals::{GPIO38, GPIO39, GPIO40, GPIO41, SDHOST, USB_DEVICE},
     psram::{FlashFreq, Psram, PsramConfig, PsramMode, SpiRamFreq},
     timer::systimer::SystemTimer,
     usb::usb_serial_jtag::UsbSerialJtag,
 };
 use esp_storage::FlashStorage;
-use firmware::{Board, ExternalMemory, MemoryReport, StoragePartition, parse_decimal, session};
+use firmware::{
+    Board, ExternalMemory, MemoryReport, OpenedSdCard, SdCardSlot, StoragePartition, parse_decimal,
+    session,
+};
 
 #[cfg(feature = "boot-benchmark")]
 mod boot_benchmark;
@@ -123,6 +134,13 @@ fn main() -> ! {
         },
         memory_check: Some(check_memory),
         system_check: Some(screen::log_report),
+        sd_card: Some(sd_card_slot(
+            peripherals.SDHOST,
+            peripherals.GPIO39,
+            peripherals.GPIO40,
+            peripherals.GPIO38,
+            peripherals.GPIO41,
+        )),
         sessions: if display.is_some() {
             &[session::CONSOLE, session::GRAPHICAL]
         } else {
@@ -138,6 +156,28 @@ fn main() -> ! {
             scheduler_interrupt: peripherals.FROM_CPU_INTR0,
         }),
     )
+}
+
+/// The microSD slot. The firmware opens the card at boot, once.
+///
+/// The slot's lines go through the GPIO matrix to the SDHOST controller, in
+/// native SD mode with a 1-bit bus. Data line 3 (`chip_select`) is an output
+/// that stays high, so that the card selects SD mode and not SPI mode.
+fn sd_card_slot(
+    host: SDHOST<'static>,
+    clock: GPIO39<'static>,
+    command: GPIO40<'static>,
+    data0: GPIO38<'static>,
+    chip_select: GPIO41<'static>,
+) -> SdCardSlot {
+    SdCardSlot::new(move || {
+        let card = SdCard::open_native(host, clock, command, data0, chip_select)
+            .map_err(|error| format!("native SD mode, 1-bit bus: {error}"))?;
+        let description = card.describe();
+        let device: &'static SectorBlockDevice<_> =
+            Box::leak(Box::new(SectorBlockDevice::new(card)));
+        Ok(OpenedSdCard::new(description, device))
+    })
 }
 
 /// The board's memory check: the PSRAM self-test, followed by the boot

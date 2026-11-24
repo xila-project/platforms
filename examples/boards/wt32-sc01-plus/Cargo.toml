@@ -11,6 +11,7 @@ critical-section = { workspace = true }
 drivers_espressif = { package = "xila-drivers-espressif", path = "../../../drivers/espressif", default-features = false, features = [
   "esp32s3",
   "lcd-i8080",
+  "sd-card",
 ] }
 drivers_shared = { package = "xila-drivers-shared", path = "../../../drivers/shared", default-features = false, features = [
   "display-mipidsi",

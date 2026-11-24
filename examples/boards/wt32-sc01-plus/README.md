@@ -99,3 +99,114 @@ Core's synchronous smoltcp device API offers no receive wake callback. The
 Core runner polls at least every 20 ms while idle, and the driver raises the
 radio receive queue from five to twelve frames to absorb bursts. An
 interrupt-driven receive path needs a wake interface from Core.
+
+## microSD card
+
+The slot takes a microSD card. The firmware reads the card in native SD mode,
+through the SDHOST controller, with a 1-bit bus at 20 MHz. The card holds a
+LittleFS file system with 4096-byte blocks (eight sectors of 512 bytes). The
+firmware supports no other file system on the card.
+
+Format the card from Xila before first use. Formatting erases the card.
+
+| Signal | GPIO |
+|---|---|
+| Clock | 39 |
+| Command | 40 |
+| Data 0 | 38 |
+| Data 3 (chip select), held high | 41 |
+
+Data 1 and data 2 are not connected, so the bus cannot be wider than 1 bit.
+The firmware holds data 3 high from before the first command: a card that
+sees it low at the first command selects SPI mode, which the controller does
+not support.
+
+### GPIO 38 and RS-485
+
+The board's datasheet maps the RS-485-B connector to the same signal as data 0
+of the card, GPIO 38. This firmware gives GPIO 38 to the card and does not use
+the RS-485 connector. Do not connect an RS-485 device to that connector while
+a card is in the slot. A future RS-485 driver must not start on a board that
+has a card in the slot. The wiring comes from the datasheet and is not
+measured.
+
+### Boot and mount
+
+- The firmware looks for a card once, at boot. The slot has no card-detect
+  line, so a card inserted or removed later is not noticed before the next
+  boot. Removing a card while it is in use can damage its file system.
+- With no card, the boot log has one line: `Xila: SD card: none (…)`, and the
+  boot continues.
+- With a card, the boot log shows its type, product, capacity, bus mode and
+  clock: `Xila: SD card: SDHC "…", … GiB (… sectors of 512 bytes), native SD
+  mode, 1-bit bus, … kHz`.
+- The card is the block device `/devices/storage/sd_card`. Only its owner
+  (root) can read and write it. Do not write it while LittleFS is mounted.
+- A card that holds LittleFS is mounted at `/media/sd_card`.
+- The root of a new card is a shared directory, as `/data/shared`: every
+  user can create files and directories in it, and only the owner of an
+  entry can remove or rename it. LittleFS creates the root without
+  permissions, so the firmware sets them at the first mount. It does not
+  change them after that, unless the root user removes all permissions from
+  the root directory: the next boot shares it again.
+- A card that does not hold LittleFS is not mounted and not changed. The boot
+  log says so.
+
+### Format
+
+The firmware never formats a card by itself. To format the card with LittleFS,
+write a request file as root and restart. Only root and the members of its
+group can write to `/configuration/system`. The `administrator` account
+cannot.
+
+`sudo` runs external commands only, and `echo` is a command of the shell, so
+start a root shell first. In the command-line shell (the console, or the
+Terminal application), type:
+
+```
+sudo command_line_shell
+echo erase > /configuration/system/format_sd_card
+reboot
+```
+
+At the next boot, the firmware removes the file and formats the card, whatever
+it holds. A file that does not contain the text `erase` is removed without
+effect. A format request is for one boot: with no card in the slot, the
+firmware discards it. If the firmware cannot remove the file, it does not
+format the card, so that a request cannot repeat at each boot. If the format
+fails, the card stays unmounted: write the request again to retry.
+
+This file is temporary. platforms#219 tracks a shell command that replaces it.
+
+### Test
+
+To write a 256 KiB file to the mounted card, read it back and compare it, type
+these commands:
+
+```
+sudo command_line_shell
+echo test > /configuration/system/test_sd_card
+reboot
+```
+
+The boot log shows `Xila: SD card test: passed; wrote 256 KiB in … ms, read it
+back in … ms`, or the reason for the failure. The firmware removes the file
+`/media/sd_card/xila_test.bin` afterwards.
+
+### Limits
+
+- The firmware transfers one 512-byte sector at a time, and the processor
+  waits for each transfer. A write can take tens of milliseconds when the card
+  does internal work.
+- The firmware does not send erase commands to the card. The card erases
+  internally. An `ERASE` request on the block device succeeds and changes
+  nothing.
+- Single-sector transfers limit the speed to a fraction of the bus speed
+  (2.5 MB/s for a 1-bit bus at 20 MHz). platforms#220 tracks multi-sector
+  transfers.
+
+### Tested cards
+
+| Card | Date | Result |
+|---|---|---|
+| SanDisk SDXC "SN64G", 59.47 GiB (manufacturer `0x03`, revision 128, 2019-10) | 2026-11-24 | Detection, format, mount and persistence pass. Test file with 512-byte LittleFS blocks (before the change to 4096-byte blocks): 256 KiB written in 1129 ms (227 KiB/s), read in 1458 ms (176 KiB/s). With 4096-byte blocks: written in 1022 ms (250 KiB/s), read in 378 ms (677 KiB/s). The `administrator` user can list, write and read files on the card. |

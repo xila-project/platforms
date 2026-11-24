@@ -4,7 +4,7 @@ use drivers_espressif::{console::ConsolePort, random::RandomDevice};
 use esp_storage::FlashStorage;
 use xila::file_system::DirectCharacterDevice;
 
-use crate::session::Session;
+use crate::{SdCardSlot, session::Session};
 
 /// Everything the firmware needs to know about a board. The board crate
 /// initializes the peripherals and moves them in here.
@@ -32,6 +32,9 @@ pub struct Board {
     /// A board check that runs once the executables are mounted, before the
     /// heap report, for example a test frame on an emulated display.
     pub system_check: Option<fn()>,
+    /// The microSD slot, on boards that have one. The firmware probes it once,
+    /// at boot, and mounts a card that holds LittleFS.
+    pub sd_card: Option<SdCardSlot>,
     /// The screen, on boards that have one. The firmware drives it when it is
     /// built with the `display` feature.
     pub display: Option<Display>,

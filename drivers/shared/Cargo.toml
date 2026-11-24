@@ -23,7 +23,7 @@ time = { workspace = true }
 critical-section = { workspace = true }
 network = { workspace = true, optional = true }
 task = { workspace = true, optional = true }
-synchronization = { workspace = true, optional = true }
+synchronization = { workspace = true }
 embassy-futures = { workspace = true, optional = true }
 embedded-io-async = { workspace = true, optional = true }
 embedded-tls = { workspace = true, optional = true }
@@ -56,17 +56,15 @@ network = [
   "dep:rand_core_06",
   "dep:embassy-futures",
   "dep:task",
-  "dep:synchronization",
   "dep:log",
 ]
-input-queue = ["dep:log", "dep:synchronization"]
+input-queue = ["dep:log"]
 neural-network-core = [
   "dep:neural_network",
   "dep:drivers_neural_network",
   "dep:nanoglia",
   "dep:virtual_file_system",
   "dep:task",
-  "dep:synchronization",
 ]
 neural-network-all-ops = ["nanoglia/all-ops"]
 neural-network = ["neural-network-core", "neural-network-all-ops"]
