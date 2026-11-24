@@ -27,9 +27,10 @@ const STORAGE: StoragePartition = StoragePartition {
 
 // The primary DRAM linker region is 192 KiB, shared by static data and the
 // stack. Reserving 96 KiB here alongside the 96 KiB reclaimed DRAM2 region
-// gives 192 KiB of DMA-capable internal heap while keeping more than 75 KiB of
-// primary DRAM for the main stack (checked at link time against 40 KiB) and
-// headroom for future Wi-Fi static allocations.
+// gives 192 KiB of DMA-capable internal heap while keeping about 64 KiB of
+// primary DRAM for the main stack (checked at link time against 40 KiB). With
+// the WebAssembly runtime and the neural network loader the static data is
+// larger than before, and Wi-Fi's static allocations would not fit (#200).
 const INTERNAL_HEAP_SIZE: usize = 96 * 1024;
 static INTERNAL_HEAP: StaticCell<[MaybeUninit<u8>; INTERNAL_HEAP_SIZE]> = StaticCell::new();
 

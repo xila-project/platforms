@@ -272,7 +272,8 @@ through the CP210x bridge and starts the graphical shell when the display
 initializes.
 The 192 KiB runtime heap comprises 96 KiB in primary DRAM and 96 KiB in
 DRAM2 reclaimed after ESP-IDF bootloader handoff. The rest of primary DRAM
-holds static data and the main stack (the link fails below 40 KiB, see
+holds static data and the main stack (about 64 KiB with the WebAssembly
+runtime; the link fails below 40 KiB, see
 [main_stack.x](wt32-sc01/main_stack.x)). The ESP32 can
 directly map 4 MiB of the module's 8 MiB of PSRAM. The firmware adds that
 mapping to the heap as region 2: allocations of 4 KiB or more go there first,
