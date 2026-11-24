@@ -19,8 +19,8 @@ cargo run -p xila-fs-image -- populated.img 16777216 --root ./root
 # Seed a profile from verified application bundle directories (xila.clock/, ...).
 cargo run -p xila-fs-image -- native.img 16777216 --bundle native --bundles-dir bundles
 cargo run -p xila-fs-image -- browser.img 16777216 --bundle wasm --bundles-dir bundles
-# Seed the classic WT32-SC01 storage partition with native shortcuts.
-mise run image:wt32-sc01
+# Seed the classic WT32-SC01 storage partition with locally built bundles.
+XILA_BUNDLES_DIR="$PWD/bundles" mise run image:wt32-sc01
 # Seed the WT32-SC01 Plus storage partition with locally built bundles.
 XILA_BUNDLES_DIR="$PWD/bundles" mise run image:wt32-sc01-plus
 ```
@@ -79,8 +79,9 @@ Weather. In the browser, Weather and `web_request` reach the network through the
 `https_client` device, so they only work against servers that allow cross-origin requests.
 Both include native application shortcuts. The `wt32-sc01` and `wt32-sc01-plus`
 profiles share the Activity, File Manager, Settings and Terminal shortcuts and
-seed the official registry. The Plus profile also includes the same seven Wasm
-applications. Each board task writes a raw 4096-byte-block LittleFS image to
+seed the official registry. The classic profile includes Calculator and
+Digits; Weather needs Wi-Fi, which the classic board lacks (#200). The Plus
+profile includes all seven WebAssembly applications. Each board task writes a raw 4096-byte-block LittleFS image to
 `target/seed/<board>/storage.img`, sized to the `storage` partition in the
 board's partition table ([`wt32-sc01`](../../examples/boards/wt32-sc01/partitions.csv),
 [`wt32-sc01-plus`](../../examples/boards/wt32-sc01-plus/partitions.csv)).
@@ -98,9 +99,11 @@ instead of the graphical shell (see
 `fs_image` checks that file with the firmware's own parser. The other profiles
 have no startup application.
 
-`mise run image:native`, `mise run image:browser` and `mise run image:wt32-sc01-plus` seed the released bundles
-(or `XILA_BUNDLES_DIR`, if set) and write `target/seed/<profile>/seed.img` (or `storage.img` for the
-WT32-SC01 Plus). Set `XILA_IMAGE_PROFILE=wt32-sc01-plus-clock` for the Clock-only
+The native, browser and both WT32-SC01 image tasks use the pinned released
+bundles by default and accept locally built bundles through `XILA_BUNDLES_DIR`.
+The native and browser tasks write `target/seed/<profile>/seed.img`.
+The two WT32-SC01 tasks write `target/seed/<profile>/storage.img`.
+Set `XILA_IMAGE_PROFILE=wt32-sc01-plus-clock` for the Clock-only
 WT32-SC01 Plus image, written to `target/seed/wt32-sc01-plus-clock/storage.img`.
 These recipes replace only their
 generated reference outputs, never a live runtime disk. Generated images are

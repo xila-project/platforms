@@ -273,8 +273,9 @@ through the CP210x bridge and starts the graphical shell when the display
 initializes.
 The 192 KiB runtime heap comprises 96 KiB in primary DRAM and 96 KiB in
 DRAM2 reclaimed after ESP-IDF bootloader handoff. The rest of primary DRAM
-holds static data and the main stack (about 77 KiB; the link fails below
-40 KiB, see [main_stack.x](wt32-sc01/main_stack.x)). The ESP32 can
+holds static data and the main stack (about 64 KiB with the WebAssembly
+runtime; the link fails below 40 KiB, see
+[main_stack.x](wt32-sc01/main_stack.x)). The ESP32 can
 directly map 4 MiB of the module's 8 MiB of PSRAM. The firmware adds that
 mapping to the heap as region 2: allocations of 4 KiB or more go there first,
 and smaller ones only when the internal regions are full. See the
@@ -361,10 +362,12 @@ WT32-SC01 modules carry ESP32 revision v1.0 silicon, older than esp-hal's
 default minimum (v3.0), so the build lowers `ESP_HAL_CONFIG_MIN_CHIP_REVISION`
 to v1.0; the PSRAM cache workaround above covers that revision's erratum.
 
-On the 4 MiB flash, the factory application occupies 2.25 MiB at `0x10000`.
-LittleFS uses the remaining 1.6875 MiB at `0x250000`.
+On the 4 MiB flash, the factory application occupies 2.75 MiB (`0x2C0000`) at
+`0x10000`. LittleFS uses the remaining 1.1875 MiB (`0x130000`) at `0x2D0000`.
 
-**Migration from the 1.5 MiB factory layout.** Back up your storage data before
+**Migration from the 2.25 MiB factory layout.** The WebAssembly runtime and the
+neural network loader enlarged the firmware, which moved the storage partition
+from `0x250000` to `0x2D0000`. Back up your storage data before
 upgrading. Flash the firmware with the new partition table, then reflash the
 storage image at the new offset. Without a storage image, the firmware cannot
 mount the moved partition and formats it on first boot. Restore any saved files
@@ -377,17 +380,21 @@ espflash flash --chip esp32 --port /dev/ttyUSB0 \
   --monitor target/espressif-emulator/wt32-sc01.elf
 ```
 
-Build and write the raw LittleFS image to populate the application menu with
-Activity, File Manager, Settings and Terminal. The task reads the image size
-from the `storage` row in [partitions.csv](wt32-sc01/partitions.csv).
-The classic firmware does not enable the WebAssembly runtime (the firmware's
-`wasm` feature), so its seed image contains only native application shortcuts
-and no WebAssembly bundles. Writing the storage image replaces the partition contents.
+The firmware enables the WebAssembly runtime (the firmware's `wasm` feature)
+and mounts the CPU neural network loader at `/devices/nn/cpu`. Build and write
+the raw LittleFS image to populate the application menu with Activity, File
+Manager, Settings and Terminal, and the Calculator and Digits WebAssembly
+bundles. The task reads the image size from the `storage` row in
+[partitions.csv](wt32-sc01/partitions.csv) and takes the released bundles pinned
+in `tools/fs_image/profiles/bundles.lock.json`; set `XILA_BUNDLES_DIR` to use
+locally built bundles instead. The classic profile seeds only these two until
+the board has Wi-Fi ([#200][classic-wifi-issue]), which Weather needs.
+Writing the storage image replaces the partition contents.
 
 ```sh
 mise run image:wt32-sc01
 mise run run:espflash -- write-bin --chip esp32 --port /dev/ttyUSB0 \
-  --flash-size 4mb --flash-mode dio 0x250000 target/seed/wt32-sc01/storage.img
+  --flash-size 4mb --flash-mode dio 0x2D0000 target/seed/wt32-sc01/storage.img
 ```
 
 Look for `Xila: board WT32-SC01`, `Xila: PSRAM 4194304 bytes (registered: true)`,
@@ -406,6 +413,7 @@ The display and touch bring-up is tracked in [issue #177][classic-issue].
 [external-ram]: https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/external-ram.html
 [esp32-errata]: https://docs.espressif.com/projects/esp-chip-errata/en/latest/esp32/03-errata-description/index.html
 [classic-issue]: https://github.com/xila-project/platforms/issues/177
+[classic-wifi-issue]: https://github.com/xila-project/platforms/issues/200
 
 ## Backlight brightness
 
