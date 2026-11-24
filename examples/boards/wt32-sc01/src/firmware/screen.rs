@@ -16,7 +16,7 @@ use esp_hal::{
 };
 use firmware::{
     Display,
-    panel::{self, WIDTH},
+    panel::{self, Initialisation, WIDTH},
 };
 use mipidsi::options::ColorInversion;
 
@@ -91,6 +91,7 @@ pub(super) fn start(pins: Pins) -> Result<(Display, (u8, u8)), String> {
         pins.touch_data,
         pins.touch_clock,
         ColorInversion::Normal,
+        Initialisation::ControllerDefaults,
         DRAW_BUFFER_ROWS,
         REFRESH_PERIOD_MILLISECONDS,
     )?;

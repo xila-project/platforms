@@ -35,6 +35,11 @@ xila = { git = "https://github.com/xila-project/core", branch = "main", default-
 # Logs CPU, flash and PSRAM timings once at boot, right after the PSRAM
 # self-test. Off by default so production boots stay fast and quiet.
 boot-benchmark = []
+# Text sharpness comparison builds: write the gamma curves and one-dot
+# inversion (`panel-gamma`), or LovyanGFX's complete ST7796 register sequence
+# (`panel-vendor-registers`), instead of the controller's reset values.
+panel-gamma = []
+panel-vendor-registers = []
 
 [[bin]]
 name = "wt32_sc01_plus"
