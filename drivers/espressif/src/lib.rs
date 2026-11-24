@@ -17,6 +17,10 @@
 //! - **Critical section**: the drivers and memory manager use `critical-section`,
 //!   so the firmware must link an implementation (for example by enabling
 //!   `esp-hal`'s `rt` feature).
+//! - **Atomic operations on ESP32**: build with `-C target-feature=-s32c1i`
+//!   (set for the target in `.cargo/config.toml`). The compare-and-set
+//!   instruction does not work on PSRAM, so the [`atomics`] module provides
+//!   the atomic operations and keeps the instruction away from PSRAM.
 //! - **Atomic compare-and-swap on ESP32-C2, ESP32-C3 and ESP32-S2**: Xila Core
 //!   uses `portable-atomic` / `portable-atomic-util` without selecting a backend.
 //!   `esp-hal`'s `esp32c2`, `esp32c3` and `esp32s2` chip features already enable
@@ -25,10 +29,14 @@
 //!   `portable-atomic/critical-section` (which `portable-atomic` rejects when
 //!   combined with `unsafe-assume-single-core`).
 #![no_std]
-// The console and executor use Xtensa inline assembly, which is still
-// unstable; the `esp` toolchain allows it, as for esp-hal and esp-sync.
+// The console, the executor and the ESP32 atomic operations use Xtensa inline
+// assembly, which is still unstable; the `esp` toolchain allows it, as for
+// esp-hal and esp-sync.
 #![cfg_attr(
-    all(target_arch = "xtensa", any(feature = "console", feature = "executor")),
+    all(
+        target_arch = "xtensa",
+        any(feature = "console", feature = "executor", feature = "esp32")
+    ),
     feature(asm_experimental_arch)
 )]
 #![cfg(all(
@@ -65,6 +73,8 @@ const _: () = assert!(
     "several Espressif chip features are enabled; enable exactly one"
 );
 
+#[cfg(feature = "esp32")]
+pub mod atomics;
 pub mod chips;
 #[cfg(feature = "console")]
 pub mod console;
@@ -88,6 +98,8 @@ pub mod memory;
 pub mod power;
 #[cfg(feature = "random")]
 pub mod random;
+#[cfg(feature = "esp32")]
+pub mod rom_memory;
 #[cfg(all(feature = "spi-display", feature = "esp32"))]
 pub mod spi_display;
 #[cfg(feature = "time")]

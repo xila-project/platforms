@@ -30,6 +30,10 @@ xila = { git = "https://github.com/xila-project/core", branch = "main", default-
 # Enables debug-level serial logging, including periodic display flush and
 # frame-rate summaries.
 debug-log = ["firmware/debug-log"]
+# Reports at boot what the hardware compare-and-set instruction does on a
+# word in PSRAM. The firmware never uses the instruction there; this is for
+# checking the chip.
+hardware-atomics-probe = []
 
 [[bin]]
 name = "wt32_sc01"

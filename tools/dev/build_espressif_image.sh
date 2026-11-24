@@ -59,7 +59,7 @@ build_xtensa() {
     # Use Espressif's libclang and keep bindgen off the host's C library headers.
     export LIBCLANG_PATH="${clang_libraries[0]}"
     export "CC_$target_environment=xtensa-$chip-elf-gcc"
-    export "CFLAGS_$target_environment=-mlongcalls"
+    export "CFLAGS_$target_environment=-mlongcalls${c_flags:+ $c_flags}"
     export "BINDGEN_EXTRA_CLANG_ARGS_$target_environment=-ffreestanding"
     # bindgen passes no `--target` for host builds, such as the LVGL bindings
     # that the WebAssembly runtime's build script reads, and Espressif's
@@ -68,8 +68,36 @@ build_xtensa() {
     host=$(rustup run esp rustc -vV | sed -n 's/^host: //p')
     export "BINDGEN_EXTRA_CLANG_ARGS_${host//-/_}=--target=$host"
     rustup run esp cargo "${build_args[@]}" --target "$target" -Zbuild-std=core,alloc
+    objdump="$gcc_bin/xtensa-$chip-elf-objdump"
 }
 
+# The ESP32 compare-and-set instruction (S32C1I) does not work on PSRAM. The
+# firmware may use it in one function only, which the atomic operations of
+# xila-drivers-espressif call for internal memory. A use is the instruction
+# within a few instructions of the write to SCOMPARE1 that it needs: the
+# disassembler also decodes the constants between functions, and some of them
+# look like the instruction alone.
+check_esp32_atomics() {
+    local elf=$1 allowed=xila_esp32_hardware_compare_and_set offenders
+    offenders=$("$objdump" -d --no-show-raw-insn "$elf" | awk -v allowed="$allowed" '
+        /^[0-9a-f]+ <.*>:$/ { name = substr($2, 2, length($2) - 3); armed = 0; next }
+        $2 == "wsr.scompare1" { armed = 8; next }
+        $2 == "s32c1i" && armed > 0 { count[name]++ }
+        armed > 0 { armed-- }
+        END {
+            if (!(allowed in count)) print "(no use in " allowed ")"
+            for (name in count) if (name != allowed) print name
+        }')
+    if [[ -n "$offenders" ]]; then
+        echo "S32C1I must only be used in $allowed, which keeps it off PSRAM; found:" >&2
+        echo "$offenders" >&2
+        exit 1
+    fi
+    echo "Atomics: S32C1I is only used in $allowed"
+}
+
+# Extra C compiler flags of an Xtensa board.
+c_flags=
 # rustup runs the esp toolchain directly: the mise Cargo wrapper is host-only.
 build_args=(build --locked -p "$package" --profile release-embedded "$@")
 # The flash size must match the board's partition table. Boards that do not
@@ -90,9 +118,13 @@ case "$board" in
         # esp-hal's default minimum (v3.0). The PSRAM cache workaround in
         # .cargo/config.toml covers the revision v1 erratum.
         export ESP_HAL_CONFIG_MIN_CHIP_REVISION=100
+        # The same workaround for the C code (LittleFS, LVGL): it may be given
+        # PSRAM memory, as the heap uses PSRAM for large allocations.
+        c_flags="-mfix-esp32-psram-cache-issue -mfix-esp32-psram-cache-strategy=memw"
         flash_mode=dio
         flash_size=4mb
         build_xtensa
+        check_esp32_atomics "$CARGO_TARGET_DIR/$target/release-embedded/$binary"
         ;;
     wt32-sc01-plus)
         chip=esp32s3
