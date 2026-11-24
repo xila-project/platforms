@@ -256,6 +256,38 @@ routines in internal SRAM. The ESP32 target applies the compiler workaround
 for the PSRAM cache erratum. LittleFS C code uses the internal runtime heap. See the [Wireless-Tag datasheet][classic-board],
 [Espressif module datasheet][wrover] and [ESP32 external RAM guide][external-ram].
 
+The 480 × 320 ST7796S shows a **Touch test** button. Tapping it changes the
+label to **Touch detected**. The graphical login is disabled for this build
+pending a hardware heap measurement. UART0 continues to run the serial shell.
+The boot log reports the draw buffer size, the FT6336U identifiers and the
+used and free bytes in heap regions 0 and 2 after graphics starts.
+
+| Signal | ESP32 GPIO |
+|---|---|
+| HSPI MOSI, clock, chip select | 13, 14, 15 |
+| LCD command/data, reset, backlight (active high) | 21, 22, 23 |
+| FT6336U I²C data and clock | 18, 19 |
+| FT6336U interrupt (polled instead) | 39 |
+
+The [Wireless-Tag schematic][classic-schematic] and
+[reference firmware pin definitions][classic-reference] document the wiring.
+The display uses write-only SPI with DMA at 40 MHz (the 80 MHz APB clock
+divided by two). Its 25 ns cycle is faster than the
+[ST7796S timing specification][st7796s] minimum of 66 ns for writes, as is
+common with this panel; it was checked on a WT32-SC01 for a clean image and
+working touch. If a panel shows corrupted pixels, set
+`BUS_FREQUENCY_KILOHERTZ` to `13_334` (divider six, 75 ns), the fastest
+in-specification setting: esp-hal rounds the divider up, so `13_333` would run
+at 11.4 MHz.
+The internal, single RGB565 draw buffer is 480 × 10 × 2 = 9,600 bytes,
+about 5.9% of the 160 KiB heap. That leaves 154,240 bytes before accounting
+for the runtime, LVGL and allocator overhead. ESP32 SPI DMA requires
+internal SRAM.
+
+[classic-schematic]: https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2021/12/WT32-SC01DataSheetV3.4-with-nuts.pdf
+[classic-reference]: https://github.com/wireless-tag-com/WT32-SC01/blob/87f3c38dcfe6ee5a3d0f32776817e7d97576f240/main/board.h
+[st7796s]: https://dl.espressif.com/dl/schematics/ST7796S_SPEC_V1.0.pdf
+
 ```sh
 mise run setup:espressif-rust
 mise run build:wt32-sc01

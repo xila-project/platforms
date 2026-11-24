@@ -10,14 +10,19 @@ description = "Wireless-Tag's WT32-SC01 (ESP32, 4 MB flash, 8 MB PSRAM)."
 drivers_espressif = { package = "xila-drivers-espressif", path = "../../../drivers/espressif", default-features = false, features = [
   "esp32",
 ] }
+critical-section = { workspace = true }
+embedded-hal-bus = "0.3"
 esp-bootloader-esp-idf = { version = "0.6", features = ["esp32"] }
 esp-hal = { version = "=1.2.2", features = ["esp32", "unstable"] }
 esp-storage = { version = "0.10", features = ["esp32"] }
-firmware = { package = "xila-firmware-espressif", path = "../../../firmware/espressif" }
+firmware = { package = "xila-firmware-espressif", path = "../../../firmware/espressif", features = [
+  "display",
+] }
 esp-println = { version = "0.18", default-features = false, features = [
   "esp32",
   "uart",
 ] }
+mipidsi = { git = "https://github.com/almindor/mipidsi", rev = "5ed6df58d9b8a2b9037221bc03de1328340eaf47", default-features = false }
 static_cell = "2"
 xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
 

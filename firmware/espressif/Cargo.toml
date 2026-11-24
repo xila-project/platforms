@@ -22,6 +22,7 @@ drivers_espressif = { package = "xila-drivers-espressif", path = "../../drivers/
 ] }
 drivers_peripherals = { workspace = true }
 drivers_shared = { package = "xila-drivers-shared", path = "../../drivers/shared", default-features = false }
+mipidsi = { git = "https://github.com/almindor/mipidsi", rev = "5ed6df58d9b8a2b9037221bc03de1328340eaf47", default-features = false, optional = true }
 embedded-storage = "0.3"
 esp-hal = { version = "=1.2.2", features = ["unstable"] }
 esp-storage = { version = "0.10", features = ["embedded-storage"] }
@@ -42,18 +43,24 @@ wasm = { package = "xila-wasm", git = "https://github.com/xila-project/applicati
 ], optional = true }
 
 [features]
-# Xila's graphics on the board's screen, the graphical shell and the native
-# applications: activity, file manager, settings and terminal.
+# Minimal LVGL display and pointer support.
+display = [
+  "dep:mipidsi",
+  "drivers_shared/display-mipidsi",
+  "drivers_shared/touch-ft6336",
+  "xila/graphics",
+  "xila/graphics_rendering_rgb565",
+]
+# Full graphical session and native graphical applications.
 graphics = [
+  "display",
   "dep:activity",
   "dep:file_manager",
   "dep:graphical_shell",
   "dep:settings",
   "dep:terminal",
-  "drivers_shared/touch-ft6336",
   "wasm?/graphics",
   "xila/bootsplash",
-  "xila/graphics",
 ]
 # WebAssembly runtime mounted at `/applications/executables/wasm`. Combined
 # with `graphics`, guests also receive the LVGL graphics host import.

@@ -22,10 +22,12 @@ extern crate alloc;
 mod applications;
 mod board;
 mod flash;
-#[cfg(feature = "graphics")]
+#[cfg(feature = "display")]
 pub mod graphics;
 #[cfg(feature = "native-dev")]
 pub mod native;
+#[cfg(feature = "display")]
+pub mod panel;
 pub mod psram_self_test;
 pub mod session;
 
@@ -424,7 +426,15 @@ async fn start(task_manager: &'static task::Manager) {
         }
         None => (None, None),
     };
-    #[cfg(not(feature = "graphics"))]
+    #[cfg(all(feature = "display", not(feature = "graphics")))]
+    let graphics_manager = if let Some(display) = display {
+        let manager = graphics::start(task_manager, task, time_manager, display).await;
+        graphics::show_touch_test(manager).await;
+        Some(manager)
+    } else {
+        None
+    };
+    #[cfg(not(feature = "display"))]
     if display.is_some() {
         log::warning!("Xila: the board has a screen, but the firmware has no graphics");
     }
@@ -489,7 +499,7 @@ async fn start(task_manager: &'static task::Manager) {
         Box::leak(Box::new(executable::ExecutableContext {
             #[cfg(feature = "native-dev")]
             formats: native::FORMATS,
-            #[cfg(feature = "graphics")]
+            #[cfg(feature = "display")]
             graphics_manager,
             #[cfg(feature = "wifi")]
             network_manager,
