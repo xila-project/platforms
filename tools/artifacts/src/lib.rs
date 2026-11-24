@@ -82,11 +82,20 @@ pub fn prepare(
         .find(|file| file.path == entrypoint)
         .ok_or("missing payload")?
         .bytes;
-    // Match the Xila host engine: no memory64, and custom page sizes, which
-    // Applications links its guests with (1-byte pages).
-    let mut features = wasmparser::WasmFeatures::default();
-    features.set(wasmparser::WasmFeatures::MEMORY64, false);
-    features.set(wasmparser::WasmFeatures::CUSTOM_PAGE_SIZES, true);
+    // Exactly the proposals the Xila host engine accepts in its default build
+    // (executables/wasm/src/host/engine.rs), so a bundle is refused here when
+    // the engine would refuse it. Custom page sizes are needed by guests linked
+    // with 1-byte pages; memory64 is only accepted by the engine's memory_64
+    // build.
+    let features = wasmparser::WasmFeatures::MUTABLE_GLOBAL
+        | wasmparser::WasmFeatures::SIGN_EXTENSION
+        | wasmparser::WasmFeatures::SATURATING_FLOAT_TO_INT
+        | wasmparser::WasmFeatures::MULTI_VALUE
+        | wasmparser::WasmFeatures::BULK_MEMORY
+        | wasmparser::WasmFeatures::REFERENCE_TYPES
+        | wasmparser::WasmFeatures::TAIL_CALL
+        | wasmparser::WasmFeatures::EXTENDED_CONST
+        | wasmparser::WasmFeatures::CUSTOM_PAGE_SIZES;
     wasmparser::Validator::new_with_features(features)
         .validate_all(payload)
         .map_err(|_| "invalid or incompatible Wasm module")?;
@@ -212,6 +221,19 @@ mod tests {
             let bytes = package("wasm32-wasip1", payload, None);
             let result = prepare(&bytes, "xila.clock", "1.0.0", sha256(&bytes), None);
             assert_eq!(result.is_ok(), valid, "{payload:?}");
+        }
+    }
+
+    #[test]
+    fn rejects_proposals_the_host_engine_does_not_accept() {
+        // (memory 1) (memory 1): multi-memory.
+        let two_memories: &[u8] = b"\0asm\x01\0\0\0\x05\x05\x02\x00\x01\x00\x01";
+        // (type (func (result v128))): SIMD.
+        let simd_type: &[u8] = b"\0asm\x01\0\0\0\x01\x05\x01\x60\x00\x01\x7b";
+        for payload in [two_memories, simd_type] {
+            let bytes = package("wasm32-wasip1", payload, None);
+            let result = prepare(&bytes, "xila.clock", "1.0.0", sha256(&bytes), None);
+            assert!(result.is_err(), "{payload:?}");
         }
     }
 
