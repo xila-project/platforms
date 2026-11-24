@@ -26,6 +26,7 @@ mipidsi = { git = "https://github.com/almindor/mipidsi", rev = "5ed6df58d9b8a2b9
 embedded-storage = "0.3"
 esp-hal = { version = "=1.2.2", features = ["unstable"] }
 esp-storage = { version = "0.10", features = ["embedded-storage"] }
+startup_application = { package = "xila-startup-application", path = "../startup_application" }
 xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
 graphical_shell = { package = "xila-graphical-shell", git = "https://github.com/xila-project/applications", branch = "main", optional = true }
 # Native applications for boards with a screen.
