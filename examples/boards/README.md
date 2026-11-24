@@ -272,8 +272,8 @@ through the CP210x bridge and starts the graphical shell when the display
 initializes.
 The 192 KiB runtime heap comprises 96 KiB in primary DRAM and 96 KiB in
 DRAM2 reclaimed after ESP-IDF bootloader handoff. The rest of primary DRAM
-holds static data and the main stack (about 77 KiB; the link fails below
-40 KiB, see [main_stack.x](wt32-sc01/main_stack.x)). The ESP32 can
+holds static data and the main stack, with a 40 KiB minimum enforced by
+[main_stack.x](wt32-sc01/main_stack.x). The ESP32 can
 directly map 4 MiB of the module's 8 MiB of PSRAM. The firmware registers that
 mapping in a separate data heap and runs a 1 MiB allocation and readback
 test. This keeps pointers that may be used by hardware atomics or flash ROM
@@ -351,10 +351,12 @@ espflash flash --chip esp32 --port /dev/ttyUSB0 \
 ```
 
 The firmware mounts the WebAssembly runtime at `/applications/executables/wasm`
-with lazy translation. Guest startup depends on the board's PSRAM allocator
-support for large runtime allocations. Weather needs a network connection,
-and Digits needs a neural network loader at `/devices/nn/cpu`. Both devices
-require separate firmware support on this board.
+with lazy translation and mounts the CPU neural network loader at
+`/devices/nn/cpu` for Digits. Guest startup and model loading require the
+board's PSRAM allocator support for large allocations. The Weather bundle
+requires Wi-Fi. The radio and HTTPS build falls below the 40 KiB main-stack
+minimum, and the required factory partition leaves too little room for all
+three bundles on the 4 MiB flash.
 
 The raw LittleFS image seeds Calculator, Digits and Weather, the official
 package registry, and the native shortcuts for Activity, File Manager,
