@@ -24,6 +24,10 @@
 //! this in the ELF file. No address in PSRAM can therefore reach the
 //! instruction.
 //!
+//! The instruction compares with the SCOMPARE1 register, which the exception
+//! handlers no longer save once the feature is disabled, so that function
+//! masks interrupts while it sets the register and runs the instruction.
+//!
 //! Loads need no protection: an aligned load of at most 32 bits is atomic.
 //! Stores to PSRAM take the critical section too, so that a store cannot be
 //! lost in the middle of an emulated read-modify-write.
@@ -62,19 +66,27 @@ pub unsafe extern "C" fn xila_esp32_hardware_compare_and_set(
     new: u32,
 ) -> u32 {
     let mut value = new;
-    // The assembler refuses both instructions while the `s32c1i` feature is
-    // disabled, so they are given as bytes, with fixed registers:
+    // The assembler refuses the last two instructions while the `s32c1i`
+    // feature is disabled, so they are given as bytes, with fixed registers:
     //
     //     wsr.scompare1 a3
     //     s32c1i a4, a2, 0
     //
-    // SAFETY: the caller provides a valid word. The exception handlers save
-    // and restore SCOMPARE1, so an interrupt between the two instructions
-    // does not change the comparison.
+    // Interrupts are masked around them. Without the feature, the exception
+    // handlers of xtensa-lx-rt do not save SCOMPARE1, so a handler that runs
+    // between the two instructions and performs an atomic operation of its
+    // own would change what this one compares with.
+    //
+    // SAFETY: the caller provides a valid word in internal memory. The
+    // interrupt level is restored to what it was.
     unsafe {
         asm!(
+            "rsil {state}, 15",
             ".byte 0x30, 0x0c, 0x13",
             ".byte 0x42, 0xe2, 0x00",
+            "wsr.ps {state}",
+            "rsync",
+            state = out(reg) _,
             in("a2") pointer,
             in("a3") expected,
             inout("a4") value,
