@@ -1,10 +1,18 @@
 [target.xtensa-esp32-none-elf]
-# ESP32 revision v1.x can lose PSRAM writes without the cache workaround.
-# LittleFS C is built without it. The board's global heap supplies internal
-# SRAM only, so LittleFS never accesses PSRAM.
+# ESP32 revision v1.x can lose PSRAM writes without the cache workaround
+# (erratum CPU-3.9). The C code gets the same workaround from the board build
+# (`CFLAGS` in tools/dev/build_espressif_image.sh).
+#
+# The compare-and-set instruction (S32C1I) is not supported on PSRAM, on any
+# revision: nothing assures that it is atomic there. Without the `s32c1i`
+# feature the compiler calls `__atomic_*` functions, and those of
+# `xila-drivers-espressif` keep the instruction on internal memory
+# (drivers/espressif/src/atomics.rs).
 rustflags = [
   "-C",
   "llvm-args=-mfix-esp32-psram-cache-issue -mfix-esp32-psram-cache-strategy=memw",
+  "-C",
+  "target-feature=-s32c1i",
 ]
 
 [target.xtensa-esp32s3-espidf]
