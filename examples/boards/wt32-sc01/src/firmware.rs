@@ -106,6 +106,7 @@ fn main() -> ! {
         command_data: peripherals.GPIO21,
         reset: peripherals.GPIO22,
         backlight: peripherals.GPIO23,
+        ledc: peripherals.LEDC,
         i2c: peripherals.I2C0,
         touch_data: peripherals.GPIO18,
         touch_clock: peripherals.GPIO19,

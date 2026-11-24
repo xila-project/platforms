@@ -5,11 +5,15 @@
 //! orientation and address windows, and raw pixel writes reach the bus in one
 //! transfer. [`MipidsiScreenDevice`] exposes the result to Xila's graphics as a
 //! screen device: each LVGL flush becomes one `set_pixels_raw` call.
+//! [`BacklightScreenDevice`] adds brightness control to a screen device whose
+//! backlight is a PWM output.
 
+mod backlight;
 mod bus;
 mod performance;
 mod screen;
 
+pub use backlight::*;
 pub use bus::*;
 pub use performance::*;
 pub use screen::*;

@@ -20,6 +20,8 @@ extern crate alloc;
 
 #[cfg(any(feature = "graphics", feature = "wasm"))]
 mod applications;
+#[cfg(feature = "display")]
+pub mod backlight;
 mod board;
 mod flash;
 #[cfg(feature = "display")]
