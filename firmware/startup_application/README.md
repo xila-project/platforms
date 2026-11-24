@@ -72,12 +72,8 @@ the whole screen: there is no status bar, dock or window title.
 
 ## Limitations
 
-- **Text input on touch-only boards.** The on-screen keyboard currently comes
-  from the graphical shell (`--show-keyboard`), so a startup application on a
-  board without a keyboard, such as the WT32-SC01 Plus, gets no keyboard for
-  its text fields. Moving the keyboard into Core's graphics subsystem, for
-  every application, is separate upcoming work; until then choose an
-  application that needs no text input.
+- **Text input on touch-only boards.** Core provides the on-screen keyboard
+  for applications on touch displays, including startup applications.
 - **Memory.** The application saves the graphical shell's running state: its
   login screen, desk, dock, status bar and task. The graphical shell itself
   stays mounted: the mount is one small in-memory file entry and the code is

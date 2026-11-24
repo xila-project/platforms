@@ -46,9 +46,6 @@ pub const GRAPHICAL: Session = Session {
     arguments: &[],
 };
 
-/// The graphical shell on a touch screen. The display enables the keyboard.
-pub const GRAPHICAL_TOUCH: Session = GRAPHICAL;
-
 /// The command-line shell on the console.
 pub const CONSOLE: Session = Session {
     name: "Console session",
