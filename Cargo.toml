@@ -13,6 +13,11 @@ codegen-units = 1
 panic = "abort"
 debug = true
 
+# Compile LVGL's C software renderer for speed rather than size so pixel
+# blending loops keep up with asynchronous DMA display transfers.
+[profile.release-embedded.package.lvgl-rust-sys]
+opt-level = 2
+
 [profile.profiling]
 inherits = "release"
 debug = "full"

@@ -77,6 +77,9 @@ wifi = [
 # executables, with their images in `.dram2_uninit` (ESP32-C6 and ESP32-P4 only).
 # It does not sandbox them.
 native-dev = ["xila/native-dev", "drivers_espressif/executable-memory"]
+# Enables debug-level logging on the serial console, including periodic display
+# flush and frame-rate summaries.
+debug-log = ["drivers_espressif/debug-log"]
 
 [lib]
 name = "firmware_espressif"

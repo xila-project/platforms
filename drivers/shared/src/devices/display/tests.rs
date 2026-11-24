@@ -300,3 +300,224 @@ fn a_failed_transfer_drops_frames_instead_of_failing_the_flush() {
     assert_eq!(screen.write_sync(&pixels, 0), Ok(pixels.len()));
     assert_eq!(*writes.borrow(), writes_after_failure);
 }
+
+#[derive(Debug, PartialEq, Eq)]
+struct WindowFlush {
+    bounds: (u16, u16, u16, u16),
+    address: usize,
+    length: usize,
+}
+
+#[derive(Default)]
+struct MockAsynchronousState {
+    commands: Vec<(u8, Vec<u8>)>,
+    sync_pixels: Vec<Vec<u8>>,
+    window_flushes: Vec<WindowFlush>,
+    in_flight: bool,
+    waits: usize,
+    fail_window: bool,
+}
+
+#[derive(Clone, Default)]
+struct MockAsynchronousBus(Rc<RefCell<MockAsynchronousState>>);
+
+// SAFETY: tests drive the mock bus on one thread.
+unsafe impl Send for MockAsynchronousBus {}
+
+impl super::AsynchronousDisplayBus for MockAsynchronousBus {
+    type Error = ();
+
+    fn send_command(&mut self, command: u8, arguments: &[u8]) -> Result<(), Self::Error> {
+        let mut state = self.0.borrow_mut();
+        if state.in_flight {
+            state.in_flight = false;
+            state.waits += 1;
+        }
+        state.commands.push((command, arguments.to_vec()));
+        Ok(())
+    }
+
+    fn send_pixels(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+        let mut state = self.0.borrow_mut();
+        if state.in_flight {
+            state.in_flight = false;
+            state.waits += 1;
+        }
+        state.sync_pixels.push(data.to_vec());
+        Ok(())
+    }
+
+    unsafe fn start_window_pixels(
+        &mut self,
+        x_start: u16,
+        y_start: u16,
+        x_end: u16,
+        y_end: u16,
+        data: &[u8],
+    ) -> Result<bool, Self::Error> {
+        let mut state = self.0.borrow_mut();
+        if state.in_flight {
+            state.in_flight = false;
+            state.waits += 1;
+        }
+        if state.fail_window {
+            return Err(());
+        }
+        state.window_flushes.push(WindowFlush {
+            bounds: (x_start, y_start, x_end, y_end),
+            address: data.as_ptr() as usize,
+            length: data.len(),
+        });
+        state.in_flight = true;
+        Ok(true)
+    }
+
+    fn wait_for_transfer(&mut self) -> Result<(), Self::Error> {
+        let mut state = self.0.borrow_mut();
+        if state.in_flight {
+            state.in_flight = false;
+            state.waits += 1;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn serial_interface_initialises_st7796_and_releases_bus() {
+    let bus = MockAsynchronousBus::default();
+    let display = Builder::new(ST7796, super::SerialInterface::new(bus.clone()))
+        .display_size(320, 480)
+        .orientation(Orientation {
+            rotation: Rotation::Deg90,
+            mirrored: true,
+        })
+        .color_order(ColorOrder::Bgr)
+        .init(&mut NoDelay)
+        .unwrap();
+    let (interface, _, _) = display.release();
+    let _bus = interface.release();
+    let commands = &bus.0.borrow().commands;
+    assert!(commands.iter().any(|(command, _)| *command == 0x29));
+    assert!(
+        commands
+            .iter()
+            .any(|(command, arguments)| *command == 0x36 && arguments == &[0x28])
+    );
+}
+
+#[test]
+fn asynchronous_screen_device_overlaps_and_waits_cleanly() {
+    let bus = MockAsynchronousBus::default();
+    let screen = super::AsynchronousScreenDevice::new(bus.clone(), (), Point::new(480, 320));
+    let buffer_one = vec![0xAA; 480 * 20 * 2];
+    let buffer_two = vec![0x55; 480 * 20 * 2];
+
+    let pending_one = unsafe {
+        screen.start_flush(
+            Area::new(Point::new(0, 0), Point::new(479, 19)),
+            &buffer_one,
+        )
+    };
+    assert!(pending_one);
+    assert!(bus.0.borrow().in_flight);
+    assert_eq!(bus.0.borrow().waits, 0);
+
+    screen.wait_for_flush();
+    assert!(!bus.0.borrow().in_flight);
+    assert_eq!(bus.0.borrow().waits, 1);
+
+    let pending_two = unsafe {
+        screen.start_flush(
+            Area::new(Point::new(0, 20), Point::new(479, 39)),
+            &buffer_two,
+        )
+    };
+    assert!(pending_two);
+    assert_eq!(
+        bus.0.borrow().window_flushes,
+        vec![
+            WindowFlush {
+                bounds: (0, 0, 479, 19),
+                address: buffer_one.as_ptr() as usize,
+                length: buffer_one.len(),
+            },
+            WindowFlush {
+                bounds: (0, 20, 479, 39),
+                address: buffer_two.as_ptr() as usize,
+                length: buffer_two.len(),
+            },
+        ]
+    );
+    screen.wait_for_flush();
+    assert_eq!(bus.0.borrow().waits, 2);
+}
+
+#[test]
+fn asynchronous_screen_device_synchronous_write_waits_before_returning() {
+    let bus = MockAsynchronousBus::default();
+    let screen = super::AsynchronousScreenDevice::new(bus.clone(), (), Point::new(480, 320));
+    let mut area = Area::new(Point::new(0, 0), Point::new(9, 9));
+    screen
+        .control_sync(
+            SET_DRAWING_AREA::IDENTIFIER,
+            AnyByLayout::from_mutable(&mut area),
+            AnyByLayout::NONE,
+        )
+        .unwrap();
+    let pixels = vec![0x22; 10 * 10 * 2];
+    assert_eq!(screen.write_sync(&pixels, 0), Ok(pixels.len()));
+    assert!(!bus.0.borrow().in_flight);
+    assert_eq!(bus.0.borrow().waits, 1);
+}
+
+#[test]
+fn asynchronous_screen_device_failure_marks_failed_and_clears_pending() {
+    let bus = MockAsynchronousBus::default();
+    bus.0.borrow_mut().fail_window = true;
+    let screen = super::AsynchronousScreenDevice::new(bus, (), Point::new(480, 320));
+    let pixels = vec![0; 10 * 10 * 2];
+    let pending =
+        unsafe { screen.start_flush(Area::new(Point::new(0, 0), Point::new(9, 9)), &pixels) };
+    assert!(!pending);
+    assert!(screen.has_failed());
+}
+
+#[test]
+fn display_performance_reports_after_window_and_formats_summary() {
+    use std::string::ToString;
+
+    let mut tracker = super::DisplayPerformance::new(1_000_000);
+    // Two frames across 1.0 second: 20 ms and 40 ms total, 2 flushes each.
+    tracker.on_render_start(100_000);
+    tracker.on_flush_start(105_000);
+    tracker.on_flush_finish(106_000);
+    tracker.on_wait_start(110_000);
+    tracker.on_wait_finish(118_000);
+    tracker.on_flush_start(118_000);
+    tracker.on_flush_finish(119_000);
+    assert_eq!(tracker.on_render_ready(120_000), None);
+
+    tracker.on_render_start(1_060_000);
+    tracker.on_flush_start(1_070_000);
+    tracker.on_flush_finish(1_072_000);
+    tracker.on_wait_start(1_080_000);
+    tracker.on_wait_finish(1_096_000);
+    tracker.on_flush_start(1_096_000);
+    tracker.on_flush_finish(1_098_000);
+    let report = tracker
+        .on_render_ready(1_100_000)
+        .expect("window elapsed after one second");
+
+    assert_eq!(report.frames, 2);
+    assert_eq!(report.flushes, 4);
+    assert_eq!(report.elapsed_microseconds, 1_000_000);
+    assert_eq!(report.frames_per_second_tenths(), 20);
+    assert_eq!(report.frame_average_microseconds, 30_000);
+    assert_eq!(report.frame_maximum_microseconds, 40_000);
+    assert_eq!(report.flush_average_microseconds, 3_000);
+    assert_eq!(report.wait_average_microseconds, 12_000);
+    assert_eq!(
+        report.to_string(),
+        "Display performance: 2.0 frames/s (2 frames, 4 flushes, frame average 30.0 ms, maximum 40.0 ms, flush average 3.0 ms, wait average 12.0 ms)"
+    );
+}

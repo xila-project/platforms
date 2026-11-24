@@ -39,6 +39,26 @@ pub struct Board {
     pub sessions: &'static [Session],
 }
 
+/// Asynchronous flush hooks for a screen whose bus can stream one LVGL draw
+/// buffer over DMA while LVGL renders into the second draw buffer.
+#[cfg(feature = "display")]
+pub trait AsynchronousFlush: Send + Sync {
+    /// Starts flushing `data` (already in the panel's wire pixel format) to
+    /// `area`. Returns `true` when an asynchronous transfer is now in flight
+    /// and must be completed by [`wait_for_flush`](Self::wait_for_flush) before
+    /// `data` is reused, or `false` when the transfer completed synchronously.
+    ///
+    /// # Safety
+    ///
+    /// When this returns `true`, the memory behind `data` must stay valid and
+    /// unmodified until [`wait_for_flush`](Self::wait_for_flush) returns.
+    unsafe fn start_flush(&self, area: xila::graphics::Area, data: &[u8]) -> bool;
+
+    /// Waits for any in-flight flush started by [`start_flush`](Self::start_flush)
+    /// to complete.
+    fn wait_for_flush(&self);
+}
+
 /// A screen for Xila's graphics, with its optional pointer.
 pub struct Display {
     /// The screen device: resolution, drawing area and pixel writes.
@@ -56,6 +76,16 @@ pub struct Display {
     /// Whether to keep the draw buffers in internal SRAM, where DMA reads them
     /// without cache maintenance and fast enough for the panel bus.
     pub internal_draw_buffers: bool,
+    /// Optional asynchronous flush driver. When present, LVGL starts flushes
+    /// here and waits in its `flush_wait_cb` so rendering overlaps DMA.
+    #[cfg(feature = "display")]
+    pub asynchronous_flush: Option<&'static dyn AsynchronousFlush>,
+    /// Optional LVGL display refresh and pointer polling period in
+    /// milliseconds. When `None`, LVGL keeps `LV_DEF_REFR_PERIOD` (33 ms).
+    pub refresh_period_milliseconds: Option<u32>,
+    /// Round invalidated areas to an even width so RGB565 writes are always
+    /// 4-byte multiples, keeping ESP32 SPI DMA on its zero-copy path.
+    pub align_area_width_even: bool,
 }
 
 /// The memory the board gave the heap.

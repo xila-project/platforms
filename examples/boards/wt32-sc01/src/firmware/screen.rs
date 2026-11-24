@@ -1,29 +1,51 @@
-//! The classic WT32-SC01 display on HSPI (SPI2).
+//! The classic WT32-SC01 display on HSPI (SPI2) with asynchronous DMA.
 
 use alloc::{format, string::String};
-use embedded_hal_bus::spi::ExclusiveDevice;
+use core::ptr::addr_of_mut;
+use drivers_espressif::spi_display::{
+    DESCRIPTOR_CHUNK_SIZE, MAXIMUM_DMA_TRANSFER_SIZE, MINIMUM_DMA_TRANSFER_SIZE, SpiDisplayBus,
+};
 use esp_hal::{
-    delay::Delay,
-    dma_rx_buffer, dma_tx_buffer,
+    dma::DmaDescriptor,
     gpio::{Level, Output, OutputConfig},
     peripherals::{
         DMA_SPI2, GPIO13, GPIO14, GPIO15, GPIO18, GPIO19, GPIO21, GPIO22, GPIO23, I2C0, SPI2,
     },
-    spi::master::{Config, Spi},
+    spi::master::{Config as SpiConfiguration, Spi},
     time::Rate,
 };
-use firmware::{Display, panel};
-use mipidsi::{interface::SpiInterface, options::ColorInversion};
-use static_cell::StaticCell;
+use firmware::{
+    Display,
+    panel::{self, WIDTH},
+};
+use mipidsi::options::ColorInversion;
 
-const DRAW_BUFFER_ROWS: usize = 10;
+/// Two 20-row RGB565 draw buffers in internal SRAM (19,200 bytes each,
+/// 38,400 bytes total): 16 exact strips across the 320-row panel, each fitting
+/// in a single ESP32 SPI DMA transfer (at most 32,736 bytes).
+const DRAW_BUFFER_ROWS: usize = 20;
+const DRAW_BUFFER_BYTES: usize = WIDTH as usize * DRAW_BUFFER_ROWS * 2;
+
+/// DMA descriptors for one draw buffer (4092 bytes per descriptor).
+const DESCRIPTOR_COUNT: usize = DRAW_BUFFER_BYTES.div_ceil(DESCRIPTOR_CHUNK_SIZE);
+
+const _: () = {
+    assert!(DRAW_BUFFER_BYTES <= MAXIMUM_DMA_TRANSFER_SIZE);
+    assert!(DESCRIPTOR_COUNT * DESCRIPTOR_CHUNK_SIZE >= DRAW_BUFFER_BYTES);
+};
+
+static mut DESCRIPTORS: [DmaDescriptor; DESCRIPTOR_COUNT] =
+    [DmaDescriptor::EMPTY; DESCRIPTOR_COUNT];
+
 // The 80 MHz APB clock divided by two: a 25 ns write cycle, faster than the
 // ST7796S specification's 66 ns minimum, as widely used with this panel.
 // Validated on a WT32-SC01 (clean image and touch). The fastest in-specification
 // setting is 13_334 (divider six, 75 ns); esp-hal rounds the divider up, so
 // 13_333 would give divider seven (11.4 MHz).
 const BUS_FREQUENCY_KILOHERTZ: u32 = 40_000;
-static PIXEL_STAGING: StaticCell<[u8; 64]> = StaticCell::new();
+
+/// LVGL display refresh and touch polling period (~60 Hz).
+const REFRESH_PERIOD_MILLISECONDS: u32 = 16;
 
 pub(super) struct Pins {
     pub spi: SPI2<'static>,
@@ -43,33 +65,34 @@ pub(super) fn start(pins: Pins) -> Result<(Display, (u8, u8)), String> {
     let mut backlight = Output::new(pins.backlight, Level::Low, OutputConfig::default());
     let spi = Spi::new(
         pins.spi,
-        Config::default().with_frequency(Rate::from_khz(BUS_FREQUENCY_KILOHERTZ)),
+        SpiConfiguration::default()
+            .with_frequency(Rate::from_khz(BUS_FREQUENCY_KILOHERTZ))
+            .with_min_async_transfer_size(MINIMUM_DMA_TRANSFER_SIZE),
     )
     .map_err(|error| format!("cannot configure HSPI: {error:?}"))?
     .with_mosi(pins.data)
     .with_sck(pins.clock)
     .with_dma(pins.dma);
 
-    // esp-hal sends internal slices directly. The transmit staging buffer
-    // covers other inputs, such as command parameters in flash.
-    let receive = dma_rx_buffer!(4)
-        .map_err(|error| format!("cannot configure HSPI receive DMA: {error:?}"))?;
-    let transmit = dma_tx_buffer!(256)
-        .map_err(|error| format!("cannot configure HSPI transmit DMA: {error:?}"))?;
-    let spi = spi.with_buffers(receive, transmit);
     let select = Output::new(pins.select, Level::High, OutputConfig::default());
-    let device = ExclusiveDevice::new(spi, select, Delay::new()).unwrap();
     let command_data = Output::new(pins.command_data, Level::High, OutputConfig::default());
     let reset = Output::new(pins.reset, Level::High, OutputConfig::default());
 
-    let result = panel::start(
-        SpiInterface::new(device, command_data, PIXEL_STAGING.init([0; 64])),
+    // SAFETY: `screen::start` runs once at boot and is the sole owner of
+    // `DESCRIPTORS` for the rest of the firmware's lifetime.
+    let descriptors = unsafe { &mut *addr_of_mut!(DESCRIPTORS) };
+    let bus = SpiDisplayBus::new(spi, select, command_data, descriptors)
+        .map_err(|error| format!("cannot configure HSPI display bus: {error:?}"))?;
+
+    let result = panel::start_asynchronous(
+        bus,
         reset,
         pins.i2c,
         pins.touch_data,
         pins.touch_clock,
         ColorInversion::Normal,
         DRAW_BUFFER_ROWS,
+        REFRESH_PERIOD_MILLISECONDS,
     )?;
     backlight.set_high();
     Ok(result)

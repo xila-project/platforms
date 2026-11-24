@@ -83,6 +83,10 @@ console = [
 ]
 # 8080 parallel display bus over LCD_CAM with DMA (ESP32-S3), for `mipidsi`.
 lcd-i8080 = ["dep:drivers_shared", "drivers_shared/display-mipidsi"]
+# 4-wire SPI display bus with non-blocking DMA and FIFO commands (ESP32).
+spi-display = ["dep:drivers_shared", "drivers_shared/display-mipidsi"]
+# Enable debug-level logging on the serial console (including display timings).
+debug-log = []
 # Executable memory for the native loader, on the chips listed in
 # `executable_memory`; elsewhere the feature adds nothing.
 executable-memory = ["dep:native_loader"]

@@ -270,8 +270,10 @@ The classic Wireless-Tag WT32-SC01 uses the ESP32-WROVER-B module and runs
 the CPU at 240 MHz. It starts the command-line shell on UART0 at 115200 baud
 through the CP210x bridge and starts the graphical shell when the display
 initializes.
-The 160 KiB runtime heap comprises 64 KiB in primary DRAM and 96 KiB in
-DRAM2 reclaimed after ESP-IDF bootloader handoff. The ESP32 can
+The 192 KiB runtime heap comprises 96 KiB in primary DRAM and 96 KiB in
+DRAM2 reclaimed after ESP-IDF bootloader handoff. The rest of primary DRAM
+holds static data and the main stack (about 77 KiB; the link fails below
+40 KiB, see [main_stack.x](wt32-sc01/main_stack.x)). The ESP32 can
 directly map 4 MiB of the module's 8 MiB of PSRAM. The firmware registers that
 mapping in a separate data heap and runs a 1 MiB allocation and readback
 test. This keeps pointers that may be used by hardware atomics or flash ROM
@@ -301,10 +303,22 @@ working touch. If a panel shows corrupted pixels, set
 `BUS_FREQUENCY_KILOHERTZ` to `13_334` (divider six, 75 ns), the fastest
 in-specification setting: esp-hal rounds the divider up, so `13_333` would run
 at 11.4 MHz.
-The internal, single RGB565 draw buffer is 480 × 10 × 2 = 9,600 bytes,
-about 5.9% of the 160 KiB heap. That leaves 154,240 bytes before accounting
-for the runtime, LVGL and allocator overhead. ESP32 SPI DMA requires
-internal SRAM.
+ESP32 SPI DMA requires internal SRAM, so the two RGB565 draw buffers live
+there: 480 × 20 × 2 = 19,200 bytes each, 38,400 bytes in all, about 20% of
+the 192 KiB heap. LVGL renders into one buffer while DMA sends the other to
+the panel; panel commands go through the 64-byte SPI FIFO instead of DMA.
+Invalidated areas are widened to an even number of columns so that every
+transfer is a multiple of 4 bytes, which ESP32 SPI DMA needs to read the
+buffer in place. LVGL refreshes the display and polls the touch panel every
+16 ms.
+
+Build with `--features debug-log` to enable debug-level console logging,
+including a display summary (frames per second, frame, flush and DMA wait
+times) every two seconds while the screen changes:
+
+```sh
+mise run build:wt32-sc01 -- --features debug-log
+```
 
 [classic-schematic]: https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2021/12/WT32-SC01DataSheetV3.4-with-nuts.pdf
 [classic-reference]: https://github.com/wireless-tag-com/WT32-SC01/blob/87f3c38dcfe6ee5a3d0f32776817e7d97576f240/main/board.h

@@ -88,6 +88,8 @@ pub mod memory;
 pub mod power;
 #[cfg(feature = "random")]
 pub mod random;
+#[cfg(all(feature = "spi-display", feature = "esp32"))]
+pub mod spi_display;
 #[cfg(feature = "time")]
 pub mod time;
 
