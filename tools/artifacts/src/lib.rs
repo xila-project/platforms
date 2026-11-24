@@ -82,8 +82,11 @@ pub fn prepare(
         .find(|file| file.path == entrypoint)
         .ok_or("missing payload")?
         .bytes;
+    // Match the Xila host engine: no memory64, and custom page sizes, which
+    // Applications links its guests with (1-byte pages).
     let mut features = wasmparser::WasmFeatures::default();
     features.set(wasmparser::WasmFeatures::MEMORY64, false);
+    features.set(wasmparser::WasmFeatures::CUSTOM_PAGE_SIZES, true);
     wasmparser::Validator::new_with_features(features)
         .validate_all(payload)
         .map_err(|_| "invalid or incompatible Wasm module")?;
@@ -197,6 +200,19 @@ mod tests {
         );
         assert_eq!(files[1].bytes, WASM);
         assert_eq!(files[2].bytes, SHORTCUT);
+    }
+
+    #[test]
+    fn accepts_byte_and_default_pages_but_not_memory64() {
+        // (memory 1 (pagesize 1)), (memory 1) and (memory i64 1).
+        let byte_pages: &[u8] = b"\0asm\x01\0\0\0\x05\x04\x01\x08\x01\x00";
+        let default_pages: &[u8] = b"\0asm\x01\0\0\0\x05\x03\x01\x00\x01";
+        let memory64: &[u8] = b"\0asm\x01\0\0\0\x05\x03\x01\x04\x01";
+        for (payload, valid) in [(byte_pages, true), (default_pages, true), (memory64, false)] {
+            let bytes = package("wasm32-wasip1", payload, None);
+            let result = prepare(&bytes, "xila.clock", "1.0.0", sha256(&bytes), None);
+            assert_eq!(result.is_ok(), valid, "{payload:?}");
+        }
     }
 
     #[test]
