@@ -30,12 +30,15 @@ use core::{
 
 use critical_section::Mutex;
 
-use drivers_espressif::lcd::{self, I8080Bus};
+use drivers_espressif::lcd::I8080Bus;
 use drivers_shared::devices::display::ParallelInterface;
 use esp_hal::{
     dma::DmaDescriptor,
     gpio::{Level, Output, OutputConfig},
-    lcd_cam::{LcdCam, lcd::i8080::I8080},
+    lcd_cam::{
+        LcdCam,
+        lcd::i8080::{Config as I8080Configuration, I8080},
+    },
     peripherals::{
         DMA_CH0, GPIO0, GPIO3, GPIO4, GPIO5, GPIO6, GPIO8, GPIO9, GPIO15, GPIO16, GPIO17, GPIO18,
         GPIO45, GPIO46, GPIO47, I2C0, LCD_CAM, LEDC,
@@ -119,7 +122,7 @@ fn try_start(pins: Pins) -> Result<Display, String> {
     let i8080 = I8080::new(
         lcd_cam.lcd,
         pins.dma,
-        lcd::configuration(Rate::from_mhz(BUS_FREQUENCY_MEGAHERTZ)),
+        I8080Configuration::default().with_frequency(Rate::from_mhz(BUS_FREQUENCY_MEGAHERTZ)),
     )
     .map_err(|error| format!("cannot configure the LCD bus: {error:?}"))?
     .with_dc(pins.command_data)

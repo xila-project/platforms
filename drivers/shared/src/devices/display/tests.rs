@@ -106,7 +106,8 @@ fn raw_pixels_are_one_write_of_the_callers_slice() {
     interface.send_raw_pixels(&data).unwrap();
     let writes = bus.take();
     assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0].command, None);
+    // No memory write start came first: the pixels continue a memory write.
+    assert_eq!(writes[0].command, Some(0x3C));
     assert_eq!(writes[0].data, data);
     // Not copied: the bus sees the caller's buffer.
     assert_eq!(writes[0].address, data.as_ptr() as usize);
@@ -128,7 +129,7 @@ fn converted_pixels_are_staged_in_bounded_writes() {
     let writes = bus.take();
     let lengths: Vec<usize> = writes.iter().map(|write| write.data.len()).collect();
     assert_eq!(lengths, vec![STAGING_SIZE, 600 - STAGING_SIZE]);
-    assert!(writes.iter().all(|write| write.command.is_none()));
+    assert!(writes.iter().all(|write| write.command == Some(0x3C)));
     assert!(
         writes
             .iter()
@@ -172,11 +173,47 @@ fn set_pixels_raw_is_one_window_and_one_transfer() {
         vec![
             (Some(0x2A), vec![0, 10, 0, 12]),
             (Some(0x2B), vec![0, 20, 0, 21]),
-            (Some(0x2C), vec![]),
-            (None, data.clone()),
+            // The memory write start and the pixels are one transaction.
+            (Some(0x2C), data.clone()),
         ]
     );
-    assert_eq!(writes[3].address, data.as_ptr() as usize);
+    assert_eq!(writes[2].address, data.as_ptr() as usize);
+}
+
+#[test]
+fn every_write_of_pixels_carries_a_memory_write_command() {
+    let bus = RecordingBus::default();
+    let mut interface = ParallelInterface::new(bus.clone());
+    interface.send_command(0x2C, &[]).unwrap();
+    // The start is held back until pixels follow.
+    assert!(bus.take().is_empty());
+    interface.send_repeated_pixel([0x12, 0x34], 300).unwrap();
+    interface.send_raw_pixels(&[0x56, 0x78]).unwrap();
+    let written: Vec<(Option<u8>, usize)> = bus
+        .take()
+        .iter()
+        .map(|write| (write.command, write.data.len()))
+        .collect();
+    assert_eq!(
+        written,
+        vec![
+            (Some(0x2C), STAGING_SIZE),
+            (Some(0x3C), 600 - STAGING_SIZE),
+            (Some(0x3C), 2),
+        ]
+    );
+}
+
+#[test]
+fn a_memory_write_start_without_pixels_keeps_its_place() {
+    let bus = RecordingBus::default();
+    let mut interface = ParallelInterface::new(bus.clone());
+    interface.send_command(0x2C, &[]).unwrap();
+    interface.send_command(0x29, &[]).unwrap();
+    assert_eq!(
+        commands(&bus.take()),
+        vec![(Some(0x2C), vec![]), (Some(0x29), vec![])]
+    );
 }
 
 fn screen(
@@ -217,8 +254,9 @@ fn screen_flush_writes_the_drawing_area() {
             (Some(0x2B), vec![0x01, 0x36, 0x01, 0x3F]),
         ]
     );
-    assert_eq!(writes.len(), 4);
-    assert_eq!(writes[3].address, pixels.as_ptr() as usize);
+    assert_eq!(writes.len(), 3);
+    assert_eq!(writes[2].command, Some(0x2C));
+    assert_eq!(writes[2].address, pixels.as_ptr() as usize);
 }
 
 #[test]
@@ -271,7 +309,10 @@ impl ParallelBus for FailingBus {
     fn write(&mut self, command: Option<u8>, _: &[u8]) -> Result<(), Self::Error> {
         *self.writes.borrow_mut() += 1;
         // Commands pass, so that the panel initialises; pixel data fails.
-        if command.is_some() { Ok(()) } else { Err(()) }
+        match command {
+            Some(0x2C | 0x3C) => Err(()),
+            _ => Ok(()),
+        }
     }
 }
 
