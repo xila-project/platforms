@@ -156,6 +156,7 @@ where
             asynchronous_flush: None,
             refresh_period_milliseconds: None,
             align_area_width_even: false,
+            light_rendering: false,
         },
         identifiers,
     ))
@@ -199,6 +200,7 @@ where
             asynchronous_flush: Some(screen),
             refresh_period_milliseconds: Some(refresh_period_milliseconds),
             align_area_width_even: true,
+            light_rendering: false,
         },
         identifiers,
     ))

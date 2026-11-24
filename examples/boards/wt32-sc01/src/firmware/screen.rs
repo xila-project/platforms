@@ -84,7 +84,7 @@ pub(super) fn start(pins: Pins) -> Result<(Display, (u8, u8)), String> {
     let bus = SpiDisplayBus::new(spi, select, command_data, descriptors)
         .map_err(|error| format!("cannot configure HSPI display bus: {error:?}"))?;
 
-    let result = panel::start_asynchronous(
+    let (mut display, identifiers) = panel::start_asynchronous(
         bus,
         reset,
         pins.i2c,
@@ -94,6 +94,9 @@ pub(super) fn start(pins: Pins) -> Result<(Display, (u8, u8)), String> {
         DRAW_BUFFER_ROWS,
         REFRESH_PERIOD_MILLISECONDS,
     )?;
+    // The 40 MHz SPI bus needs at least 61 ms to send a whole frame, so an
+    // animation over most of the screen shows three or four of its steps.
+    display.light_rendering = true;
     backlight.set_high();
-    Ok(result)
+    Ok((display, identifiers))
 }

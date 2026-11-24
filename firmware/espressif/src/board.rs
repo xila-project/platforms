@@ -86,6 +86,10 @@ pub struct Display {
     /// Round invalidated areas to an even width so RGB565 writes are always
     /// 4-byte multiples, keeping ESP32 SPI DMA on its zero-copy path.
     pub align_area_width_even: bool,
+    /// Whether the theme renders in its light mode, for a screen that takes
+    /// too long to redraw to follow animations: state changes and animated
+    /// scrolls then take one frame, and modal backdrops are not blended.
+    pub light_rendering: bool,
 }
 
 /// The memory the board gave the heap.

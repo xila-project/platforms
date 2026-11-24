@@ -20,7 +20,9 @@ use xila::{
         self, DirectBaseOperations, DirectCharacterDevice, IoErrorKind, MountOperations, Result,
         Size,
     },
-    graphics::{self, Area, InputData, InputKind, Point, RenderingColor, State, lvgl},
+    graphics::{
+        self, Area, InputData, InputKind, Point, RenderingColor, RenderingMode, State, lvgl,
+    },
     log, task, time,
 };
 
@@ -166,17 +168,46 @@ unsafe extern "C" fn round_area_even_width(event: *mut lvgl::lv_event_t) {
     area.x2 |= 1;
 }
 
+/// Number of pixels of the area that LVGL passes as the parameter of an
+/// invalidation or flush event.
+///
+/// # Safety
+/// `event` must be an `LV_EVENT_INVALIDATE_AREA` or `LV_EVENT_FLUSH_START`
+/// display event.
+unsafe fn event_area(event: *mut lvgl::lv_event_t) -> (&'static lvgl::lv_area_t, u32) {
+    // SAFETY: both events carry a valid `lv_area_t`, which the caller only
+    // uses while it handles the event.
+    let area = unsafe { &*lvgl::lv_event_get_param(event).cast::<lvgl::lv_area_t>() };
+    let pixels = (area.x2 - area.x1 + 1).max(0) * (area.y2 - area.y1 + 1).max(0);
+    (area, pixels as u32)
+}
+
 unsafe extern "C" fn record_display_performance(event: *mut lvgl::lv_event_t) {
     let now = Instant::now().duration_since_epoch().as_micros();
     // SAFETY: LVGL passes a valid event handle to display event callbacks.
     let code = unsafe { lvgl::lv_event_get_code(event) };
     let report = DISPLAY_PERFORMANCE.try_with(|tracker| match code {
+        lvgl::lv_event_code_t_LV_EVENT_INVALIDATE_AREA => {
+            // SAFETY: the event is an invalidation, sent under the graphics
+            // lock by the default display, the board's only one.
+            let (area, pixels) = unsafe { event_area(event) };
+            tracker.on_invalidate(pixels, || unsafe {
+                graphics::invalidation::get_invalidated_class_name(
+                    lvgl::lv_display_get_default(),
+                    area,
+                )
+                .and_then(|name| name.to_str().ok())
+            });
+            None
+        }
         lvgl::lv_event_code_t_LV_EVENT_RENDER_START => {
             tracker.on_render_start(now);
             None
         }
         lvgl::lv_event_code_t_LV_EVENT_FLUSH_START => {
-            tracker.on_flush_start(now);
+            // SAFETY: the event is the start of a flush.
+            let (_, pixels) = unsafe { event_area(event) };
+            tracker.on_flush_start(now, pixels);
             None
         }
         lvgl::lv_event_code_t_LV_EVENT_FLUSH_FINISH => {
@@ -284,6 +315,13 @@ pub(crate) async fn start(
         manager.enable_on_screen_keyboard().await;
     }
 
+    if display.light_rendering {
+        // Before any window exists: objects take the mode when they are created.
+        if let Err(error) = manager.set_rendering_mode(RenderingMode::Light).await {
+            log::error!("Xila: cannot select light rendering: {error:?}");
+        }
+    }
+
     let resolution = manager.get_resolution().await.unwrap_or_default();
     {
         let _lock = manager.lock().await;
@@ -336,7 +374,10 @@ pub(crate) async fn start(
             // Display timings are only reported at the debug level: without it,
             // do not add callbacks to every display event.
             if console::maximum_level().enables(log::Level::Debug) {
+                // After `round_area_even_width`, so that the areas are counted
+                // as LVGL redraws them.
                 for event_code in [
+                    lvgl::lv_event_code_t_LV_EVENT_INVALIDATE_AREA,
                     lvgl::lv_event_code_t_LV_EVENT_RENDER_START,
                     lvgl::lv_event_code_t_LV_EVENT_FLUSH_START,
                     lvgl::lv_event_code_t_LV_EVENT_FLUSH_FINISH,
@@ -356,12 +397,17 @@ pub(crate) async fn start(
     }
 
     log::information!(
-        "Xila: graphics on a {}x{} screen, {}-pixel RGB565 draw buffer{} ({} bytes each)",
+        "Xila: graphics on a {}x{} screen, {}-pixel RGB565 draw buffer{} ({} bytes each){}",
         resolution.get_x(),
         resolution.get_y(),
         display.draw_buffer_pixels,
         if display.double_buffered { "s" } else { "" },
         display.draw_buffer_pixels * 2,
+        if display.light_rendering {
+            ", light rendering"
+        } else {
+            ""
+        },
     );
 
     task_manager

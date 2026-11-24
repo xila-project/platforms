@@ -128,6 +128,12 @@ mise run build:wt32-sc01-plus
 This writes the firmware to `target/espressif-emulator/wt32-sc01-plus.elf` and
 a merged 16 MiB flash image, `target/espressif-emulator/wt32-sc01-plus-flash.bin`.
 
+Add `-- --features debug-log` for debug-level console logging with the display
+summary described for the [WT32-SC01](#build-and-flash-the-wt32-sc01-firmware).
+The theme keeps its default rendering mode on this board: its bus sends a
+whole frame in 15 ms against 61 ms, and its frame times have not been measured
+yet.
+
 **The merged image overwrites the stored data.** It spans the whole flash,
 including the erased `storage` partition of
 [partitions.csv](wt32-sc01-plus/partitions.csv), where the LittleFS file system
@@ -312,13 +318,32 @@ transfer is a multiple of 4 bytes, which ESP32 SPI DMA needs to read the
 buffer in place. LVGL refreshes the display and polls the touch panel every
 16 ms.
 
+The theme renders in Xila's light mode on this board (`light_rendering` in
+`src/firmware/screen.rs`): state changes and the scrolls that LVGL animates
+take one frame, and a modal backdrop does not dim what is behind it. The bus
+alone needs 61 ms for a whole frame, so a 400 ms animation over most of the
+screen could only show three or four of its steps, each a full redraw.
+
 Build with `--features debug-log` to enable debug-level console logging,
-including a display summary (frames per second, frame, flush and DMA wait
-times) every two seconds while the screen changes:
+including a display summary every two seconds while the screen changes:
 
 ```sh
 mise run build:wt32-sc01 -- --features debug-log
 ```
+
+A summary has this form (the figures here only show the format):
+
+```text
+Display performance: 5.1 frames/s (10 frames, 118 flushes, frame average 96.2 ms, maximum 190.4 ms, flush average 61.0 ms, wait average 22.3 ms; per frame 6.4 invalidations of 131520 pixels, 113280 pixels flushed; largest invalidation 139200 pixels by lv_list)
+```
+
+The times tell how long a frame takes; the last part tells why. `pixels
+flushed` is what LVGL redrew, once it had joined the invalidated areas, out
+of 153,600 for the whole screen. `invalidations` counts the areas as they
+were invalidated, and their pixels count overlapping areas once each, so
+that sum can exceed the screen. The largest invalidation of the two seconds
+is named after the class of the deepest object that contains it. The
+WT32-SC01 Plus has the same feature.
 
 [classic-schematic]: https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2021/12/WT32-SC01DataSheetV3.4-with-nuts.pdf
 [classic-reference]: https://github.com/wireless-tag-com/WT32-SC01/blob/87f3c38dcfe6ee5a3d0f32776817e7d97576f240/main/board.h
