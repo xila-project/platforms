@@ -1,12 +1,15 @@
 extern crate std;
 
-use std::{rc::Rc, vec, vec::Vec};
+use std::{boxed::Box, rc::Rc, vec, vec::Vec};
 
 use core::cell::RefCell;
 
-use device::screen::{Area, GET_RESOLUTION, Point, SET_DRAWING_AREA};
+use device::screen::{
+    Area, BRIGHTNESS_FULL, BRIGHTNESS_OFF, GET_BRIGHTNESS, GET_RESOLUTION, Point, SET_BRIGHTNESS,
+    SET_DRAWING_AREA,
+};
 use embedded_hal::delay::DelayNs;
-use file_system::{ControlCommand, DirectBaseOperations, IoErrorKind};
+use file_system::{ControlCommand, DirectBaseOperations, DirectCharacterDevice, IoErrorKind};
 use mipidsi::{
     Builder, NoResetPin,
     interface::Interface,
@@ -15,7 +18,9 @@ use mipidsi::{
 };
 use shared::AnyByLayout;
 
-use super::{MipidsiScreenDevice, ParallelBus, ParallelInterface, STAGING_SIZE};
+use super::{
+    BacklightScreenDevice, MipidsiScreenDevice, ParallelBus, ParallelInterface, STAGING_SIZE,
+};
 
 /// One bus write: the command, a copy of the data and where the data was.
 #[derive(Clone, Debug, PartialEq)]
@@ -520,4 +525,87 @@ fn display_performance_reports_after_window_and_formats_summary() {
         report.to_string(),
         "Display performance: 2.0 frames/s (2 frames, 4 flushes, frame average 30.0 ms, maximum 40.0 ms, flush average 3.0 ms, wait average 12.0 ms)"
     );
+}
+
+/// A 10-bit PWM output, as the ESP32 LED controller sets one up, whose duty
+/// cycle the test reads.
+#[derive(Clone, Default)]
+struct RecordingPwm(Rc<RefCell<u16>>);
+
+// SAFETY: the tests use the output on one thread.
+unsafe impl Send for RecordingPwm {}
+
+impl embedded_hal::pwm::ErrorType for RecordingPwm {
+    type Error = core::convert::Infallible;
+}
+
+impl embedded_hal::pwm::SetDutyCycle for RecordingPwm {
+    fn max_duty_cycle(&self) -> u16 {
+        1024
+    }
+
+    fn set_duty_cycle(&mut self, duty: u16) -> Result<(), Self::Error> {
+        *self.0.borrow_mut() = duty;
+        Ok(())
+    }
+}
+
+fn brightness(screen: &dyn DirectBaseOperations) -> Result<u8, IoErrorKind> {
+    let mut level = 0u8;
+    screen.control_sync(
+        GET_BRIGHTNESS::IDENTIFIER,
+        AnyByLayout::NONE,
+        AnyByLayout::from_mutable(&mut level),
+    )?;
+    Ok(level)
+}
+
+fn set_brightness(screen: &dyn DirectBaseOperations, mut level: u8) -> Result<(), IoErrorKind> {
+    screen.control_sync(
+        SET_BRIGHTNESS::IDENTIFIER,
+        AnyByLayout::from_mutable(&mut level),
+        AnyByLayout::NONE,
+    )
+}
+
+#[test]
+fn backlight_follows_the_brightness_level_and_starts_fully_on() {
+    let inner: &'static dyn DirectCharacterDevice =
+        Box::leak(Box::new(screen(RecordingBus::default())));
+    // The panel alone has no brightness control.
+    assert_eq!(brightness(inner), Err(IoErrorKind::Unsupported));
+    assert_eq!(set_brightness(inner, 10), Err(IoErrorKind::Unsupported));
+
+    let pwm = RecordingPwm::default();
+    let screen = BacklightScreenDevice::new(inner, pwm.clone()).unwrap();
+    assert_eq!(*pwm.0.borrow(), 1024);
+    assert_eq!(brightness(&screen), Ok(BRIGHTNESS_FULL));
+
+    set_brightness(&screen, 128).unwrap();
+    assert_eq!(*pwm.0.borrow(), 514);
+    assert_eq!(brightness(&screen), Ok(128));
+    set_brightness(&screen, BRIGHTNESS_OFF).unwrap();
+    assert_eq!(*pwm.0.borrow(), 0);
+    set_brightness(&screen, BRIGHTNESS_FULL).unwrap();
+    assert_eq!(*pwm.0.borrow(), 1024);
+
+    // Every other command reaches the panel.
+    let mut resolution = Point::new(0, 0);
+    screen
+        .control_sync(
+            GET_RESOLUTION::IDENTIFIER,
+            AnyByLayout::NONE,
+            AnyByLayout::from_mutable(&mut resolution),
+        )
+        .unwrap();
+    assert_eq!(resolution, Point::new(480, 320));
+    let mut area = Area::new(Point::new(0, 0), Point::new(1, 0));
+    screen
+        .control_sync(
+            SET_DRAWING_AREA::IDENTIFIER,
+            AnyByLayout::from_mutable(&mut area),
+            AnyByLayout::NONE,
+        )
+        .unwrap();
+    assert_eq!(screen.write_sync(&[0; 4], 0), Ok(4));
 }

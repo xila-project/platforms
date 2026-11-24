@@ -108,7 +108,8 @@ The 3.5-inch 480 × 320 ST7796 panel runs on the 8-bit 8080 bus of the chip's
 LCD_CAM peripheral, with DMA, through `mipidsi`: each LVGL flush is one
 `set_pixels_raw` call, one address window and one DMA transfer of LVGL's draw
 buffer (40 rows, in internal SRAM, rendered in the panel's byte order). The
-FT6336U touch panel is polled over I²C, and the backlight is on GPIO45. Two
+FT6336U touch panel is polled over I²C, and the backlight is on GPIO45,
+dimmed by a 25 kHz LEDC PWM signal (see "Backlight brightness" below). Two
 sessions run side by side, each with its own login: the graphical shell on the
 screen and the command-line shell on the USB console. The firmware mounts the
 WebAssembly runtime at `/applications/executables/wasm` with lazy function
@@ -317,7 +318,7 @@ and 2 after graphics starts.
 | Signal | ESP32 GPIO |
 |---|---|
 | HSPI MOSI, clock, chip select | 13, 14, 15 |
-| LCD command/data, reset, backlight (active high) | 21, 22, 23 |
+| LCD command/data, reset, backlight (active high, LEDC PWM) | 21, 22, 23 |
 | FT6336U I²C data and clock | 18, 19 |
 | FT6336U interrupt (polled instead) | 39 |
 
@@ -413,3 +414,16 @@ The display and touch bring-up is tracked in [issue #177][classic-issue].
 [esp32-errata]: https://docs.espressif.com/projects/esp-chip-errata/en/latest/esp32/03-errata-description/index.html
 [classic-issue]: https://github.com/xila-project/platforms/issues/177
 [classic-wifi-issue]: https://github.com/xila-project/platforms/issues/200
+
+## Backlight brightness
+
+Both WT32-SC01 boards drive their backlight pin with the LED controller
+(LEDC, low-speed timer 0 and channel 0) at 25 kHz with a 10-bit duty: above
+the audible range and far above any visible flicker.
+`firmware::backlight::attach` wraps the panel's screen device in the shared
+`BacklightScreenDevice`, which implements the brightness commands of Core's
+screen contract. The backlight stays off until the panel holds a black frame,
+then starts at full brightness; restoring the saved appearance at boot and at
+login then sets the user's level from Settings, which never goes below about
+10 %. Other boards, and the native and browser examples, report brightness as
+unsupported, and Settings hides its slider there.

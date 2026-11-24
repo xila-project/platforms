@@ -23,6 +23,7 @@ drivers_espressif = { package = "xila-drivers-espressif", path = "../../drivers/
 drivers_peripherals = { workspace = true }
 drivers_shared = { package = "xila-drivers-shared", path = "../../drivers/shared", default-features = false }
 mipidsi = { git = "https://github.com/almindor/mipidsi", rev = "5ed6df58d9b8a2b9037221bc03de1328340eaf47", default-features = false, optional = true }
+embedded-hal = { workspace = true, optional = true }
 embedded-storage = "0.3"
 esp-hal = { version = "=1.2.2", features = ["unstable"] }
 esp-storage = { version = "0.10", features = ["embedded-storage"] }
@@ -46,6 +47,7 @@ wasm = { package = "xila-wasm", git = "https://github.com/xila-project/applicati
 [features]
 # Minimal LVGL display and pointer support.
 display = [
+  "dep:embedded-hal",
   "dep:mipidsi",
   "drivers_shared/display-mipidsi",
   "drivers_shared/touch-ft6336",
