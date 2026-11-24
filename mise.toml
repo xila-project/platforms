@@ -119,6 +119,30 @@ fi
 cargo run --locked -p xila-fs-image -- target/seed/browser/seed.img 16777216 --bundle wasm --bundles-dir "$bundles"
 '''
 
+[tasks."image:wt32-sc01"]
+description = "Create a raw LittleFS storage image with native shortcuts for the WT32-SC01"
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal" }
+run = '''
+set -eu
+partition_size=$(awk -F ',' '$1 == "storage" { print $5 }' examples/boards/wt32-sc01/partitions.csv)
+if [ -z "$partition_size" ]; then
+  echo "Missing storage partition size in partitions.csv" >&2
+  exit 1
+fi
+output=target/seed/wt32-sc01
+if [ -L target/seed ] || [ -L "$output" ]; then
+  echo "Refusing a symbolic link in the seed output path" >&2
+  exit 1
+fi
+mkdir -p "$output"
+staging=$(mktemp -d "$output/.image.XXXXXXXX")
+trap 'rm -rf -- "$staging"' EXIT
+cargo run --locked -p xila-fs-image -- "$staging/storage.img" "$((partition_size))" \
+  --layout raw --block-size 4096 --bundle wt32-sc01 --bundles-dir "$staging"
+python3 -c 'import os, sys; os.replace(sys.argv[1], sys.argv[2])' \
+  "$staging/storage.img" "$output/storage.img"
+'''
+
 [tasks."image:wt32-sc01-plus"]
 description = "Create a raw 4096-byte LittleFS storage image for the WT32-SC01 Plus from bundles.lock.json, or from XILA_BUNDLES_DIR; XILA_IMAGE_PROFILE=wt32-sc01-plus-clock builds the Clock-only device"
 run = '''

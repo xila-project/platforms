@@ -9,6 +9,7 @@ use critical_section::Mutex;
 
 use drivers_espressif::{memory::MemoryManager, random::RandomDevice};
 use esp_hal::{
+    clock::CpuClock,
     psram::{Psram, PsramCacheSpeed, PsramConfig},
     timer::timg::TimerGroup,
     uart::{Config as UartConfiguration, Uart},
@@ -47,9 +48,14 @@ pub(crate) fn external_heap() -> &'static MemoryManager {
     &EXTERNAL_HEAP
 }
 
+/// esp-hal starts the ESP32 at 80 MHz by default; run it at its 240 MHz
+/// maximum. The display bus and UART take their clocks from the 80 MHz APB
+/// clock, so their rates do not change.
+const CPU_CLOCK: CpuClock = CpuClock::_240MHz;
+
 #[esp_hal::main]
 fn main() -> ! {
-    let peripherals = esp_hal::init(esp_hal::Config::default());
+    let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CPU_CLOCK));
     let reservation = INTERNAL_HEAP.init_with(|| [MaybeUninit::uninit(); INTERNAL_HEAP_SIZE]);
     // SAFETY: the reservation is exclusive and linked into internal data SRAM.
     let heap = unsafe { firmware::initialize_heap_from_slice(reservation) };
@@ -124,8 +130,12 @@ fn main() -> ! {
         },
         memory_check: Some(check_external_memory),
         system_check: Some(log_screen_report),
+        sessions: if display.is_some() {
+            &[session::CONSOLE, session::GRAPHICAL_TOUCH]
+        } else {
+            &[session::CONSOLE]
+        },
         display,
-        sessions: &[session::CONSOLE],
     })
 }
 

@@ -67,11 +67,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                     arguments.next().ok_or("--root requires a directory")?,
                 ))
             }
-            Some("--bundle") => {
-                bundle = Some(arguments.next().ok_or(
-                    "--bundle requires native, wasm, wt32-sc01-plus or wt32-sc01-plus-clock",
-                )?)
-            }
+            Some("--bundle") => bundle = Some(arguments.next().ok_or(
+                "--bundle requires native, wasm, wt32-sc01, wt32-sc01-plus or wt32-sc01-plus-clock",
+            )?),
             Some("--bundles-dir") => {
                 bundles = Some(PathBuf::from(
                     arguments
@@ -135,7 +133,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         _ => {
             return Err(
-                "use --root or --bundle native|wasm|wt32-sc01-plus|wt32-sc01-plus-clock --bundles-dir <directory> [--native-runtime unix|windows] [--layout mbr|raw] [--block-size <bytes>]"
+                "use --root or --bundle native|wasm|wt32-sc01|wt32-sc01-plus|wt32-sc01-plus-clock --bundles-dir <directory> [--native-runtime unix|windows] [--layout mbr|raw] [--block-size <bytes>]"
                     .into(),
             );
         }
@@ -194,10 +192,12 @@ impl NativeRuntime {
 }
 
 /// Platforms' seed profile: `native`, `wasm` (the browser profile),
-/// `wt32-sc01-plus` or `wt32-sc01-plus-clock`, a single-application WT32-SC01
-/// Plus that boots into the Clock ([`startup_configuration`]).
+/// `wt32-sc01`, `wt32-sc01-plus` or `wt32-sc01-plus-clock`, a
+/// single-application WT32-SC01 Plus that boots into the Clock
+/// ([`startup_configuration`]).
 /// `native_runtime` only affects the `native` profile.
 fn profile(name: &str, native_runtime: NativeRuntime) -> Result<Profile, Box<dyn Error>> {
+    let wt32_shortcuts = include_str!("../profiles/wt32-native-shortcuts.txt");
     let (applications, shortcuts) = match name {
         "native" => (
             include_str!("../profiles/native.txt"),
@@ -207,19 +207,21 @@ fn profile(name: &str, native_runtime: NativeRuntime) -> Result<Profile, Box<dyn
             include_str!("../profiles/browser.txt"),
             include_str!("../profiles/browser-shortcuts.txt"),
         ),
+        "wt32-sc01" => ("", wt32_shortcuts),
         "wt32-sc01-plus" => (
             include_str!("../profiles/wt32-sc01-plus.txt"),
-            include_str!("../profiles/wt32-sc01-plus-shortcuts.txt"),
+            wt32_shortcuts,
         ),
         // The native application shortcuts stay, for the graphical shell that
         // starts if the Clock cannot.
         "wt32-sc01-plus-clock" => (
             include_str!("../profiles/wt32-sc01-plus-clock.txt"),
-            include_str!("../profiles/wt32-sc01-plus-shortcuts.txt"),
+            wt32_shortcuts,
         ),
         _ => {
             return Err(
-                "bundle must be native, wasm, wt32-sc01-plus or wt32-sc01-plus-clock".into(),
+                "bundle must be native, wasm, wt32-sc01, wt32-sc01-plus or wt32-sc01-plus-clock"
+                    .into(),
             );
         }
     };
@@ -302,6 +304,27 @@ mod tests {
                 .contains(&"weather".to_owned())
         );
         assert!(profile("other", NativeRuntime::host()).is_err());
+    }
+
+    #[test]
+    fn wt32_sc01_profile_seeds_the_native_application_shortcuts() {
+        let profile = profile("wt32-sc01", NativeRuntime::host()).unwrap();
+        assert!(profile.applications.is_empty());
+        let shortcut_names: Vec<&str> = profile
+            .shortcuts
+            .iter()
+            .map(|shortcut| shortcut.name.as_str())
+            .collect();
+        assert_eq!(
+            shortcut_names,
+            [
+                "activity.json",
+                "file_manager.json",
+                "settings.json",
+                "terminal.json",
+            ]
+        );
+        assert_eq!(profile.repositories[0].name, "xila.json");
     }
 
     fn has_debug_shortcut(name: &str, runtime: NativeRuntime) -> bool {
