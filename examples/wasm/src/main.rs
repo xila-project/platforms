@@ -595,33 +595,83 @@ async fn main(task_manager: &'static xila::task::Manager) {
         vec![]
     };
 
-    // - - Execute the shell. Everything already running is a runtime
-    // service; the shell and what it launches are stopped by the lifecycle.
+    // Everything already running is a runtime service; the shell (or the
+    // startup application) and what it launches are stopped by the lifecycle.
     let services = task_manager.get_children(task).await.unwrap();
-    let shell = executable::execute(
-        executable_context,
-        "/applications/executables/graphical_shell",
-        arguments,
-        standard,
-        None,
-    )
-    .await
-    .unwrap();
-    disk_manager_ready(&selected_disk);
-    let mut join = core::pin::pin!(shell.join());
-    loop {
-        use core::{
-            future::{Future, poll_fn},
-            task::Poll,
+
+    // - - A startup application (`/configuration/system/startup.json`)
+    // replaces the graphical shell. If it is invalid or cannot start, the
+    // graphical shell starts instead.
+    let mut ready = false;
+    let mut start_shell = true;
+    let startup_application =
+        match startup_application::load(virtual_file_system, users_manager, task).await {
+            Ok(application) => application,
+            Err(error) => {
+                log::error!("Startup application: {error}; starting the shell instead");
+                None
+            }
         };
-        if poll_fn(|context| Poll::Ready(join.as_mut().poll(context)))
+    if let Some(application) = startup_application {
+        log::information!(
+            "Startup application {}",
+            startup_application::describe(&application)
+        );
+        let application: &'static startup_application::Application =
+            Box::leak(Box::new(application));
+        let failed: &'static AtomicBool = Box::leak(Box::new(AtomicBool::new(false)));
+        task_manager
+            .spawn(task, "Application session", None, async move |session| {
+                if let Err(error) =
+                    startup_application::run(executable_context, session, application).await
+                {
+                    log::error!("{}: {error}; starting the shell instead", application.name);
+                    failed.store(true, Ordering::Release);
+                }
+            })
             .await
-            .is_ready()
-            || !xila::lifecycle::SYSTEM.is_running()
-        {
-            break;
+            .unwrap();
+        disk_manager_ready(&selected_disk);
+        ready = true;
+        // The application session runs until a lifecycle request.
+        while !failed.load(Ordering::Acquire) {
+            if !xila::lifecycle::SYSTEM.is_running() {
+                start_shell = false;
+                break;
+            }
+            task::Manager::sleep(Duration::from_millis(100)).await;
         }
-        task::Manager::sleep(Duration::from_millis(100)).await;
+    }
+
+    // - - Execute the shell.
+    if start_shell {
+        let shell = executable::execute(
+            executable_context,
+            "/applications/executables/graphical_shell",
+            arguments,
+            standard,
+            None,
+        )
+        .await
+        .unwrap();
+        if !ready {
+            disk_manager_ready(&selected_disk);
+        }
+        let mut join = core::pin::pin!(shell.join());
+        loop {
+            use core::{
+                future::{Future, poll_fn},
+                task::Poll,
+            };
+            if poll_fn(|context| Poll::Ready(join.as_mut().poll(context)))
+                .await
+                .is_ready()
+                || !xila::lifecycle::SYSTEM.is_running()
+            {
+                break;
+            }
+            task::Manager::sleep(Duration::from_millis(100)).await;
+        }
     }
 
     // Leaving the shell halts this instance; the page stays open.

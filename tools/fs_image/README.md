@@ -89,9 +89,19 @@ while building both guests and images. No passwords or random salts are included
 An explicit pending marker allows runtime account initialization to finish after
 an interruption; existing saved credentials are preserved.
 
+The `wt32-sc01-plus-clock` profile is a single-application WT32-SC01 Plus: only
+the Clock bundle, the same native application shortcuts and registry, and
+[`profiles/wt32-sc01-plus-clock-startup.json`](profiles/wt32-sc01-plus-clock-startup.json)
+as `/configuration/system/startup.json`, so the board boots into the Clock
+instead of the graphical shell (see
+[the startup application](../../firmware/startup_application/README.md)).
+`fs_image` checks that file with the firmware's own parser. The other profiles
+have no startup application.
+
 `mise run image:native`, `mise run image:browser` and `mise run image:wt32-sc01-plus` seed the released bundles
 (or `XILA_BUNDLES_DIR`, if set) and write `target/seed/<profile>/seed.img` (or `storage.img` for the
-WT32-SC01 Plus).
+WT32-SC01 Plus). Set `XILA_IMAGE_PROFILE=wt32-sc01-plus-clock` for the Clock-only
+WT32-SC01 Plus image, written to `target/seed/wt32-sc01-plus-clock/storage.img`.
 These recipes replace only their
 generated reference outputs, never a live runtime disk. Generated images are
 ignored by Git. CI publishes localized reference images as artifacts, and serves

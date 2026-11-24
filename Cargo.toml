@@ -146,6 +146,7 @@ members = [
   "examples/nano_33_ble",
   "examples/wasm",
   "firmware/espressif",
+  "firmware/startup_application",
   "tools/fs_image",
   "tools/firmware_sim",
   "tools/artifacts",

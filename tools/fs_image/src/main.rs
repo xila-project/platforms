@@ -2,7 +2,7 @@
 //! repositories over the image engine of `xila-project/tools`
 //! (`xila-tools-image`). Cargo.lock pins that library with the firmware's Core,
 //! so the images always match the Core revision that mounts them.
-use std::{env, error::Error, path::PathBuf, process};
+use std::{env, error::Error, fs, path::PathBuf, process};
 use tools_image::{Geometry, Layout, Profile, ProfileFile};
 
 tools_image::instantiate_global_allocator!();
@@ -67,13 +67,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                     arguments.next().ok_or("--root requires a directory")?,
                 ))
             }
-            Some("--bundle") => {
-                bundle = Some(
-                    arguments
-                        .next()
-                        .ok_or("--bundle requires native, wasm, wt32-sc01 or wt32-sc01-plus")?,
-                )
-            }
+            Some("--bundle") => bundle = Some(arguments.next().ok_or(
+                "--bundle requires native, wasm, wt32-sc01, wt32-sc01-plus or wt32-sc01-plus-clock",
+            )?),
             Some("--bundles-dir") => {
                 bundles = Some(PathBuf::from(
                     arguments
@@ -117,6 +113,18 @@ fn run() -> Result<(), Box<dyn Error>> {
             }
             let profile = profile(name, native_runtime.unwrap_or_else(NativeRuntime::host))?;
             let staging = tools_image::stage(&profile, &directory)?;
+            if let Some(configuration) = startup_configuration(name)? {
+                fs::write(
+                    staging
+                        .path()
+                        .join(&startup_application::CONFIGURATION_PATH[1..]),
+                    configuration,
+                )?;
+                println!(
+                    "Seeded the startup application in {}",
+                    startup_application::CONFIGURATION_PATH
+                );
+            }
             println!("Prepared {name} bundle: {}", profile.applications.join(","));
             tools_image::build_with(&output, size, Some(staging.path()), geometry)?
         }
@@ -125,7 +133,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         _ => {
             return Err(
-                "use --root or --bundle native|wasm|wt32-sc01|wt32-sc01-plus --bundles-dir <directory> [--native-runtime unix|windows] [--layout mbr|raw] [--block-size <bytes>]"
+                "use --root or --bundle native|wasm|wt32-sc01|wt32-sc01-plus|wt32-sc01-plus-clock --bundles-dir <directory> [--native-runtime unix|windows] [--layout mbr|raw] [--block-size <bytes>]"
                     .into(),
             );
         }
@@ -183,7 +191,10 @@ impl NativeRuntime {
     }
 }
 
-/// Platforms' native, browser or WT32 board seed profile.
+/// Platforms' seed profile: `native`, `wasm` (the browser profile),
+/// `wt32-sc01`, `wt32-sc01-plus` or `wt32-sc01-plus-clock`, a
+/// single-application WT32-SC01 Plus that boots into the Clock
+/// ([`startup_configuration`]).
 /// `native_runtime` only affects the `native` profile.
 fn profile(name: &str, native_runtime: NativeRuntime) -> Result<Profile, Box<dyn Error>> {
     let wt32_shortcuts = include_str!("../profiles/wt32-native-shortcuts.txt");
@@ -201,7 +212,18 @@ fn profile(name: &str, native_runtime: NativeRuntime) -> Result<Profile, Box<dyn
             include_str!("../profiles/wt32-sc01-plus.txt"),
             wt32_shortcuts,
         ),
-        _ => return Err("bundle must be native, wasm, wt32-sc01 or wt32-sc01-plus".into()),
+        // The native application shortcuts stay, for the graphical shell that
+        // starts if the Clock cannot.
+        "wt32-sc01-plus-clock" => (
+            include_str!("../profiles/wt32-sc01-plus-clock.txt"),
+            wt32_shortcuts,
+        ),
+        _ => {
+            return Err(
+                "bundle must be native, wasm, wt32-sc01, wt32-sc01-plus or wt32-sc01-plus-clock"
+                    .into(),
+            );
+        }
     };
     // Native applications are linked into the runtime; only their shortcuts
     // are seeded. The Debug application needs the control transport of the
@@ -231,6 +253,20 @@ fn profile(name: &str, native_runtime: NativeRuntime) -> Result<Profile, Box<dyn
             content: include_bytes!("../repositories/xila.json").to_vec(),
         }],
     })
+}
+
+/// The startup configuration that a profile seeds at
+/// `/configuration/system/startup.json`, if any: the device then boots into
+/// that application instead of the graphical shell. It is checked with the
+/// firmware's parser, so an image never carries one the firmware rejects.
+fn startup_configuration(name: &str) -> Result<Option<&'static str>, Box<dyn Error>> {
+    let configuration = match name {
+        "wt32-sc01-plus-clock" => include_str!("../profiles/wt32-sc01-plus-clock-startup.json"),
+        _ => return Ok(None),
+    };
+    startup_application::Configuration::parse(configuration)
+        .map_err(|error| format!("invalid startup configuration of {name}: {error}"))?;
+    Ok(Some(configuration))
 }
 
 fn native_shortcut(name: &str) -> Option<&'static str> {
@@ -495,6 +531,98 @@ mod tests {
                 )
                 .is_err()
         );
+
+        drop(file_system);
+        drive.close();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn only_the_clock_profile_boots_into_an_application() {
+        use file_system::{
+            AccessFlags, AttributeFlags, Attributes, BaseOperations, Context, FileSystemOperations,
+            Permissions,
+        };
+        use std::fs;
+
+        for name in ["native", "wasm", "wt32-sc01-plus"] {
+            assert_eq!(startup_configuration(name).unwrap(), None, "{name}");
+        }
+        let configuration = startup_configuration("wt32-sc01-plus-clock")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            startup_application::Configuration::parse(configuration).unwrap(),
+            startup_application::Configuration {
+                program: startup_application::Program::Shortcut("xila.clock".into()),
+                user: "administrator".into(),
+            }
+        );
+        let clock_profile = profile("wt32-sc01-plus-clock", NativeRuntime::Unix).unwrap();
+        assert_eq!(clock_profile.applications, ["clock"]);
+        assert_eq!(
+            clock_profile.shortcuts,
+            profile("wt32-sc01-plus", NativeRuntime::Unix)
+                .unwrap()
+                .shortcuts
+        );
+
+        // The image the firmware mounts holds the configuration, root's and
+        // writable by root only, as the firmware requires.
+        let root = env::temp_dir().join(format!("xila-fs-image-clock-test-{}", process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let bundle = root.join("bundles/xila.clock");
+        fs::create_dir_all(bundle.join(".xila")).unwrap();
+        fs::create_dir_all(bundle.join("executables")).unwrap();
+        fs::write(bundle.join(".xila/manifest.json"), b"{}").unwrap();
+        fs::write(bundle.join("shortcut.json"), b"{}").unwrap();
+        fs::write(bundle.join("executables/clock.wasm"), b"\0asm").unwrap();
+        let staging = tools_image::stage(&clock_profile, &root.join("bundles")).unwrap();
+        fs::write(
+            staging
+                .path()
+                .join(&startup_application::CONFIGURATION_PATH[1..]),
+            configuration,
+        )
+        .unwrap();
+        let image_path = root.join("storage.img");
+        tools_image::build_with(
+            &image_path,
+            2 * 1024 * 1024,
+            Some(staging.path()),
+            Geometry::raw(4096),
+        )
+        .unwrap();
+        drop(staging);
+
+        let drive: &'static tools_image::FileDrive = Box::leak(Box::new(
+            tools_image::FileDrive::open_with_block_size(&image_path, 4096)
+                .unwrap()
+                .with_flash_erase(),
+        ));
+        let file_system =
+            little_fs::FileSystem::new(drive, little_fs::Options::new(256).set_block_cycles(500))
+                .unwrap();
+        let path = startup_application::CONFIGURATION_PATH;
+        let mut context = Context::new_empty();
+        file_system
+            .lookup_file(&mut context, path.as_ref(), AccessFlags::Read.into())
+            .unwrap();
+        let mut content = vec![0; 1024];
+        let count = file_system
+            .read_sync(&mut context, &mut content, 0)
+            .unwrap();
+        file_system.close(&mut context).unwrap();
+        assert_eq!(&content[..count], configuration.as_bytes());
+        let mut attributes = Attributes::new().set_mask(AttributeFlags::all());
+        file_system
+            .get_attributes(path.as_ref(), &mut attributes)
+            .unwrap();
+        assert_eq!(
+            attributes.get_permissions(),
+            Permissions::from_octal(0o644).as_ref()
+        );
+        assert_eq!(attributes.get_user(), Some(&users::UserIdentifier::ROOT));
 
         drop(file_system);
         drive.close();

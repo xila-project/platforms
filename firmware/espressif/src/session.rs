@@ -9,9 +9,17 @@
 //! Boards list their sessions in [`crate::Board::sessions`]: the serial
 //! console session for now. A graphical session can run beside it as a second
 //! task with its own shell and display.
+//!
+//! A startup application (`/configuration/system/startup.json`, see the
+//! `xila-startup-application` crate) replaces the graphical sessions: it runs
+//! on the screen as its configured user, without a login, and starts again
+//! whenever it ends. The other sessions, such as the serial console, keep
+//! running for maintenance. If the application cannot start, the graphical
+//! session it replaced starts instead.
 
 use alloc::{string::String, vec::Vec};
 
+use startup_application::Application;
 use xila::{
     executable::{self, ExecutableContext, Standard},
     log, task,
@@ -54,6 +62,49 @@ pub const CONSOLE: Session = Session {
     shell: crate::SHELL_PATH,
     arguments: &[],
 };
+
+impl Session {
+    /// Whether the session runs the graphical shell, which a startup
+    /// application replaces.
+    pub fn is_graphical(&self) -> bool {
+        self.shell == crate::GRAPHICAL_SHELL_PATH
+    }
+}
+
+/// Starts the startup application as a session, a child task of `parent`. If
+/// it cannot start, `fallback`, the graphical session it replaces, runs on
+/// the same task instead.
+pub(super) async fn spawn_application(
+    task_manager: &'static task::Manager,
+    parent: task::TaskIdentifier,
+    executable_context: &'static ExecutableContext,
+    application: &'static Application,
+    fallback: Option<&'static Session>,
+) {
+    task_manager
+        .spawn(parent, "Application session", None, async move |task| {
+            let Err(error) = startup_application::run(executable_context, task, application).await
+            else {
+                return;
+            };
+            log::error!("Application session: {}: {error}", application.name);
+            let Some(fallback) = fallback else {
+                return;
+            };
+            // The shell logs a user in itself, from the root identity.
+            if let Err(error) = startup_application::leave(executable_context, task).await {
+                log::error!("Application session: {error}");
+                return;
+            }
+            log::warning!(
+                "Application session: starting the {} instead",
+                fallback.name
+            );
+            run(executable_context, task, fallback).await;
+        })
+        .await
+        .expect("Failed to spawn the application session");
+}
 
 /// Starts `session` as a child task of `parent`.
 pub(super) async fn spawn(

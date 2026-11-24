@@ -6928,6 +6928,7 @@ dependencies = [
  "xila-file-manager",
  "xila-graphical-shell",
  "xila-settings",
+ "xila-startup-application",
  "xila-terminal",
  "xila-wasm",
 ]
@@ -6967,6 +6968,7 @@ version = "0.1.0"
 dependencies = [
  "xila-file-system",
  "xila-little-fs",
+ "xila-startup-application",
  "xila-tools-image",
  "xila-users",
 ]
@@ -7124,6 +7126,7 @@ dependencies = [
  "xila-graphical-shell",
  "xila-package-application",
  "xila-settings",
+ "xila-startup-application",
  "xila-terminal",
  "xila-wasm",
 ]
@@ -7314,6 +7317,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "xila-startup-application"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-executor",
+ "embassy-time",
+ "miniserde",
+ "xila",
+ "xila-drivers-std",
+ "xila-little-fs",
+ "xila-task",
+ "xila-testing",
+ "xila-time",
+ "xila-users",
+ "xila-virtual-file-system",
+]
+
+[[package]]
 name = "xila-synchronization"
 version = "0.1.0"
 source = "git+https://github.com/xila-project/core?branch=main#802515fcb688e8eb9f74aa3b0a92aaccfc239cc1"
@@ -7498,6 +7519,7 @@ dependencies = [
  "xila-file-manager",
  "xila-graphical-shell",
  "xila-settings",
+ "xila-startup-application",
  "xila-terminal",
  "xila-wasm",
 ]

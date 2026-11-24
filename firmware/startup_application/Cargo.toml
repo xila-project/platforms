@@ -1,0 +1,33 @@
+[package]
+name = "xila-startup-application"
+version.workspace = true
+edition = "2024"
+rust-version.workspace = true
+
+# The startup application: one application that a device runs at boot in place
+# of the graphical shell, named by `/configuration/system/startup.json`. Shared
+# by the Espressif firmware and the native and browser examples.
+[dependencies]
+# Without `std`: the Espressif firmware has no standard library.
+miniserde = { version = "0.1", default-features = false }
+xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
+
+[dev-dependencies]
+critical-section = { workspace = true, features = ["std"] }
+drivers_std = { workspace = true }
+little_fs = { workspace = true }
+task = { workspace = true, features = ["test_harness"] }
+testing = { workspace = true }
+time = { workspace = true }
+users = { workspace = true }
+virtual_file_system = { workspace = true }
+
+[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dev-dependencies]
+embassy-executor = { workspace = true, features = [
+  "platform-std",
+  "executor-thread",
+] }
+embassy-time = { workspace = true, features = ["generic-queue-8"] }
+
+[lib]
+name = "startup_application"
