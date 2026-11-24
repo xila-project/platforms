@@ -23,6 +23,8 @@
 //! pins and the build fails when one of them is also in [`EXPOSED`].
 //!
 //! GPIO 2, 5 and 12 are strapping pins: the chip samples them at reset only.
+//! An external circuit that holds GPIO 12 high at reset selects a 1.8 V supply
+//! for the 3.3 V flash and PSRAM, and the board does not boot (see the README).
 //! GPIO 34, 35, 36 are input-only.
 
 use drivers_espressif::{

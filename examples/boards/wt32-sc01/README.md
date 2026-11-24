@@ -34,10 +34,20 @@ both connectors.
 | `/devices/gpio/pin35` | IO35 (I2S_ASDOUT) | Input only |
 | `/devices/gpio/pin36` | SENSOR_VP | Input only |
 
-The chip samples the strapping pins at reset. Do not let an external circuit
-hold GPIO 2, 5 or 12 at a level that changes the boot mode at reset. In
-particular, GPIO 12 must be low at reset. The input-only pins have no output
-driver and no pull resistor.
+The chip samples the strapping pins at reset. At reset, the firmware does not
+run and the pins have their internal pull resistors only, so only an external
+circuit can change the sampled level:
+
+- GPIO 12 (MTDI) selects the voltage of the flash and PSRAM supply. The flash
+  and PSRAM of the ESP32-WROVER-B use 3.3 V. If an external circuit holds GPIO
+  12 high at reset, the chip selects 1.8 V and the board does not boot. Keep
+  GPIO 12 low or floating at reset (it has an internal pull-down).
+- GPIO 2 must be low or floating when GPIO 0 is low at reset, or the chip
+  cannot enter the download mode. It has no effect on a normal boot.
+- GPIO 5 sets, with GPIO 15, the timing of the SDIO slave. The firmware does
+  not use the SDIO slave.
+
+The input-only pins have no output driver and no pull resistor.
 
 ### Withheld pins
 
