@@ -225,10 +225,14 @@ fn map_error(error: MmcError) -> IoErrorKind {
 // driver keeps in statics behind critical sections: the controller registers,
 // the transfer state and the interrupt waker. Moving the handle to another
 // thread changes none of it. `SectorBlockDevice` allows one transfer at a
-// time.
-unsafe impl<B: MmcBus> Send for SdCard<B> {}
+// time. The implementation is for this bus only: the reason does not apply
+// to another `MmcBus`.
+unsafe impl Send for SdCard<Slot<'static, 0, esp_hal::Async>> {}
 
-impl<B: MmcBus> SectorStorage for SdCard<B> {
+impl<B: MmcBus> SectorStorage for SdCard<B>
+where
+    Self: Send,
+{
     fn sector_count(&self) -> u32 {
         self.sectors
     }
