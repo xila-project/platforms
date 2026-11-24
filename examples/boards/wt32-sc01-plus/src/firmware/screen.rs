@@ -47,10 +47,19 @@ use esp_hal::{
 };
 use firmware::{
     Display,
-    panel::{self, HEIGHT, WIDTH},
+    panel::{self, HEIGHT, Initialisation, WIDTH},
 };
 use mipidsi::options::ColorInversion;
 use xila::log;
+
+/// The panel registers written at start-up.
+const INITIALISATION: Initialisation = if cfg!(feature = "panel-vendor-registers") {
+    Initialisation::Vendor
+} else if cfg!(feature = "panel-gamma") {
+    Initialisation::Gamma
+} else {
+    Initialisation::ControllerDefaults
+};
 
 /// LVGL renders 40 rows at a time: 38,400 bytes in internal SRAM.
 const DRAW_BUFFER_ROWS: usize = 40;
@@ -147,6 +156,7 @@ fn try_start(pins: Pins) -> Result<Display, String> {
         pins.touch_data,
         pins.touch_clock,
         ColorInversion::Inverted,
+        INITIALISATION,
         DRAW_BUFFER_ROWS,
     )?;
     TOUCH_IDENTIFIERS.store(u16::from(chip) << 8 | u16::from(vendor), Ordering::Relaxed);

@@ -22,9 +22,10 @@ use esp_hal::{
 };
 use mipidsi::{
     Builder,
+    dcs::SetAddressMode,
     interface::Interface,
-    models::ST7796,
-    options::{ColorInversion, ColorOrder, Orientation, Rotation},
+    models::{Model, ModelInitError, ST7796},
+    options::{ColorInversion, ColorOrder, ModelOptions, Orientation, Rotation},
 };
 use xila::graphics::{Area, Point};
 
@@ -35,6 +36,104 @@ const TOUCH_START_MILLISECONDS: u32 = 200;
 // Bound a stalled I²C transaction so touch polling cannot hang the graphics loop.
 const TOUCH_TRANSACTION_MILLISECONDS: u64 = 5;
 type Touch = TouchInputDevice<Ft6336<I2c<'static, Blocking>>>;
+
+/// Registers written to the controller before the generic initialisation,
+/// when a board asks for more than the controller's reset defaults.
+///
+/// The `mipidsi` ST7796 model only sets sleep, orientation, inversion, pixel
+/// format and display on. The reset values of the gamma curves, the power and
+/// common-electrode levels and the source timing depend on the controller and
+/// panel variant, and open projects for these boards write them explicitly
+/// (LovyanGFX's `Panel_ST7796`, which Wireless-Tag's own sample code uses).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Initialisation {
+    /// Only the generic sequence: the controller's reset registers apply.
+    ControllerDefaults,
+    /// Gamma curves and one-dot inversion, without power or timing registers.
+    Gamma,
+    /// The complete LovyanGFX sequence: one-dot inversion, display function
+    /// control, source and gate timing, power levels, common electrode level
+    /// and gamma curves.
+    Vendor,
+}
+
+/// Unlocks the extended command set (`0xF0`, parts one and two).
+const UNLOCK_EXTENDED_COMMANDS: [(u8, &[u8]); 2] = [(0xF0, &[0xC3]), (0xF0, &[0x96])];
+/// Locks the extended command set again.
+const LOCK_EXTENDED_COMMANDS: [(u8, &[u8]); 2] = [(0xF0, &[0x3C]), (0xF0, &[0x69])];
+/// Display inversion control (`0xB4`): one-dot inversion.
+const ONE_DOT_INVERSION: (u8, &[u8]) = (0xB4, &[0x01]);
+/// Positive and negative gamma correction (`0xE0`, `0xE1`).
+const GAMMA_CURVES: [(u8, &[u8]); 2] = [
+    (
+        0xE0,
+        &[
+            0xF0, 0x09, 0x0B, 0x06, 0x04, 0x15, 0x2F, 0x54, 0x42, 0x3C, 0x17, 0x14, 0x18, 0x1B,
+        ],
+    ),
+    (
+        0xE1,
+        &[
+            0xE0, 0x09, 0x0B, 0x06, 0x04, 0x03, 0x2B, 0x43, 0x42, 0x3B, 0x16, 0x14, 0x17, 0x1B,
+        ],
+    ),
+];
+/// Display function control (`0xB6`), display output control adjust (`0xE8`),
+/// power control two and three (`0xC1`, `0xC2`) and VCOM control (`0xC5`).
+const TIMING_AND_POWER: [(u8, &[u8]); 5] = [
+    (0xB6, &[0x80, 0x22, 0x3B]),
+    (0xE8, &[0x40, 0x8A, 0x00, 0x00, 0x29, 0x19, 0xA5, 0x33]),
+    (0xC1, &[0x06]),
+    (0xC2, &[0xA7]),
+    (0xC5, &[0x18]),
+];
+
+/// The `mipidsi` ST7796 model with optional register tuning before it.
+struct TunedST7796(Initialisation);
+
+impl TunedST7796 {
+    fn write<PanelInterface: Interface>(
+        interface: &mut PanelInterface,
+        commands: &[(u8, &[u8])],
+    ) -> Result<(), PanelInterface::Error> {
+        commands
+            .iter()
+            .try_for_each(|(command, arguments)| interface.send_command(*command, arguments))
+    }
+}
+
+impl Model for TunedST7796 {
+    type ColorFormat = <ST7796 as Model>::ColorFormat;
+    const FRAMEBUFFER_SIZE: (u16, u16) = <ST7796 as Model>::FRAMEBUFFER_SIZE;
+
+    fn init<Delayer, PanelInterface>(
+        &mut self,
+        interface: &mut PanelInterface,
+        delay: &mut Delayer,
+        options: &ModelOptions,
+    ) -> Result<SetAddressMode, ModelInitError<PanelInterface::Error>>
+    where
+        Delayer: embedded_hal::delay::DelayNs,
+        PanelInterface: Interface,
+    {
+        // The generic sequence waits 150 ms after the reset pulse and then
+        // wakes the controller; these registers are written before that, as
+        // LovyanGFX does.
+        if self.0 != Initialisation::ControllerDefaults {
+            Self::write(interface, &UNLOCK_EXTENDED_COMMANDS)
+                .and_then(|()| Self::write(interface, &[ONE_DOT_INVERSION]))
+                .map_err(ModelInitError::Interface)?;
+            if self.0 == Initialisation::Vendor {
+                Self::write(interface, &TIMING_AND_POWER).map_err(ModelInitError::Interface)?;
+            }
+            Self::write(interface, &GAMMA_CURVES)
+                .and_then(|()| Self::write(interface, &LOCK_EXTENDED_COMMANDS))
+                .map_err(ModelInitError::Interface)?;
+            delay.delay_ms(120);
+        }
+        ST7796.init(interface, delay, options)
+    }
+}
 
 /// Four-byte-aligned row buffer so clearing the panel at boot can use DMA
 /// directly on controllers that require word-aligned addresses.
@@ -61,12 +160,13 @@ fn initialize_panel<PanelInterface>(
     interface: PanelInterface,
     reset: Output<'static>,
     inversion: ColorInversion,
-) -> Result<mipidsi::Display<PanelInterface, ST7796, Output<'static>>, String>
+    initialisation: Initialisation,
+) -> Result<mipidsi::Display<PanelInterface, TunedST7796, Output<'static>>, String>
 where
     PanelInterface: Interface<Word = u8>,
     PanelInterface::Error: Debug,
 {
-    let mut display = Builder::new(ST7796, interface)
+    let mut display = Builder::new(TunedST7796(initialisation), interface)
         .reset_pin(reset)
         .display_size(HEIGHT, WIDTH)
         .orientation(Orientation {
@@ -132,13 +232,14 @@ pub fn start<PanelInterface>(
     touch_data: impl PeripheralInput<'static> + PeripheralOutput<'static>,
     touch_clock: impl PeripheralInput<'static> + PeripheralOutput<'static>,
     inversion: ColorInversion,
+    initialisation: Initialisation,
     draw_buffer_rows: usize,
 ) -> Result<(Display, (u8, u8)), String>
 where
     PanelInterface: Interface<Word = u8> + Send + 'static,
     PanelInterface::Error: Debug,
 {
-    let display = initialize_panel(interface, reset, inversion)?;
+    let display = initialize_panel(interface, reset, inversion, initialisation)?;
     let (touch, identifiers) = initialize_touch(i2c, touch_data, touch_clock)?;
 
     let screen = Box::leak(Box::new(MipidsiScreenDevice::new(
@@ -171,13 +272,14 @@ pub fn start_asynchronous<Bus>(
     touch_data: impl PeripheralInput<'static> + PeripheralOutput<'static>,
     touch_clock: impl PeripheralInput<'static> + PeripheralOutput<'static>,
     inversion: ColorInversion,
+    initialisation: Initialisation,
     draw_buffer_rows: usize,
     refresh_period_milliseconds: u32,
 ) -> Result<(Display, (u8, u8)), String>
 where
     Bus: AsynchronousDisplayBus + Send + 'static,
 {
-    let display = initialize_panel(SerialInterface::new(bus), reset, inversion)?;
+    let display = initialize_panel(SerialInterface::new(bus), reset, inversion, initialisation)?;
     let (interface, _model, reset) = display.release();
     let bus = interface.release();
     let (touch, identifiers) = initialize_touch(i2c, touch_data, touch_clock)?;
