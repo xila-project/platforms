@@ -257,9 +257,9 @@ mise run run:espflash -- write-bin --chip esp32s3 --port "$FLASH_PORT" \
 The Clock then fills the screen with no login, status bar or dock, and starts
 again whenever it ends. The serial console session keeps running for
 maintenance. If the configuration is invalid or the application cannot start,
-the console shows why and the graphical shell starts instead. Touch-only
-boards get no on-screen keyboard in this mode for now: it still belongs to the
-graphical shell.
+the console shows why and the graphical shell starts instead. Boards with a
+touch display get Core's system on-screen keyboard in this mode too, for the
+startup application's text fields.
 
 [board]: https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32p4/esp32-p4x-function-ev-board/user_guide.html
 [entropy]: https://github.com/esp-rs/esp-hal/issues/5982
