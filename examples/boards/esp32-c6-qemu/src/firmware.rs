@@ -52,6 +52,7 @@ fn main() -> ! {
         memory_check: Some(firmware::native::log_self_test),
         system_check: None,
         display: None,
+        sd_card: None,
         sessions: &[session::CONSOLE],
     })
 }

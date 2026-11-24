@@ -6626,6 +6626,8 @@ dependencies = [
 name = "xila-drivers-espressif"
 version = "0.1.0"
 dependencies = [
+ "aligned",
+ "block-device-driver",
  "critical-section",
  "embassy-executor",
  "embassy-futures",
@@ -6635,12 +6637,14 @@ dependencies = [
  "embassy-time-driver",
  "embassy-time-queue-utils",
  "embedded-hal 1.0.0",
+ "embedded-hal-async",
  "embedded-io 0.7.1",
  "embedded-io-async 0.7.0",
  "esp-hal",
  "esp-radio",
  "esp-radio-rtos-driver",
  "esp-rtos",
+ "sdio",
  "smoltcp",
  "static_cell",
  "xila-drivers-peripherals",

@@ -62,6 +62,7 @@ fn main() -> ! {
         memory_check: None,
         system_check: None,
         display: None,
+        sd_card: None,
         sessions: &[session::CONSOLE],
     })
 }

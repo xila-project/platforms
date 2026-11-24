@@ -31,6 +31,7 @@ pub mod native;
 #[cfg(feature = "display")]
 pub mod panel;
 pub mod psram_self_test;
+mod sd_card;
 pub mod session;
 
 use alloc::boxed::Box;
@@ -55,6 +56,7 @@ use xila::{
 pub use board::AsynchronousFlush;
 pub use board::{Board, Display, ExternalMemory, MemoryReport, StoragePartition, parse_decimal};
 pub use drivers_espressif;
+pub use sd_card::{OpenedSdCard, SdCardSlot};
 
 /// The static internal heap reservation.
 #[cfg(not(feature = "wifi"))]
@@ -184,6 +186,7 @@ async fn start(task_manager: &'static task::Manager) {
         memory,
         memory_check,
         system_check,
+        sd_card,
         display,
         sessions,
     } = board;
@@ -357,6 +360,12 @@ async fn start(task_manager: &'static task::Manager) {
     )
     .await
     .expect("Failed to mount the power device");
+
+    // - microSD card, on boards with a slot.
+    if let Some(slot) = sd_card {
+        sd_card::start(slot, virtual_file_system, task, time_manager).await;
+        task::yield_now().await;
+    }
 
     // The ESP32-S3 smoke test checks that the device returns changing values.
     if check_random_device {

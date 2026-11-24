@@ -17,6 +17,7 @@ mod pointer_queue;
     target_arch = "wasm32"
 ))]
 mod random;
+mod sector_block_device;
 pub mod terminal;
 #[cfg(feature = "touch-ft6336")]
 pub mod touch;
@@ -37,6 +38,7 @@ pub use pointer_queue::*;
     target_arch = "wasm32"
 ))]
 pub use random::*;
+pub use sector_block_device::*;
 pub use terminal::*;
 pub use unsynchronized_time::*;
 

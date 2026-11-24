@@ -7,6 +7,8 @@ rust-version.workspace = true
 # Everything is target-gated: on host targets this crate is empty and builds
 # nothing, so the Platforms workspace stays checkable on x86_64.
 [target.'cfg(any(target_arch = "xtensa", target_arch = "riscv32"))'.dependencies]
+aligned = { version = "0.4", optional = true }
+block-device-driver = { version = "0.2", optional = true }
 critical-section = { workspace = true }
 drivers_peripherals = { workspace = true, optional = true }
 drivers_shared = { package = "xila-drivers-shared", path = "../shared", default-features = false, optional = true }
@@ -26,6 +28,7 @@ log = { workspace = true, optional = true }
 shared = { workspace = true, optional = true }
 static_cell = { version = "2", optional = true }
 embedded-hal = { workspace = true, optional = true }
+embedded-hal-async = { version = "1", optional = true }
 embedded-io = { workspace = true, optional = true }
 embedded-io-async = { workspace = true, optional = true }
 esp-hal = { version = "=1.2.2", default-features = false, features = [
@@ -43,6 +46,7 @@ esp-rtos = { version = "=0.4.0", features = [
 ], optional = true }
 memory = { workspace = true }
 network = { workspace = true, optional = true }
+sdio = { version = "0.5", default-features = false, optional = true }
 smoltcp = { version = "0.14", default-features = false, optional = true }
 time = { workspace = true, optional = true }
 native_loader = { workspace = true, optional = true }
@@ -93,6 +97,18 @@ executable-memory = ["dep:native_loader"]
 executor = ["dep:embassy-executor", "dep:static_cell"]
 power = ["dep:peripherals", "peripherals/power"]
 random = ["dep:file_system", "dep:static_cell"]
+# microSD card in native SD mode over the SDHOST controller (ESP32-S3), as a
+# sector storage for `drivers_shared::devices::SectorBlockDevice`.
+sd-card = [
+  "dep:aligned",
+  "dep:block-device-driver",
+  "dep:drivers_shared",
+  "dep:embassy-futures",
+  "dep:embedded-hal-async",
+  "dep:file_system",
+  "dep:sdio",
+  "dep:static_cell",
+]
 time = [
   "dep:drivers_shared",
   "dep:embassy-time-driver",

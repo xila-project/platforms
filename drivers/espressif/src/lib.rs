@@ -5,7 +5,8 @@
 //! or `esp32s31`). Without one, or on a host target, the crate is empty.
 //!
 //! The optional `console`, `executor`, `power`, `random` and `time` features
-//! provide the shell's runtime drivers. Initialize the time driver before
+//! provide the shell's runtime drivers. The `sd-card` feature adds a microSD
+//! card on the ESP32-S3. Initialize the time driver before
 //! starting the executor. Run the executor, console and timer on the same core.
 //!
 //! The optional `executable-memory` feature provides executable memory for the
@@ -56,6 +57,9 @@
     )
 ))]
 
+#[cfg(feature = "sd-card")]
+extern crate alloc;
+
 const SELECTED_CHIPS: u8 = cfg!(feature = "esp32") as u8
     + cfg!(feature = "esp32c2") as u8
     + cfg!(feature = "esp32c3") as u8
@@ -100,6 +104,8 @@ pub mod power;
 pub mod random;
 #[cfg(feature = "esp32")]
 pub mod rom_memory;
+#[cfg(all(feature = "sd-card", feature = "esp32s3"))]
+pub mod sd_card;
 #[cfg(all(feature = "spi-display", feature = "esp32"))]
 pub mod spi_display;
 #[cfg(feature = "time")]
