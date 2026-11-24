@@ -38,7 +38,7 @@ impl SectorStorage for MemoryStorage {
 fn littlefs_mounts_a_formatted_card_and_never_formats_another() {
     let writes: &'static AtomicUsize = Box::leak(Box::new(AtomicUsize::new(0)));
     let mut data = vec![0; 2048 * SECTOR_SIZE];
-    // The start of a card from a computer: a boot sector with its signature.
+    // A card with another file system: a boot sector with its signature.
     data[..15].copy_from_slice(b"\xEB\x58\x90MSDOS5.0\0\x02\x08\x20");
     data[510] = 0x55;
     data[511] = 0xAA;

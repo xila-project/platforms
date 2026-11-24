@@ -154,10 +154,16 @@ measured.
 ### Format
 
 The firmware never formats a card by itself. To format the card with LittleFS,
-type these commands in the command-line shell (the console, or the Terminal
-application), as a user who can write to `/configuration/system`:
+write a request file as root and restart. Only root and the members of its
+group can write to `/configuration/system`. The `administrator` account
+cannot.
+
+`sudo` runs external commands only, and `echo` is a command of the shell, so
+start a root shell first. In the command-line shell (the console, or the
+Terminal application), type:
 
 ```
+sudo command_line_shell
 echo erase > /configuration/system/format_sd_card
 reboot
 ```
@@ -165,13 +171,19 @@ reboot
 At the next boot, the firmware removes the file and formats the card, whatever
 it holds. A file that does not contain the text `erase` is removed without
 effect. A format request is for one boot: with no card in the slot, the
-firmware discards it.
+firmware discards it. If the firmware cannot remove the file, it does not
+format the card, so that a request cannot repeat at each boot. If the format
+fails, the card stays unmounted: write the request again to retry.
+
+This file is temporary. platforms#219 tracks a shell command that replaces it.
 
 ### Test
 
-To write a 256 KiB file to the mounted card, read it back and compare it, type:
+To write a 256 KiB file to the mounted card, read it back and compare it, type
+these commands:
 
 ```
+sudo command_line_shell
 echo test > /configuration/system/test_sd_card
 reboot
 ```
@@ -188,5 +200,12 @@ back in … ms`, or the reason for the failure. The firmware removes the file
 - The firmware does not send erase commands to the card. The card erases
   internally. An `ERASE` request on the block device succeeds and changes
   nothing.
-- No card has been tested on a board yet. The tested cards and their speeds
-  will be listed here.
+- Single-sector transfers limit the speed to a fraction of the bus speed
+  (2.5 MB/s for a 1-bit bus at 20 MHz). platforms#220 tracks multi-sector
+  transfers.
+
+### Tested cards
+
+| Card | Date | Result |
+|---|---|---|
+| SanDisk SDXC "SN64G", 59.47 GiB (manufacturer `0x03`, revision 128, 2019-10) | 2026-11-24 | Detection, format, mount and persistence pass. Test file with 512-byte LittleFS blocks (before the change to 4096-byte blocks): 256 KiB written in 1129 ms (227 KiB/s), read in 1458 ms (176 KiB/s). |
