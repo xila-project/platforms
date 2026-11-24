@@ -8,6 +8,19 @@ pub const MEMORY_WRITE_START: u8 = 0x2C;
 /// written (`RAMWRC`).
 pub const MEMORY_WRITE_CONTINUE: u8 = 0x3C;
 
+/// The command that a bus gives to each transaction that it adds when it
+/// splits the data of a write that starts with `command`.
+///
+/// A memory write continues with [`MEMORY_WRITE_CONTINUE`], which keeps the
+/// write position of the panel. Any other command has no continuation: its
+/// parameters follow without a command.
+pub const fn continuation_command(command: Option<u8>) -> Option<u8> {
+    match command {
+        Some(MEMORY_WRITE_START | MEMORY_WRITE_CONTINUE) => Some(MEMORY_WRITE_CONTINUE),
+        _ => None,
+    }
+}
+
 /// An 8-bit parallel (8080) display bus.
 pub trait ParallelBus {
     type Error: core::fmt::Debug;
@@ -16,9 +29,9 @@ pub trait ParallelBus {
     /// `data` with it high, as one transaction.
     ///
     /// A bus that splits `data` into several transactions must give each
-    /// transaction of a memory write a command: [`MEMORY_WRITE_CONTINUE`]
-    /// after the first one. Some bus peripherals do not send data without a
-    /// command reliably.
+    /// added transaction the command that [`continuation_command`] returns:
+    /// [`MEMORY_WRITE_CONTINUE`] for a memory write. Some bus peripherals do
+    /// not send data without a command reliably.
     fn write(&mut self, command: Option<u8>, data: &[u8]) -> Result<(), Self::Error>;
 }
 
@@ -84,13 +97,14 @@ impl<Bus: ParallelBus> Interface for ParallelInterface<Bus> {
     const KIND: InterfaceKind = InterfaceKind::Parallel8Bit;
 
     fn send_command(&mut self, command: u8, arguments: &[u8]) -> Result<(), Self::Error> {
+        // No pixels followed an earlier memory write start: send it now, in
+        // order, before this command.
+        if core::mem::take(&mut self.memory_write_start_pending) {
+            self.bus.write(Some(MEMORY_WRITE_START), &[])?;
+        }
         if command == MEMORY_WRITE_START && arguments.is_empty() {
             self.memory_write_start_pending = true;
             return Ok(());
-        }
-        // No pixels followed the memory write start: send it now, in order.
-        if core::mem::take(&mut self.memory_write_start_pending) {
-            self.bus.write(Some(MEMORY_WRITE_START), &[])?;
         }
         self.bus.write(Some(command), arguments)
     }

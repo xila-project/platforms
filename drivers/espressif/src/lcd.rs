@@ -28,12 +28,12 @@
 //! The bus thus gives a command to each transaction that carries pixels, as
 //! ESP-IDF's driver does: `ParallelInterface` sends the pixels with their
 //! memory write command, and a write that the bus splits continues with
-//! [`MEMORY_WRITE_CONTINUE`]. Only the parameters of another command, when
+//! `RAMWRC` (see [`continuation_command`]). Only the parameters of another command, when
 //! they need more than one transaction, go without a command.
 
 use core::marker::PhantomData;
 
-use drivers_shared::devices::display::{MEMORY_WRITE_CONTINUE, MEMORY_WRITE_START, ParallelBus};
+use drivers_shared::devices::display::{ParallelBus, continuation_command};
 use esp_hal::{
     Blocking,
     dma::{BurstConfig, DmaDescriptor, DmaError, DmaTxBuffer, Preparation, aligned::DmaAlignedRef},
@@ -56,15 +56,6 @@ fn is_internal(start: usize, length: usize) -> bool {
         && start
             .checked_add(length)
             .is_some_and(|end| end <= INTERNAL_DATA_RAM.end)
-}
-
-/// The command of the transactions that follow the first one of a write that
-/// the bus splits: a memory write continues, with its own command.
-fn continuation(command: Option<u8>) -> Command<u8> {
-    match command {
-        Some(MEMORY_WRITE_START | MEMORY_WRITE_CONTINUE) => Command::One(MEMORY_WRITE_CONTINUE),
-        _ => Command::None,
-    }
 }
 
 /// Where a slice is, for the DMA.
@@ -253,7 +244,7 @@ impl ParallelBus for I8080Bus {
     type Error = I8080Error;
 
     fn write(&mut self, command: Option<u8>, data: &[u8]) -> Result<(), Self::Error> {
-        let continuation = continuation(command);
+        let continuation = continuation_command(command).map_or(Command::None, Command::One);
         let mut command = command.map_or(Command::None, Command::One);
         if data.is_empty() {
             return match command {

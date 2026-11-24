@@ -20,6 +20,7 @@ use shared::AnyByLayout;
 
 use super::{
     BacklightScreenDevice, MipidsiScreenDevice, ParallelBus, ParallelInterface, STAGING_SIZE,
+    continuation_command,
 };
 
 /// One bus write: the command, a copy of the data and where the data was.
@@ -214,6 +215,130 @@ fn a_memory_write_start_without_pixels_keeps_its_place() {
         commands(&bus.take()),
         vec![(Some(0x2C), vec![]), (Some(0x29), vec![])]
     );
+}
+
+#[test]
+fn two_memory_write_starts_without_pixels_both_go_out() {
+    let bus = RecordingBus::default();
+    let mut interface = ParallelInterface::new(bus.clone());
+    interface.send_command(0x2C, &[]).unwrap();
+    interface.send_command(0x2C, &[]).unwrap();
+    interface.send_raw_pixels(&[0x12, 0x34]).unwrap();
+    assert_eq!(
+        commands(&bus.take()),
+        vec![(Some(0x2C), vec![]), (Some(0x2C), vec![0x12, 0x34])]
+    );
+}
+
+#[test]
+fn a_memory_write_start_keeps_its_place_around_empty_pixel_writes() {
+    let bus = RecordingBus::default();
+    let mut interface = ParallelInterface::new(bus.clone());
+    interface.send_command(0x2C, &[]).unwrap();
+    interface.send_raw_pixels(&[]).unwrap();
+    interface.send_pixels::<2>(core::iter::empty()).unwrap();
+    assert!(bus.take().is_empty());
+    interface.send_command(0x29, &[]).unwrap();
+    assert_eq!(
+        commands(&bus.take()),
+        vec![(Some(0x2C), vec![]), (Some(0x29), vec![])]
+    );
+}
+
+#[test]
+fn every_other_command_goes_out_unchanged() {
+    let bus = RecordingBus::default();
+    let mut interface = ParallelInterface::new(bus.clone());
+    let sent: Vec<(u8, Vec<u8>)> = vec![
+        (0x11, vec![]),
+        (0x2A, vec![0, 1, 0, 2]),
+        (0x2B, vec![0, 3, 0, 4]),
+        (0x36, vec![0x20]),
+        (0x3A, vec![0x55]),
+        (0x3C, vec![]),
+        // A memory write start with parameters is not held back.
+        (0x2C, vec![0x01]),
+        (0x29, vec![]),
+    ];
+    for (command, arguments) in &sent {
+        interface.send_command(*command, arguments).unwrap();
+    }
+    let expected: Vec<(Option<u8>, Vec<u8>)> = sent
+        .into_iter()
+        .map(|(command, arguments)| (Some(command), arguments))
+        .collect();
+    assert_eq!(commands(&bus.take()), expected);
+}
+
+#[test]
+fn each_window_starts_with_a_memory_write_start() {
+    let bus = RecordingBus::default();
+    let mut display = landscape_display(bus.clone());
+    bus.take();
+    let data = vec![0x12; 30 * 10 * 2];
+    display.set_pixels_raw(0, 0, 29, 9, &data).unwrap();
+    display.set_pixels_raw(0, 0, 29, 9, &data).unwrap();
+    // Per window: the address window, then the pixels with the start command.
+    // A memory write continue never follows an address window.
+    let written: Vec<(Option<u8>, usize)> = bus
+        .take()
+        .iter()
+        .map(|write| (write.command, write.data.len()))
+        .collect();
+    assert_eq!(
+        written,
+        vec![
+            (Some(0x2A), 4),
+            (Some(0x2B), 4),
+            (Some(0x2C), data.len()),
+            (Some(0x2A), 4),
+            (Some(0x2B), 4),
+            (Some(0x2C), data.len()),
+        ]
+    );
+}
+
+#[test]
+fn a_bus_error_does_not_leave_a_held_back_start() {
+    // The first memory write fails; the next window works from its own start.
+    struct FailOnce {
+        log: Rc<RefCell<Vec<Option<u8>>>>,
+        failed: bool,
+    }
+    // SAFETY: the tests use the bus on one thread.
+    unsafe impl Send for FailOnce {}
+    impl ParallelBus for FailOnce {
+        type Error = ();
+
+        fn write(&mut self, command: Option<u8>, _: &[u8]) -> Result<(), Self::Error> {
+            self.log.borrow_mut().push(command);
+            if command == Some(0x2C) && !self.failed {
+                self.failed = true;
+                return Err(());
+            }
+            Ok(())
+        }
+    }
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let mut interface = ParallelInterface::new(FailOnce {
+        log: log.clone(),
+        failed: false,
+    });
+    interface.send_command(0x2C, &[]).unwrap();
+    assert_eq!(interface.send_raw_pixels(&[1, 2]), Err(()));
+    log.borrow_mut().clear();
+    interface.send_command(0x2A, &[0, 0, 0, 1]).unwrap();
+    interface.send_command(0x2C, &[]).unwrap();
+    interface.send_raw_pixels(&[3, 4]).unwrap();
+    assert_eq!(*log.borrow(), vec![Some(0x2A), Some(0x2C)]);
+}
+
+#[test]
+fn bus_continuation_commands() {
+    assert_eq!(continuation_command(Some(0x2C)), Some(0x3C));
+    assert_eq!(continuation_command(Some(0x3C)), Some(0x3C));
+    assert_eq!(continuation_command(Some(0x2A)), None);
+    assert_eq!(continuation_command(None), None);
 }
 
 fn screen(
