@@ -439,11 +439,14 @@ pub fn plan<Session>(
     plan
 }
 
-/// A log line for a configured application.
+/// A log line for a configured application. It names the account by its
+/// identifier: account names stay out of the log.
 pub fn describe(application: &Application) -> String {
     format!(
-        "{} ({}) as {}",
-        application.name, application.command, application.user_name
+        "{} ({}) as user {}",
+        application.name,
+        application.command,
+        application.user.as_u16()
     )
 }
 
@@ -462,6 +465,24 @@ mod tests {
         let plan = super::plan(&["console"], |session| session.starts_with("graphical"));
         assert_eq!(plan.kept, [&"console"]);
         assert_eq!(plan.replaced, None);
+    }
+
+    #[test]
+    fn the_log_line_names_the_account_by_identifier() {
+        let application = Application {
+            name: "xila.clock".into(),
+            command: "/applications/executables/runtime".into(),
+            arguments: Vec::new(),
+            user_name: "kiosk".into(),
+            user: UserIdentifier::new(1001),
+            group: GroupIdentifier::new(1001),
+        };
+        let line = describe(&application);
+        assert_eq!(
+            line,
+            "xila.clock (/applications/executables/runtime) as user 1001"
+        );
+        assert!(!line.contains("kiosk"));
     }
 
     fn statistics(user: u16, group: u16, permissions: u16) -> Statistics {

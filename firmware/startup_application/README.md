@@ -50,8 +50,8 @@ Other keys, such as `$schema`, are ignored.
   stays available for maintenance.
 - Problems are logged at boot and the device starts its graphical shell
   instead, so it stays usable: invalid JSON, an unknown shortcut or user, a
-  missing program or bundle file, or a user that may not run the program. The graphical shell also starts if the application cannot
-  be executed at all.
+  missing program or bundle file, or a user that may not run the program. The
+  graphical shell also starts if the application cannot be executed at all.
 - Only root may write the file: it must belong to root, others may not write
   it, and its group may only if that group is root's. Otherwise it is ignored
   (with an error in the log), since it chooses the account the device runs as
