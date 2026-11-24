@@ -240,6 +240,27 @@ The seeded image carries the first-installation marker so the firmware creates
 the default `administrator` account (empty password) on first boot without
 reformatting the partition.
 
+**Single-application device.** A board can boot directly into one application
+instead of the graphical shell, a clock or a dashboard for example, when its
+storage holds `/configuration/system/startup.json` (see
+[the startup application](../../firmware/startup_application/README.md)). The
+firmware stays the same. The `wt32-sc01-plus-clock` profile builds a storage
+image with the Clock as the startup application, run by `administrator`, and
+without the other WebAssembly applications:
+
+```sh
+XILA_IMAGE_PROFILE=wt32-sc01-plus-clock XILA_BUNDLES_DIR=/path/to/bundles mise run image:wt32-sc01-plus
+mise run run:espflash -- write-bin --chip esp32s3 --port "$FLASH_PORT" \
+  --flash-size 16mb --flash-mode dio 0x410000 target/seed/wt32-sc01-plus-clock/storage.img
+```
+
+The Clock then fills the screen with no login, status bar or dock, and starts
+again whenever it ends. The serial console session keeps running for
+maintenance. If the configuration is invalid or the application cannot start,
+the console shows why and the graphical shell starts instead. Touch-only
+boards get no on-screen keyboard in this mode for now: it still belongs to the
+graphical shell.
+
 [board]: https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32p4/esp32-p4x-function-ev-board/user_guide.html
 [entropy]: https://github.com/esp-rs/esp-hal/issues/5982
 
