@@ -17,6 +17,23 @@
 //! - **Erase.** An SD card erases internally, so the `ERASE` command succeeds
 //!   without touching the card. The contents of an erased range are
 //!   unspecified: they stay as they were until the next write.
+//! - **Blocks.** The device reports blocks of [`BLOCK_SIZE`] bytes (eight
+//!   sectors) to the file system. Reads and writes stay byte-addressed and
+//!   reach every sector.
+//!
+//! # Block size
+//!
+//! LittleFS finds free blocks with a lookahead bitmap. When the bitmap is
+//! used up, LittleFS reads the complete file tree, one read for each block in
+//! use, to fill the bitmap for the next window. Core's LittleFS sizes the
+//! bitmap from the cache: a 512-byte cache gives a window of 4096 blocks.
+//! With 512-byte blocks, the window is 2 MiB, and each 2 MiB of new data
+//! reads the complete file tree again. With 4096-byte blocks, the window is
+//! 16 MiB and the tree has eight times fewer blocks, so the cost of writes on
+//! a full card is approximately 64 times smaller, for the same memory. The
+//! cost is up to 4 KiB of space for each file larger than the inline limit of
+//! LittleFS (512 bytes with a 512-byte cache), and a copy of up to one block
+//! when LittleFS appends to a block that is partly full.
 
 use core::task::{Context, Poll};
 
@@ -28,9 +45,15 @@ use file_system::{
 use shared::AnyByLayout;
 use synchronization::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 
-/// The size of a sector in bytes. It is the block size that the device
-/// reports.
+/// The size of a sector in bytes: the unit of a transfer to the storage.
 pub const SECTOR_SIZE: usize = 512;
+
+/// The size of a block in bytes: the unit that the device reports to the
+/// file system. See [Block size](self#block-size).
+pub const BLOCK_SIZE: usize = 4096;
+
+/// The number of sectors in a block.
+const SECTORS_PER_BLOCK: u32 = (BLOCK_SIZE / SECTOR_SIZE) as u32;
 
 /// Storage that transfers one whole sector at a time.
 ///
@@ -172,11 +195,12 @@ impl<S: SectorStorage> DirectBaseOperations for SectorBlockDevice<S> {
     ) -> Poll<Result<()>> {
         file_system::ready(|| match command {
             GET_BLOCK_SIZE::IDENTIFIER => {
-                *GET_BLOCK_SIZE::cast_output(output)? = SECTOR_SIZE as u32;
+                *GET_BLOCK_SIZE::cast_output(output)? = BLOCK_SIZE as u32;
                 Ok(())
             }
             GET_BLOCK_COUNT::IDENTIFIER => {
-                *GET_BLOCK_COUNT::cast_output(output)? = self.sector_count;
+                // The sectors after the last whole block are not in a block.
+                *GET_BLOCK_COUNT::cast_output(output)? = self.sector_count / SECTORS_PER_BLOCK;
                 Ok(())
             }
             ERASE::IDENTIFIER => {
@@ -386,9 +410,11 @@ mod tests {
 
     #[test]
     fn reports_geometry() {
-        let device = SectorBlockDevice::new(MemoryStorage::new(10));
-        assert_eq!(device.get_block_size(), Ok(SECTOR_SIZE as u32));
-        assert_eq!(device.get_block_count(), Ok(10));
+        // Two whole blocks and three more sectors.
+        let device = SectorBlockDevice::new(MemoryStorage::new(19));
+        assert_eq!(device.get_block_size(), Ok(BLOCK_SIZE as u32));
+        assert_eq!(device.get_block_count(), Ok(2));
+        assert_eq!(device.capacity(), 19 * SECTOR_SIZE as Size);
     }
 
     #[test]

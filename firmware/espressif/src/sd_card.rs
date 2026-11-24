@@ -45,7 +45,8 @@ const FORMAT_CONFIRMATION: &str = "erase";
 /// A file that asks the next boot to test the mounted card.
 pub const TEST_REQUEST_PATH: &str = "/configuration/system/test_sd_card";
 
-/// LittleFS cache: one sector, the block size of the device.
+/// LittleFS cache: one sector, a divisor of the 4096-byte block of the device.
+/// Core's LittleFS also uses it as the size of the lookahead bitmap.
 const CACHE_SIZE: usize = 512;
 
 /// The size of the file of the test, and of each transfer.

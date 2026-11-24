@@ -104,8 +104,8 @@ interrupt-driven receive path needs a wake interface from Core.
 
 The slot takes a microSD card. The firmware reads the card in native SD mode,
 through the SDHOST controller, with a 1-bit bus at 20 MHz. The card holds a
-LittleFS file system with 512-byte blocks. A card has no other file system
-support.
+LittleFS file system with 4096-byte blocks (eight sectors of 512 bytes). The
+firmware supports no other file system on the card.
 
 Format the card from Xila before first use. Formatting erases the card.
 

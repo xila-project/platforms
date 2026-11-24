@@ -53,7 +53,7 @@ fn littlefs_mounts_a_formatted_card_and_never_formats_another() {
     assert!(little_fs::FileSystem::new(device, options).is_err());
     assert_eq!(writes.load(Ordering::SeqCst), 0);
 
-    // An explicit format works with 512-byte blocks and the no-op erase.
+    // An explicit format works with 4096-byte blocks and the no-op erase.
     drop(little_fs::FileSystem::new_format(device, options).unwrap());
     assert!(writes.load(Ordering::SeqCst) > 0);
     drop(little_fs::FileSystem::new(device, options).unwrap());
