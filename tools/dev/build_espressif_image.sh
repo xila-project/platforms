@@ -71,17 +71,19 @@ build_xtensa() {
     objdump="$gcc_bin/xtensa-$chip-elf-objdump"
 }
 
-# The ESP32 compare-and-set instruction (S32C1I) does not work on PSRAM. The
-# firmware may use it in one function only, which the atomic operations of
-# xila-drivers-espressif call for internal memory. A use is the instruction
-# within a few instructions of the write to SCOMPARE1 that it needs: the
-# disassembler also decodes the constants between functions, and some of them
-# look like the instruction alone.
+# The ESP32 compare-and-set instruction (S32C1I) is not supported on PSRAM.
+# The firmware may use it in one function only, which the atomic operations
+# of xila-drivers-espressif call for internal memory. A use is the instruction
+# within a few instructions of the write to SCOMPARE1 (`wsr` or `xsr`) that it
+# needs: the disassembler also decodes the constants between functions, and
+# some of them look like the instruction alone. A precompiled library with its
+# own sequences needs more than an exception here: without the `s32c1i`
+# feature, the exception handlers no longer save SCOMPARE1 (platforms#208).
 check_esp32_atomics() {
     local elf=$1 allowed=xila_esp32_hardware_compare_and_set offenders
     offenders=$("$objdump" -d --no-show-raw-insn "$elf" | awk -v allowed="$allowed" '
         /^[0-9a-f]+ <.*>:$/ { name = substr($2, 2, length($2) - 3); armed = 0; next }
-        $2 == "wsr.scompare1" { armed = 8; next }
+        $2 == "wsr.scompare1" || $2 == "xsr.scompare1" { armed = 8; next }
         $2 == "s32c1i" && armed > 0 { count[name]++ }
         armed > 0 { armed-- }
         END {
@@ -119,8 +121,10 @@ case "$board" in
         # .cargo/config.toml covers the revision v1 erratum.
         export ESP_HAL_CONFIG_MIN_CHIP_REVISION=100
         # The same workaround for the C code (LittleFS, LVGL): it may be given
-        # PSRAM memory, as the heap uses PSRAM for large allocations.
-        c_flags="-mfix-esp32-psram-cache-issue -mfix-esp32-psram-cache-strategy=memw"
+        # PSRAM memory, as the heap uses PSRAM for large allocations. Its
+        # atomic operations, if it ever has any, call the functions of
+        # xila-drivers-espressif, as Rust's do, instead of using S32C1I.
+        c_flags="-mfix-esp32-psram-cache-issue -mfix-esp32-psram-cache-strategy=memw -mdisable-hardware-atomics"
         flash_mode=dio
         flash_size=4mb
         build_xtensa

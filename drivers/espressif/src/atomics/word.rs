@@ -10,7 +10,7 @@ use core::ops::Range;
 pub const EXTERNAL_RAM: Range<usize> = 0x3F80_0000..0x3FC0_0000;
 
 /// Whether `address` is in external PSRAM, where the compare-and-set
-/// instruction does not work.
+/// instruction is not supported.
 #[inline(always)]
 pub const fn is_external(address: usize) -> bool {
     address >= EXTERNAL_RAM.start && address < EXTERNAL_RAM.end

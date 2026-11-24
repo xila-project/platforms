@@ -1,11 +1,17 @@
-//! Atomic operations for the ESP32, whose compare-and-set instruction does
-//! not work on external PSRAM.
+//! Atomic operations for the ESP32, whose compare-and-set instruction is not
+//! supported on external PSRAM.
 //!
 //! The Xtensa `S32C1I` instruction is the only atomic read-modify-write that
-//! the ESP32 has. ESP-IDF's sources state that it "does not work in external
-//! RAM", and it raises no exception there. A reference count, lock or flag
-//! that lands in PSRAM could then fail silently, so PSRAM cannot back the
-//! global heap while the compiler emits that instruction inline.
+//! the ESP32 has. Espressif does not support it on PSRAM: ESP-IDF's sources
+//! state that it "does not work in external RAM" and send those addresses
+//! through a lock instead, without giving the hardware reason, and the report
+//! that led to that fix describes race conditions, with no exception. On the
+//! classic WT32-SC01, one uncontended instruction on PSRAM compares and
+//! stores correctly (the board's `hardware-atomics-probe` feature), so what
+//! is not assured is that its read and its write are atomic, which no test
+//! on one core can show. A reference count, lock or flag in PSRAM could then
+//! be corrupted silently, so PSRAM cannot back the global heap while the
+//! compiler emits that instruction inline.
 //!
 //! The firmware therefore does what ESP-IDF does when it enables PSRAM
 //! (`CONFIG_STDATOMIC_S32C1I_SPIRAM_WORKAROUND`, GCC's
@@ -41,7 +47,7 @@
 #[cfg(target_feature = "s32c1i")]
 compile_error!(
     "build ESP32 firmware with `-C target-feature=-s32c1i` (see .cargo/config.toml): \
-     the compare-and-set instruction does not work on PSRAM"
+     the compare-and-set instruction is not supported on PSRAM"
 );
 
 mod word;
@@ -57,7 +63,7 @@ use word::{Field, Operation};
 /// # Safety
 ///
 /// `pointer` must be valid for reads and writes, aligned to 4 bytes and in
-/// internal memory: the instruction does not work on PSRAM.
+/// internal memory: the instruction is not supported on PSRAM.
 #[esp_hal::ram]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn xila_esp32_hardware_compare_and_set(

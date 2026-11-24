@@ -19,7 +19,7 @@
 //!   `esp-hal`'s `rt` feature).
 //! - **Atomic operations on ESP32**: build with `-C target-feature=-s32c1i`
 //!   (set for the target in `.cargo/config.toml`). The compare-and-set
-//!   instruction does not work on PSRAM, so the [`atomics`] module provides
+//!   instruction is not supported on PSRAM, so the [`atomics`] module provides
 //!   the atomic operations and keeps the instruction away from PSRAM.
 //! - **Atomic compare-and-swap on ESP32-C2, ESP32-C3 and ESP32-S2**: Xila Core
 //!   uses `portable-atomic` / `portable-atomic-util` without selecting a backend.

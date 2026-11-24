@@ -290,12 +290,15 @@ PSRAM on this chip needs the measures that ESP-IDF takes:
   The ROM's `memcpy`, `memmove` and `memset` are not built with it, so calls
   that write to PSRAM run loops of `xila-drivers-espressif`
   (`src/rom_memory.rs`) in their place.
-- **Atomic operations.** The compare-and-set instruction (S32C1I) does not
-  work on PSRAM, and fails without an exception. The target disables the
-  `s32c1i` feature, so every atomic operation calls a function of
-  `xila-drivers-espressif` (`src/atomics.rs`) that uses the instruction for
-  internal memory and a critical section for PSRAM. The build fails if the
-  instruction appears anywhere else in the firmware.
+- **Atomic operations.** Espressif does not support the compare-and-set
+  instruction (S32C1I) on PSRAM. One uncontended instruction gives the right
+  result on this board, but nothing assures that it is atomic there, and a
+  race would raise no exception. The target disables the `s32c1i` feature and
+  the C code is built with `-mdisable-hardware-atomics`, so every atomic
+  operation calls a function of `xila-drivers-espressif` (`src/atomics.rs`)
+  that uses the instruction for internal memory and a critical section for
+  PSRAM. The build fails if the instruction appears anywhere else in the
+  firmware.
 - **DMA and flash.** SPI DMA cannot read PSRAM: the draw buffers are allocated
   in internal SRAM, and the display bus sends any other buffer through the
   FIFO. The flash routines get a transfer buffer on the stack, and the stacks

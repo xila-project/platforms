@@ -262,7 +262,7 @@ unsafe fn first_atomic_failure(words: NonNull<u32>) -> Option<&'static str> {
 /// Checks the atomic operations on values in PSRAM.
 ///
 /// Reference counts, locks and flags of ordinary allocations can be in PSRAM,
-/// where the ESP32 cannot use its compare-and-set instruction: the firmware
+/// where the ESP32 must not use its compare-and-set instruction: the firmware
 /// then provides the operations (`drivers_espressif::atomics`). The test runs
 /// each kind of operation, on 32, 16 and 8-bit values, and checks that a
 /// value smaller than a word leaves its neighbours alone.
