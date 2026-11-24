@@ -207,7 +207,7 @@ fn profile(name: &str, native_runtime: NativeRuntime) -> Result<Profile, Box<dyn
             include_str!("../profiles/browser.txt"),
             include_str!("../profiles/browser-shortcuts.txt"),
         ),
-        "wt32-sc01" => ("", wt32_shortcuts),
+        "wt32-sc01" => (include_str!("../profiles/wt32-sc01.txt"), wt32_shortcuts),
         "wt32-sc01-plus" => (
             include_str!("../profiles/wt32-sc01-plus.txt"),
             wt32_shortcuts,
@@ -307,9 +307,9 @@ mod tests {
     }
 
     #[test]
-    fn wt32_sc01_profile_seeds_the_native_application_shortcuts() {
+    fn wt32_sc01_profile_seeds_selected_bundles_and_native_shortcuts() {
         let profile = profile("wt32-sc01", NativeRuntime::host()).unwrap();
-        assert!(profile.applications.is_empty());
+        assert_eq!(profile.applications, ["calculator", "digits", "weather"]);
         let shortcut_names: Vec<&str> = profile
             .shortcuts
             .iter()

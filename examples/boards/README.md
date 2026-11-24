@@ -326,6 +326,7 @@ mise run build:wt32-sc01 -- --features debug-log
 
 ```sh
 mise run setup:espressif-rust
+npm ci
 mise run build:wt32-sc01
 ```
 
@@ -333,14 +334,14 @@ WT32-SC01 modules carry ESP32 revision v1.0 silicon, older than esp-hal's
 default minimum (v3.0), so the build lowers `ESP_HAL_CONFIG_MIN_CHIP_REVISION`
 to v1.0; the PSRAM cache workaround above covers that revision's erratum.
 
-On the 4 MiB flash, the factory application occupies 2.25 MiB at `0x10000`.
-LittleFS uses the remaining 1.6875 MiB at `0x250000`.
+On the 4 MiB flash, the factory application occupies 2.75 MiB at `0x10000`.
+The 1.1875 MiB LittleFS partition starts at `0x2D0000` and ends at `0x400000`.
 
-**Migration from the 1.5 MiB factory layout.** Back up your storage data before
-upgrading. Flash the firmware with the new partition table, then reflash the
-storage image at the new offset. Without a storage image, the firmware cannot
-mount the moved partition and formats it on first boot. Restore any saved files
-after the upgrade.
+**Migration from the 1.5 MiB or 2.25 MiB factory layout.** Back up your
+storage data before upgrading. Flash the firmware with the new partition
+table, then reflash the storage image at `0x2D0000`. The old storage
+partition overlaps the new factory partition. Restore your saved files
+after the upgrade. The merged flash image also erases the storage partition.
 
 ```sh
 espflash flash --chip esp32 --port /dev/ttyUSB0 \
@@ -349,17 +350,25 @@ espflash flash --chip esp32 --port /dev/ttyUSB0 \
   --monitor target/espressif-emulator/wt32-sc01.elf
 ```
 
-Build and write the raw LittleFS image to populate the application menu with
-Activity, File Manager, Settings and Terminal. The task reads the image size
-from the `storage` row in [partitions.csv](wt32-sc01/partitions.csv).
-The classic firmware does not enable the WebAssembly runtime (the firmware's
-`wasm` feature), so its seed image contains only native application shortcuts
-and no WebAssembly bundles. Writing the storage image replaces the partition contents.
+The firmware mounts the WebAssembly runtime at `/applications/executables/wasm`
+with lazy translation. Guest startup depends on the board's PSRAM allocator
+support for large runtime allocations. Weather needs a network connection,
+and Digits needs a neural network loader at `/devices/nn/cpu`. Both devices
+require separate firmware support on this board.
+
+The raw LittleFS image seeds Calculator, Digits and Weather, the official
+package registry, and the native shortcuts for Activity, File Manager,
+Settings and Terminal. The task reads the image size from the `storage` row
+in [partitions.csv](wt32-sc01/partitions.csv). Until format-v2 releases are
+pinned, build the guests from the locked Applications revision and package
+them with `tools/bundle_applications.sh`. See the
+[seed image documentation](../../tools/fs_image/README.md) for the bundle
+inputs. Writing the image replaces the partition contents.
 
 ```sh
-mise run image:wt32-sc01
+XILA_BUNDLES_DIR=/path/to/bundles mise run image:wt32-sc01
 mise run run:espflash -- write-bin --chip esp32 --port /dev/ttyUSB0 \
-  --flash-size 4mb --flash-mode dio 0x250000 target/seed/wt32-sc01/storage.img
+  --flash-size 4mb --flash-mode dio 0x2D0000 target/seed/wt32-sc01/storage.img
 ```
 
 Look for `Xila: board WT32-SC01`, `Xila: PSRAM 4194304 bytes (registered: true)`,

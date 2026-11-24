@@ -19,7 +19,7 @@ import tempfile
 import urllib.request
 
 ROOT = Path(__file__).resolve().parent.parent
-PROFILES = ("native", "browser", "wt32-sc01-plus", "wt32-sc01-plus-clock")
+PROFILES = ("native", "browser", "wt32-sc01", "wt32-sc01-plus", "wt32-sc01-plus-clock")
 SAFE = re.compile(r"^[a-z][a-z0-9_]*$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 

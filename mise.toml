@@ -120,7 +120,7 @@ cargo run --locked -p xila-fs-image -- target/seed/browser/seed.img 16777216 --b
 '''
 
 [tasks."image:wt32-sc01"]
-description = "Create a raw LittleFS storage image with native shortcuts for the WT32-SC01"
+description = "Create a raw 4096-byte LittleFS storage image for the WT32-SC01 from bundles.lock.json, or from XILA_BUNDLES_DIR"
 tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal" }
 run = '''
 set -eu
@@ -137,8 +137,18 @@ fi
 mkdir -p "$output"
 staging=$(mktemp -d "$output/.image.XXXXXXXX")
 trap 'rm -rf -- "$staging"' EXIT
+bundles="${XILA_BUNDLES_DIR:-}"
+if [ -z "$bundles" ]; then
+  bundles="$staging/bundles"
+  cargo build --locked -p xila-prepare-applications
+  if ! python3 tools/prepare_seed.py --profile wt32-sc01 --output "$bundles" \
+    --tool "${CARGO_TARGET_DIR:-target}/debug/xila-prepare-applications"; then
+    echo "Released bundle preparation failed. Build bundles locally and set XILA_BUNDLES_DIR as described in examples/boards/README.md." >&2
+    exit 1
+  fi
+fi
 cargo run --locked -p xila-fs-image -- "$staging/storage.img" "$((partition_size))" \
-  --layout raw --block-size 4096 --bundle wt32-sc01 --bundles-dir "$staging"
+  --layout raw --block-size 4096 --bundle wt32-sc01 --bundles-dir "$bundles"
 python3 -c 'import os, sys; os.replace(sys.argv[1], sys.argv[2])' \
   "$staging/storage.img" "$output/storage.img"
 '''
