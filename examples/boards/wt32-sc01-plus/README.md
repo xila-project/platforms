@@ -147,8 +147,8 @@ measured.
   user can create files and directories in it, and only the owner of an
   entry can remove or rename it. LittleFS creates the root without
   permissions, so the firmware sets them at the first mount. It does not
-  change them after that, unless root removes all permissions from the root:
-  the next boot shares it again.
+  change them after that, unless the root user removes all permissions from
+  the root directory: the next boot shares it again.
 - A card that does not hold LittleFS is not mounted and not changed. The boot
   log says so.
 

@@ -256,9 +256,9 @@ pub(super) async fn start(
 /// Core's LittleFS gives the root of a new file system to root, with no
 /// permissions, so only root could use the card. The firmware changes the
 /// root only while it still has no permissions: on the first mount after a
-/// format, including a format by an earlier firmware. A later change by root
-/// stays, except a change back to no permissions: the next boot shares the
-/// root again. This is the only write to the card at boot without a request.
+/// format, including a format by an earlier firmware. A later change by the
+/// root user stays, except a change back to no permissions: the next boot
+/// shares the root directory again. This is the only write to the card at boot without a request.
 async fn share_new_root(virtual_file_system: &VirtualFileSystem, task: task::TaskIdentifier) {
     let permissions = match virtual_file_system
         .get_statistics_for_task(task, &MOUNT_PATH)

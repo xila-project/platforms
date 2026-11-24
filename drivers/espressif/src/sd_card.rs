@@ -221,10 +221,10 @@ fn map_error(error: MmcError) -> IoErrorKind {
     }
 }
 
-// SAFETY: the bus handle of esp-hal (`Slot`) is a marker for state that the
-// driver keeps in statics: the controller registers, the transfer state and
-// the interrupt waker are behind critical sections, and the pin guards are
-// written only while the slot is built. Moving the handle to another
+// SAFETY: the bus handle of esp-hal (`Slot`) is a marker for state that
+// esp-hal keeps in statics: the transfer state is behind a critical-section
+// mutex, the interrupt waker is atomic, and the pin guards are written only
+// while the slot is built. Moving the handle to another
 // thread changes none of it. `SectorBlockDevice` allows one transfer at a
 // time. The implementation is for this bus only: the reason does not apply
 // to another `MmcBus`.
