@@ -1,6 +1,6 @@
 //! The board description that a board crate hands to [`crate::run`].
 
-use drivers_espressif::{console::ConsolePort, random::RandomDevice};
+use drivers_espressif::{console::ConsolePort, random::RandomDevice, shared::Gpio};
 use esp_storage::FlashStorage;
 use xila::file_system::DirectCharacterDevice;
 
@@ -38,6 +38,10 @@ pub struct Board {
     /// The screen, on boards that have one. The firmware drives it when it is
     /// built with the `display` feature.
     pub display: Option<Display>,
+    /// The GPIO controller, mounted at `/devices/gpio/pin<number>` for each
+    /// line it exposes. The board decides which lines it exposes: it withholds
+    /// every pin that its own drivers use. `None` mounts no GPIO device.
+    pub gpio: Option<&'static Gpio>,
     /// The sessions to start, each on its own terminal.
     pub sessions: &'static [Session],
 }

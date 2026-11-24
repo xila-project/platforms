@@ -210,3 +210,78 @@ back in … ms`, or the reason for the failure. The firmware removes the file
 | Card | Date | Result |
 |---|---|---|
 | SanDisk SDXC "SN64G", 59.47 GiB (manufacturer `0x03`, revision 128, 2019-10) | 2026-11-24 | Detection, format, mount and persistence pass. Test file with 512-byte LittleFS blocks (before the change to 4096-byte blocks): 256 KiB written in 1129 ms (227 KiB/s), read in 1458 ms (176 KiB/s). With 4096-byte blocks: written in 1022 ms (250 KiB/s), read in 378 ms (677 KiB/s). The `administrator` user can list, write and read files on the card. |
+
+## GPIO
+
+The firmware mounts a GPIO device for each pin of the Extended IO connector
+(J5), at `/devices/gpio/pin<number>`, where `<number>` is the GPIO number of
+the ESP32-S3. The pin table is `src/firmware/gpio.rs`. The tracking issue is
+[platforms#221](https://github.com/xila-project/platforms/issues/221), and the
+control commands are in Core's `devices/src/gpio.rs`
+([core#384](https://github.com/xila-project/core/issues/384)).
+
+Source: Wireless-Tag WT32-SC01 Plus datasheet V1.3, table 2 "Extended IO
+Interface", and the schematic of the same document.
+
+| Connector pin | Signal | GPIO | Device |
+|---|---|---|---|
+| 3 | EXT_IO1 | 10 | `/devices/gpio/pin10` |
+| 4 | EXT_IO2 | 11 | `/devices/gpio/pin11` |
+| 5 | EXT_IO3 | 12 | `/devices/gpio/pin12` |
+| 6 | EXT_IO4 | 13 | `/devices/gpio/pin13` |
+| 7 | EXT_IO5 | 14 | `/devices/gpio/pin14` |
+| 8 | EXT_IO6 | 21 | `/devices/gpio/pin21` |
+
+Pins 1 and 2 of the connector are +5 V and GND. The pins are 3.3 V logic.
+
+### Withheld pins
+
+The firmware creates a device for no other pin. The `CONFIGURE` command of a
+device reconfigures its pin, so the firmware withholds every pin that the board uses. No device
+can then change the display, the touch panel, the console, the flash, the PSRAM,
+the microSD slot or the RS-485 transceiver. The datasheet names these pins:
+
+| Function | GPIO | Table |
+|---|---|---|
+| LCD data, write clock, command or data, reset, backlight, frame sync | 0, 3, 4, 8, 9, 15, 16, 17, 18, 45, 46, 47, 48 | 5 |
+| Touch panel: interrupt, I2C data, I2C clock | 7, 6, 5 | 5 |
+| microSD slot: CS (data 3), MOSI (command), CLK, MISO (data 0) | 41, 40, 39, 38 | 4 |
+| RS-485 transceiver: RXD, RTS, TXD | 1, 2, 42 | 8 |
+| Audio amplifier: LRCK, BCLK, DOUT | 35, 36, 37 | 7 |
+| Debug connector UART0: TXD0, RXD0 | 43, 44 | 1 |
+| USB: D-, D+ (the console) | 19, 20 | |
+| Flash and PSRAM of the module | 26 to 32 | |
+
+The other connectors carry no free GPIO signal:
+
+- The RS-485 connector (J7) carries the differential lines A and B, the ground
+  and +5 V. The transceiver uses GPIO 1, 2 and 42. The datasheet remark of
+  RS485-B (table 6) is "SD card data input": GPIO 38 and the RS-485 B line may
+  share a pin. See "GPIO 38 and RS-485" in the microSD section: keep the RS-485
+  connector unused while a microSD card is in use.
+- The debug connector (J3) carries UART0 and BOOT (GPIO 0). Table 1 gives
+  "GPIO 14" as module pin of the GND row. The schematic shows GND there, and
+  the datasheet gives GPIO 14 as EXT_IO5, so this README treats the entry as a
+  datasheet error.
+- The speaker connector (J4) carries the amplifier outputs.
+
+### Use
+
+The command-line shell has no command that sends GPIO control commands. Check
+the devices with:
+
+```
+ls /devices/gpio
+```
+
+The output lists `pin10`, `pin11`, `pin12`, `pin13`, `pin14` and `pin21`.
+Applications use the `CONFIGURE`, `RELEASE` and `GET_CAPABILITIES` control
+commands of kind `b'g'` on `/devices/gpio/pin<number>`, and then read or write
+one byte (`0` or `1`). A read or write fails with `DeviceUnavailable` until
+`CONFIGURE` configures the line. `RELEASE` returns the pin to high impedance.
+Closing the device does not release the pin: the pin keeps its configuration,
+and an output keeps its level, until an application sends `RELEASE` or
+`CONFIGURE` again. Release on close is tracked in
+[core#384](https://github.com/xila-project/core/issues/384).
+
+Hardware validation is open: see the status in platforms#221.

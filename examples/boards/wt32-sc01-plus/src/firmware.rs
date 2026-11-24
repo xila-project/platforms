@@ -18,6 +18,8 @@
 //! - Screen: a 480 × 320 ST7796 panel on the 8080 bus, its dimmable backlight and an
 //!   FT6336U touch panel, in [`screen`]. The graphical shell runs on it, and
 //!   the command-line shell on the console, as two sessions.
+//! - GPIO: the six pins of the Extended IO connector, mounted at
+//!   `/devices/gpio/pin<number>`, in [`gpio`].
 //! - WebAssembly runtime: mounted at `/applications/executables/wasm` with lazy
 //!   function translation by default; large Wasmi buffers (4096 bytes and up,
 //!   including guest linear memory and module source) land in PSRAM.
@@ -42,6 +44,7 @@ use firmware::{
 
 #[cfg(feature = "boot-benchmark")]
 mod boot_benchmark;
+mod gpio;
 mod screen;
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -141,6 +144,7 @@ fn main() -> ! {
             peripherals.GPIO38,
             peripherals.GPIO41,
         )),
+        gpio: Some(gpio::controller()),
         sessions: if display.is_some() {
             &[session::CONSOLE, session::GRAPHICAL]
         } else {

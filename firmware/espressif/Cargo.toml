@@ -16,6 +16,7 @@ drivers_core = { workspace = true }
 drivers_espressif = { package = "xila-drivers-espressif", path = "../../drivers/espressif", default-features = false, features = [
   "console",
   "executor",
+  "gpio",
   "power",
   "random",
   "time",
