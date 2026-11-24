@@ -26,6 +26,7 @@ for application in calculator clock weather pixel_painter text_editor synth digi
     --enable-reference-types \
     --enable-tail-call \
     --enable-extended-const \
+    --enable-custom-page-sizes \
     "$module" -o "$module.optimized"
   mv -- "$module.optimized" "$module"
 done
