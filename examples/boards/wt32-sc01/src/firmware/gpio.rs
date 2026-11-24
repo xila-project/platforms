@@ -17,8 +17,8 @@
 //! | I2C_SDA, I2C_SCL | 18, 19 (the figure gives no GPIO number; see the touch pins in `screen.rs`) |
 //!
 //! The controller exposes the pins of this list that nothing on the board
-//! uses: [`EXPOSED`]. It withholds every other pin, so opening a device can
-//! never reconfigure a pin of the display, the touch panel, the console, the
+//! uses: [`EXPOSED`]. It withholds every other pin, so configuring a device
+//! can never reconfigure a pin of the display, the touch panel, the console, the
 //! download circuit, the flash or the PSRAM. [`USED_BY_BOARD`] collects those
 //! pins and the build fails when one of them is also in [`EXPOSED`].
 //!

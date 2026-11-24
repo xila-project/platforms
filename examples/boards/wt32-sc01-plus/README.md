@@ -236,8 +236,8 @@ Pins 1 and 2 of the connector are +5 V and GND. The pins are 3.3 V logic.
 
 ### Withheld pins
 
-The firmware creates a device for no other pin. Opening a device configures its
-pin, so the firmware withholds every pin that the board uses. No device
+The firmware creates a device for no other pin. The `CONFIGURE` command of a
+device reconfigures its pin, so the firmware withholds every pin that the board uses. No device
 can then change the display, the touch panel, the console, the flash, the PSRAM,
 the microSD slot or the RS-485 transceiver. The datasheet names these pins:
 
@@ -278,7 +278,10 @@ The output lists `pin10`, `pin11`, `pin12`, `pin13`, `pin14` and `pin21`.
 Applications use the `CONFIGURE`, `RELEASE` and `GET_CAPABILITIES` control
 commands of kind `b'g'` on `/devices/gpio/pin<number>`, and then read or write
 one byte (`0` or `1`). A read or write fails with `DeviceUnavailable` until
-`CONFIGURE` configures the line. A pin returns to high impedance when the
-application releases it or closes the device.
+`CONFIGURE` configures the line. `RELEASE` returns the pin to high impedance.
+Closing the device does not release the pin: the pin keeps its configuration,
+and an output keeps its level, until an application sends `RELEASE` or
+`CONFIGURE` again. Release on close is tracked in
+[core#384](https://github.com/xila-project/core/issues/384).
 
 Hardware validation is open: see the status in platforms#221.

@@ -12,8 +12,8 @@
 //!
 //! The datasheet lists no other GPIO signal on a connector that a board
 //! function does not use, so the controller exposes these pins only. It
-//! withholds every other pin: opening a device can then never reconfigure a
-//! pin of the display, the touch panel, the backlight, the USB console, the
+//! withholds every other pin: configuring a device can then never reconfigure
+//! a pin of the display, the touch panel, the backlight, the USB console, the
 //! flash, the PSRAM, the microSD slot or the RS-485 transceiver.
 //! [`USED_BY_BOARD`] collects those pins and the build fails when one of them
 //! is also in [`EXPOSED`].
