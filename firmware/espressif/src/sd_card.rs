@@ -33,7 +33,9 @@ const MEDIA_PATH: &str = "/media";
 /// Where a card that holds LittleFS is mounted.
 pub const MOUNT_PATH: &str = "/media/sd_card";
 
-/// A file that asks the next boot to format the card with LittleFS.
+/// A file that asks the next boot to format the card with LittleFS. It is a
+/// workaround until Core can format a device from a shell command: see
+/// xila-project/platforms#219.
 pub const FORMAT_REQUEST_PATH: &str = "/configuration/system/format_sd_card";
 
 /// The text that [`FORMAT_REQUEST_PATH`] must hold. It makes an empty file,
