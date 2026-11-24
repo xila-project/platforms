@@ -17,8 +17,12 @@ use mipidsi::{interface::SpiInterface, options::ColorInversion};
 use static_cell::StaticCell;
 
 const DRAW_BUFFER_ROWS: usize = 10;
-// The 80 MHz APB clock divided by six meets the 66 ns minimum write cycle.
-const BUS_FREQUENCY_KILOHERTZ: u32 = 13_333;
+// The 80 MHz APB clock divided by two: a 25 ns write cycle, faster than the
+// ST7796S specification's 66 ns minimum, as widely used with this panel.
+// Validated on a WT32-SC01 (clean image and touch). The fastest in-specification
+// setting is 13_334 (divider six, 75 ns); esp-hal rounds the divider up, so
+// 13_333 would give divider seven (11.4 MHz).
+const BUS_FREQUENCY_KILOHERTZ: u32 = 40_000;
 static PIXEL_STAGING: StaticCell<[u8; 64]> = StaticCell::new();
 
 pub(super) struct Pins {

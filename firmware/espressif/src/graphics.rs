@@ -1,4 +1,4 @@
-//! The screen, its pointer and the graphics manager (feature `graphics`).
+//! The screen, its pointer and the graphics manager (feature `display`).
 
 use alloc::{boxed::Box, vec::Vec};
 use core::{

@@ -271,8 +271,14 @@ used and free bytes in heap regions 0 and 2 after graphics starts.
 
 The [Wireless-Tag schematic][classic-schematic] and
 [reference firmware pin definitions][classic-reference] document the wiring.
-The display uses write-only SPI with DMA at 13.3 MHz. One 75 ns clock cycle
-meets the [ST7796S timing specification][st7796s] minimum of 66 ns for writes.
+The display uses write-only SPI with DMA at 40 MHz (the 80 MHz APB clock
+divided by two). Its 25 ns cycle is faster than the
+[ST7796S timing specification][st7796s] minimum of 66 ns for writes, as is
+common with this panel; it was checked on a WT32-SC01 for a clean image and
+working touch. If a panel shows corrupted pixels, set
+`BUS_FREQUENCY_KILOHERTZ` to `13_334` (divider six, 75 ns), the fastest
+in-specification setting: esp-hal rounds the divider up, so `13_333` would run
+at 11.4 MHz.
 The internal, single RGB565 draw buffer is 480 × 10 × 2 = 9,600 bytes,
 about 5.9% of the 160 KiB heap. That leaves 154,240 bytes before accounting
 for the runtime, LVGL and allocator overhead. ESP32 SPI DMA requires
