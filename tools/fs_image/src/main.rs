@@ -71,7 +71,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 bundle = Some(
                     arguments
                         .next()
-                        .ok_or("--bundle requires native, wasm or wt32-sc01-plus")?,
+                        .ok_or("--bundle requires native, wasm, wt32-sc01 or wt32-sc01-plus")?,
                 )
             }
             Some("--bundles-dir") => {
@@ -125,7 +125,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         _ => {
             return Err(
-                "use --root or --bundle native|wasm|wt32-sc01-plus --bundles-dir <directory> [--native-runtime unix|windows] [--layout mbr|raw] [--block-size <bytes>]"
+                "use --root or --bundle native|wasm|wt32-sc01|wt32-sc01-plus --bundles-dir <directory> [--native-runtime unix|windows] [--layout mbr|raw] [--block-size <bytes>]"
                     .into(),
             );
         }
@@ -183,9 +183,10 @@ impl NativeRuntime {
     }
 }
 
-/// Platforms' seed profile: `native`, `wasm` (the browser profile) or
-/// `wt32-sc01-plus`. `native_runtime` only affects the `native` profile.
+/// Platforms' native, browser or WT32 board seed profile.
+/// `native_runtime` only affects the `native` profile.
 fn profile(name: &str, native_runtime: NativeRuntime) -> Result<Profile, Box<dyn Error>> {
+    let wt32_shortcuts = include_str!("../profiles/wt32-native-shortcuts.txt");
     let (applications, shortcuts) = match name {
         "native" => (
             include_str!("../profiles/native.txt"),
@@ -195,11 +196,12 @@ fn profile(name: &str, native_runtime: NativeRuntime) -> Result<Profile, Box<dyn
             include_str!("../profiles/browser.txt"),
             include_str!("../profiles/browser-shortcuts.txt"),
         ),
+        "wt32-sc01" => ("", wt32_shortcuts),
         "wt32-sc01-plus" => (
             include_str!("../profiles/wt32-sc01-plus.txt"),
-            include_str!("../profiles/wt32-sc01-plus-shortcuts.txt"),
+            wt32_shortcuts,
         ),
-        _ => return Err("bundle must be native, wasm or wt32-sc01-plus".into()),
+        _ => return Err("bundle must be native, wasm, wt32-sc01 or wt32-sc01-plus".into()),
     };
     // Native applications are linked into the runtime; only their shortcuts
     // are seeded. The Debug application needs the control transport of the
@@ -266,6 +268,27 @@ mod tests {
                 .contains(&"weather".to_owned())
         );
         assert!(profile("other", NativeRuntime::host()).is_err());
+    }
+
+    #[test]
+    fn wt32_sc01_profile_seeds_the_native_application_shortcuts() {
+        let profile = profile("wt32-sc01", NativeRuntime::host()).unwrap();
+        assert!(profile.applications.is_empty());
+        let shortcut_names: Vec<&str> = profile
+            .shortcuts
+            .iter()
+            .map(|shortcut| shortcut.name.as_str())
+            .collect();
+        assert_eq!(
+            shortcut_names,
+            [
+                "activity.json",
+                "file_manager.json",
+                "settings.json",
+                "terminal.json",
+            ]
+        );
+        assert_eq!(profile.repositories[0].name, "xila.json");
     }
 
     fn has_debug_shortcut(name: &str, runtime: NativeRuntime) -> bool {

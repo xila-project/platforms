@@ -19,6 +19,8 @@ cargo run -p xila-fs-image -- populated.img 16777216 --root ./root
 # Seed a profile from verified application bundle directories (xila.clock/, ...).
 cargo run -p xila-fs-image -- native.img 16777216 --bundle native --bundles-dir bundles
 cargo run -p xila-fs-image -- browser.img 16777216 --bundle wasm --bundles-dir bundles
+# Seed the classic WT32-SC01 storage partition with native shortcuts.
+mise run image:wt32-sc01
 # Seed the WT32-SC01 Plus storage partition with locally built bundles.
 XILA_BUNDLES_DIR="$PWD/bundles" mise run image:wt32-sc01-plus
 ```
@@ -75,10 +77,13 @@ modification times do not enter the image.
 The native and browser profiles both contain Calculator, Clock, Digits, Pixel Painter, Synth, Text Editor and
 Weather. In the browser, Weather and `web_request` reach the network through the `fetch`-backed
 `https_client` device, so they only work against servers that allow cross-origin requests.
-Both include native application shortcuts. The `wt32-sc01-plus` profile includes the same seven Wasm applications
-with the Activity, File manager, Settings and Terminal shortcuts and the official registry, built as a
-raw 4096-byte-block LittleFS image sized to the board's `storage` partition in
-[partitions.csv](../../examples/boards/wt32-sc01-plus/partitions.csv). Set `EMBEDDED_I18N_LOCALE=en`, `fr`, `es`, `de`, `pt-BR`, `it`, `pl`, `ja` or `zh-CN`
+Both include native application shortcuts. The `wt32-sc01` and `wt32-sc01-plus`
+profiles share the Activity, File Manager, Settings and Terminal shortcuts and
+seed the official registry. The Plus profile also includes the same seven Wasm
+applications. Each board task writes a raw 4096-byte-block LittleFS image to
+`target/seed/<board>/storage.img`, sized to the `storage` partition in its
+[partition table](../../examples/boards/README.md).
+Set `EMBEDDED_I18N_LOCALE=en`, `fr`, `es`, `de`, `pt-BR`, `it`, `pl`, `ja` or `zh-CN`
 while building both guests and images. No passwords or random salts are included.
 An explicit pending marker allows runtime account initialization to finish after
 an interruption; existing saved credentials are preserved.

@@ -245,8 +245,10 @@ reformatting the partition.
 
 ## Build and flash the WT32-SC01 firmware
 
-The classic Wireless-Tag WT32-SC01 uses the ESP32-WROVER-B module. It starts
-the command-line shell on UART0 at 115200 baud through the CP210x bridge.
+The classic Wireless-Tag WT32-SC01 uses the ESP32-WROVER-B module and runs
+the CPU at 240 MHz. It starts the command-line shell on UART0 at 115200 baud
+through the CP210x bridge and starts the graphical shell when the display
+initializes.
 The 160 KiB runtime heap comprises 64 KiB in primary DRAM and 96 KiB in
 DRAM2 reclaimed after ESP-IDF bootloader handoff. The ESP32 can
 directly map 4 MiB of the module's 8 MiB of PSRAM. The firmware registers that
@@ -256,11 +258,10 @@ routines in internal SRAM. The ESP32 target applies the compiler workaround
 for the PSRAM cache erratum. LittleFS C code uses the internal runtime heap. See the [Wireless-Tag datasheet][classic-board],
 [Espressif module datasheet][wrover] and [ESP32 external RAM guide][external-ram].
 
-The 480 × 320 ST7796S shows a **Touch test** button. Tapping it changes the
-label to **Touch detected**. The graphical login is disabled for this build
-pending a hardware heap measurement. UART0 continues to run the serial shell.
-The boot log reports the draw buffer size, the FT6336U identifiers and the
-used and free bytes in heap regions 0 and 2 after graphics starts.
+The graphical shell shows the login screen on the 480 × 320 ST7796S and
+accepts input from the FT6336U touch panel. The boot log reports the draw buffer
+size, the FT6336U identifiers and the used and free bytes in heap regions 0 and 2
+after graphics starts.
 
 | Signal | ESP32 GPIO |
 |---|---|
@@ -297,8 +298,12 @@ WT32-SC01 modules carry ESP32 revision v1.0 silicon, older than esp-hal's
 default minimum (v3.0), so the build lowers `ESP_HAL_CONFIG_MIN_CHIP_REVISION`
 to v1.0; the PSRAM cache workaround above covers that revision's erratum.
 
-The factory application occupies the 1.5 MiB partition at `0x10000`.
-LittleFS uses the 2.44 MiB partition at `0x190000`.
+On the 4 MiB flash, the factory application occupies 2.25 MiB at `0x10000`.
+LittleFS uses the remaining 1.6875 MiB at `0x250000`.
+
+**Migration from the 1.5 MiB factory layout.** Back up your storage data before
+upgrading. Flash the firmware with the new partition table, then reflash the
+storage image at the new offset. Restore any saved files after the upgrade.
 
 ```sh
 espflash flash --chip esp32 --port /dev/ttyUSB0 \
@@ -307,14 +312,26 @@ espflash flash --chip esp32 --port /dev/ttyUSB0 \
   --monitor target/espressif-emulator/wt32-sc01.elf
 ```
 
+Build and write the raw LittleFS image to populate the application menu with
+Activity, File Manager, Settings and Terminal. The task reads the image size
+from the `storage` row in [partitions.csv](wt32-sc01/partitions.csv).
+The classic firmware runs native applications, so its seed image contains no
+WebAssembly bundles. Writing the storage image replaces the partition contents.
+
+```sh
+mise run image:wt32-sc01
+mise run run:espflash -- write-bin --chip esp32 --port /dev/ttyUSB0 \
+  --flash-size 4mb --flash-mode dio 0x250000 target/seed/wt32-sc01/storage.img
+```
+
 Look for `Xila: board WT32-SC01`, `Xila: PSRAM 4194304 bytes (registered: true)`,
 `Xila: PSRAM self-test passed`, `Xila: LittleFS mounted`,
 `Random generator works`, the two internal heap regions, and
 `Xila: main stack high-water … bytes (estimate)` before the `User name:`
 prompt. The estimate covers execution from early application startup through
-the shell's first console output. A freshly formatted file system creates the default
-`administrator` account with an empty password. The display and touch
-bring-up is tracked in [issue #177][classic-issue].
+the shell's first console output. On first boot, the seeded or freshly formatted
+file system creates the default `administrator` account with an empty password.
+The display and touch bring-up is tracked in [issue #177][classic-issue].
 
 [classic-board]: https://files.seeedstudio.com/products/102991455/WT32-SC01-datasheet.pdf
 [wrover]: https://documentation.espressif.com/esp32-wrover-b_datasheet_en.html
