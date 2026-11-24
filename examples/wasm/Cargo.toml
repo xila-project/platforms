@@ -32,6 +32,7 @@ settings = { workspace = true }
 activity = { workspace = true }
 console_error_panic_hook = "0.1"
 drivers_wasm = { workspace = true, features = ["audio"] }
+startup_application = { package = "xila-startup-application", path = "../../firmware/startup_application" }
 drivers_core = { workspace = true }
 drivers_peripherals = { workspace = true }
 drivers_shared = { workspace = true }

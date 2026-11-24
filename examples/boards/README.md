@@ -240,13 +240,36 @@ The seeded image carries the first-installation marker so the firmware creates
 the default `administrator` account (empty password) on first boot without
 reformatting the partition.
 
+**Single-application device.** A board can boot directly into one application
+instead of the graphical shell, a clock or a dashboard for example, when its
+storage holds `/configuration/system/startup.json` (see
+[the startup application](../../firmware/startup_application/README.md)). The
+firmware stays the same. The `wt32-sc01-plus-clock` profile builds a storage
+image with the Clock as the startup application, run by `administrator`, and
+without the other WebAssembly applications:
+
+```sh
+XILA_IMAGE_PROFILE=wt32-sc01-plus-clock XILA_BUNDLES_DIR=/path/to/bundles mise run image:wt32-sc01-plus
+mise run run:espflash -- write-bin --chip esp32s3 --port "$FLASH_PORT" \
+  --flash-size 16mb --flash-mode dio 0x410000 target/seed/wt32-sc01-plus-clock/storage.img
+```
+
+The Clock then fills the screen with no login, status bar or dock, and starts
+again whenever it ends. The serial console session keeps running for
+maintenance. If the configuration is invalid or the application cannot start,
+the console shows why and the graphical shell starts instead. Touch-only
+boards get no on-screen keyboard in this mode for now: it still belongs to the
+graphical shell.
+
 [board]: https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32p4/esp32-p4x-function-ev-board/user_guide.html
 [entropy]: https://github.com/esp-rs/esp-hal/issues/5982
 
 ## Build and flash the WT32-SC01 firmware
 
-The classic Wireless-Tag WT32-SC01 uses the ESP32-WROVER-B module. It starts
-the command-line shell on UART0 at 115200 baud through the CP210x bridge.
+The classic Wireless-Tag WT32-SC01 uses the ESP32-WROVER-B module and runs
+the CPU at 240 MHz. It starts the command-line shell on UART0 at 115200 baud
+through the CP210x bridge and starts the graphical shell when the display
+initializes.
 The 160 KiB runtime heap comprises 64 KiB in primary DRAM and 96 KiB in
 DRAM2 reclaimed after ESP-IDF bootloader handoff. The ESP32 can
 directly map 4 MiB of the module's 8 MiB of PSRAM. The firmware registers that
@@ -255,6 +278,37 @@ test. This keeps pointers that may be used by hardware atomics or flash ROM
 routines in internal SRAM. The ESP32 target applies the compiler workaround
 for the PSRAM cache erratum. LittleFS C code uses the internal runtime heap. See the [Wireless-Tag datasheet][classic-board],
 [Espressif module datasheet][wrover] and [ESP32 external RAM guide][external-ram].
+
+The graphical shell shows the login screen on the 480 × 320 ST7796S and
+accepts input from the FT6336U touch panel. The boot log reports the draw buffer
+size, the FT6336U identifiers and the used and free bytes in heap regions 0 and 2
+after graphics starts.
+
+| Signal | ESP32 GPIO |
+|---|---|
+| HSPI MOSI, clock, chip select | 13, 14, 15 |
+| LCD command/data, reset, backlight (active high) | 21, 22, 23 |
+| FT6336U I²C data and clock | 18, 19 |
+| FT6336U interrupt (polled instead) | 39 |
+
+The [Wireless-Tag schematic][classic-schematic] and
+[reference firmware pin definitions][classic-reference] document the wiring.
+The display uses write-only SPI with DMA at 40 MHz (the 80 MHz APB clock
+divided by two). Its 25 ns cycle is faster than the
+[ST7796S timing specification][st7796s] minimum of 66 ns for writes, as is
+common with this panel; it was checked on a WT32-SC01 for a clean image and
+working touch. If a panel shows corrupted pixels, set
+`BUS_FREQUENCY_KILOHERTZ` to `13_334` (divider six, 75 ns), the fastest
+in-specification setting: esp-hal rounds the divider up, so `13_333` would run
+at 11.4 MHz.
+The internal, single RGB565 draw buffer is 480 × 10 × 2 = 9,600 bytes,
+about 5.9% of the 160 KiB heap. That leaves 154,240 bytes before accounting
+for the runtime, LVGL and allocator overhead. ESP32 SPI DMA requires
+internal SRAM.
+
+[classic-schematic]: https://robu-prod-media.s3.ap-south-1.amazonaws.com/uploads/2021/12/WT32-SC01DataSheetV3.4-with-nuts.pdf
+[classic-reference]: https://github.com/wireless-tag-com/WT32-SC01/blob/87f3c38dcfe6ee5a3d0f32776817e7d97576f240/main/board.h
+[st7796s]: https://dl.espressif.com/dl/schematics/ST7796S_SPEC_V1.0.pdf
 
 ```sh
 mise run setup:espressif-rust
@@ -265,8 +319,14 @@ WT32-SC01 modules carry ESP32 revision v1.0 silicon, older than esp-hal's
 default minimum (v3.0), so the build lowers `ESP_HAL_CONFIG_MIN_CHIP_REVISION`
 to v1.0; the PSRAM cache workaround above covers that revision's erratum.
 
-The factory application occupies the 1.5 MiB partition at `0x10000`.
-LittleFS uses the 2.44 MiB partition at `0x190000`.
+On the 4 MiB flash, the factory application occupies 2.25 MiB at `0x10000`.
+LittleFS uses the remaining 1.6875 MiB at `0x250000`.
+
+**Migration from the 1.5 MiB factory layout.** Back up your storage data before
+upgrading. Flash the firmware with the new partition table, then reflash the
+storage image at the new offset. Without a storage image, the firmware cannot
+mount the moved partition and formats it on first boot. Restore any saved files
+after the upgrade.
 
 ```sh
 espflash flash --chip esp32 --port /dev/ttyUSB0 \
@@ -275,14 +335,27 @@ espflash flash --chip esp32 --port /dev/ttyUSB0 \
   --monitor target/espressif-emulator/wt32-sc01.elf
 ```
 
+Build and write the raw LittleFS image to populate the application menu with
+Activity, File Manager, Settings and Terminal. The task reads the image size
+from the `storage` row in [partitions.csv](wt32-sc01/partitions.csv).
+The classic firmware does not enable the WebAssembly runtime (the firmware's
+`wasm` feature), so its seed image contains only native application shortcuts
+and no WebAssembly bundles. Writing the storage image replaces the partition contents.
+
+```sh
+mise run image:wt32-sc01
+mise run run:espflash -- write-bin --chip esp32 --port /dev/ttyUSB0 \
+  --flash-size 4mb --flash-mode dio 0x250000 target/seed/wt32-sc01/storage.img
+```
+
 Look for `Xila: board WT32-SC01`, `Xila: PSRAM 4194304 bytes (registered: true)`,
 `Xila: PSRAM self-test passed`, `Xila: LittleFS mounted`,
 `Random generator works`, the two internal heap regions, and
 `Xila: main stack high-water … bytes (estimate)` before the `User name:`
 prompt. The estimate covers execution from early application startup through
-the shell's first console output. A freshly formatted file system creates the default
-`administrator` account with an empty password. The display and touch
-bring-up is tracked in [issue #177][classic-issue].
+the shell's first console output. On first boot, the seeded or freshly formatted
+file system creates the default `administrator` account with an empty password.
+The display and touch bring-up is tracked in [issue #177][classic-issue].
 
 [classic-board]: https://files.seeedstudio.com/products/102991455/WT32-SC01-datasheet.pdf
 [wrover]: https://documentation.espressif.com/esp32-wrover-b_datasheet_en.html

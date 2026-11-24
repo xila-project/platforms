@@ -22,10 +22,12 @@ extern crate alloc;
 mod applications;
 mod board;
 mod flash;
-#[cfg(feature = "graphics")]
+#[cfg(feature = "display")]
 pub mod graphics;
 #[cfg(feature = "native-dev")]
 pub mod native;
+#[cfg(feature = "display")]
+pub mod panel;
 pub mod psram_self_test;
 pub mod session;
 
@@ -424,7 +426,15 @@ async fn start(task_manager: &'static task::Manager) {
         }
         None => (None, None),
     };
-    #[cfg(not(feature = "graphics"))]
+    #[cfg(all(feature = "display", not(feature = "graphics")))]
+    let graphics_manager = if let Some(display) = display {
+        let manager = graphics::start(task_manager, task, time_manager, display).await;
+        graphics::show_touch_test(manager).await;
+        Some(manager)
+    } else {
+        None
+    };
+    #[cfg(not(feature = "display"))]
     if display.is_some() {
         log::warning!("Xila: the board has a screen, but the firmware has no graphics");
     }
@@ -489,7 +499,7 @@ async fn start(task_manager: &'static task::Manager) {
         Box::leak(Box::new(executable::ExecutableContext {
             #[cfg(feature = "native-dev")]
             formats: native::FORMATS,
-            #[cfg(feature = "graphics")]
+            #[cfg(feature = "display")]
             graphics_manager,
             #[cfg(feature = "wifi")]
             network_manager,
@@ -500,7 +510,11 @@ async fn start(task_manager: &'static task::Manager) {
                 time_manager,
             )
         }));
-    // The shells, in memory: nothing from an earlier boot is there.
+    // The shells, in memory: nothing from an earlier boot is there. The
+    // graphical shell is mounted even when a startup application replaces it:
+    // the mount is one small in-memory entry, its code is in flash either way,
+    // and it must be there if the application cannot start. What a startup
+    // application saves is the shell's running state (login, desk, dock).
     #[cfg(not(feature = "graphics"))]
     let mounted = mount_executables!(
         executable_context,
@@ -600,6 +614,28 @@ async fn start(task_manager: &'static task::Manager) {
     }
     task::yield_now().await;
 
+    // - Startup application: one application in place of the graphical
+    // shell, when `/configuration/system/startup.json` names one. Any problem
+    // is reported here, while the console still logs, and the board's usual
+    // sessions start instead.
+    let startup_application =
+        match startup_application::load(virtual_file_system, users_manager, task).await {
+            Ok(None) => None,
+            Ok(Some(application)) => {
+                log::information!(
+                    "Xila: startup application {}",
+                    startup_application::describe(&application)
+                );
+                let application: &'static startup_application::Application =
+                    Box::leak(Box::new(application));
+                Some(application)
+            }
+            Err(error) => {
+                log::error!("Xila: startup application: {error}; starting the shell instead");
+                None
+            }
+        };
+
     // - Sessions. Everything already running is a runtime service; the
     // sessions and what they launch are stopped by the lifecycle pipeline.
     let services = task_manager.get_children(task).await.unwrap_or_default();
@@ -625,8 +661,26 @@ async fn start(task_manager: &'static task::Manager) {
     }
     // From now on a person may be typing on the console: keep the log quiet.
     console::set_interactive(true);
-    for session in sessions {
-        session::spawn(task_manager, task, executable_context, session).await;
+    match startup_application {
+        None => {
+            for session in sessions {
+                session::spawn(task_manager, task, executable_context, session).await;
+            }
+        }
+        Some(application) => {
+            let plan = startup_application::plan(sessions, session::Session::is_graphical);
+            for session in plan.kept {
+                session::spawn(task_manager, task, executable_context, session).await;
+            }
+            session::spawn_application(
+                task_manager,
+                task,
+                executable_context,
+                application,
+                plan.replaced,
+            )
+            .await;
+        }
     }
     while xila::lifecycle::SYSTEM.is_running() {
         task::Manager::sleep(LIFECYCLE_POLL_INTERVAL).await;

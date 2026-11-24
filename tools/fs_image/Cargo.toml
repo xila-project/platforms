@@ -5,6 +5,9 @@ edition = "2024"
 rust-version.workspace = true
 
 [dependencies]
+# The startup configuration path and parser of the firmware, so that a profile
+# seeds a configuration that the firmware accepts.
+startup_application = { package = "xila-startup-application", path = "../../firmware/startup_application" }
 tools_image = { workspace = true }
 
 [dev-dependencies]

@@ -33,7 +33,7 @@ pub struct Board {
     /// heap report, for example a test frame on an emulated display.
     pub system_check: Option<fn()>,
     /// The screen, on boards that have one. The firmware drives it when it is
-    /// built with the `graphics` feature.
+    /// built with the `display` feature.
     pub display: Option<Display>,
     /// The sessions to start, each on its own terminal.
     pub sessions: &'static [Session],

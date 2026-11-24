@@ -1,9 +1,15 @@
 //! Wireless-Tag WT32-SC01 with the ESP32-WROVER-B module.
 
-use core::{mem::MaybeUninit, panic::PanicInfo};
+mod screen;
+
+use alloc::string::String;
+use core::{cell::RefCell, mem::MaybeUninit, panic::PanicInfo};
+
+use critical_section::Mutex;
 
 use drivers_espressif::{memory::MemoryManager, random::RandomDevice};
 use esp_hal::{
+    clock::CpuClock,
     psram::{Psram, PsramCacheSpeed, PsramConfig},
     timer::timg::TimerGroup,
     uart::{Config as UartConfiguration, Uart},
@@ -42,9 +48,14 @@ pub(crate) fn external_heap() -> &'static MemoryManager {
     &EXTERNAL_HEAP
 }
 
+/// esp-hal starts the ESP32 at 80 MHz by default; run it at its 240 MHz
+/// maximum. The display bus and UART take their clocks from the 80 MHz APB
+/// clock, so their rates do not change.
+const CPU_CLOCK: CpuClock = CpuClock::_240MHz;
+
 #[esp_hal::main]
 fn main() -> ! {
-    let peripherals = esp_hal::init(esp_hal::Config::default());
+    let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CPU_CLOCK));
     let reservation = INTERNAL_HEAP.init_with(|| [MaybeUninit::uninit(); INTERNAL_HEAP_SIZE]);
     // SAFETY: the reservation is exclusive and linked into internal data SRAM.
     let heap = unsafe { firmware::initialize_heap_from_slice(reservation) };
@@ -87,6 +98,24 @@ fn main() -> ! {
         }
     });
 
+    let (display, report) = match screen::start(screen::Pins {
+        spi: peripherals.SPI2,
+        dma: peripherals.DMA_SPI2,
+        data: peripherals.GPIO13,
+        clock: peripherals.GPIO14,
+        select: peripherals.GPIO15,
+        command_data: peripherals.GPIO21,
+        reset: peripherals.GPIO22,
+        backlight: peripherals.GPIO23,
+        i2c: peripherals.I2C0,
+        touch_data: peripherals.GPIO18,
+        touch_clock: peripherals.GPIO19,
+    }) {
+        Ok((display, identifiers)) => (Some(display), Ok(identifiers)),
+        Err(error) => (None, Err(error)),
+    };
+    critical_section::with(|section| SCREEN_REPORT.borrow(section).replace(Some(report)));
+
     firmware::run(Board {
         name: "WT32-SC01",
         console: serial.into(),
@@ -100,10 +129,27 @@ fn main() -> ! {
             external,
         },
         memory_check: Some(check_external_memory),
-        system_check: None,
-        display: None,
-        sessions: &[session::CONSOLE],
+        system_check: Some(log_screen_report),
+        sessions: if display.is_some() {
+            &[session::CONSOLE, session::GRAPHICAL_TOUCH]
+        } else {
+            &[session::CONSOLE]
+        },
+        display,
     })
+}
+
+type ScreenReport = Result<(u8, u8), String>;
+static SCREEN_REPORT: Mutex<RefCell<Option<ScreenReport>>> = Mutex::new(RefCell::new(None));
+
+fn log_screen_report() {
+    match critical_section::with(|section| SCREEN_REPORT.borrow(section).take()) {
+        Some(Ok((chip, vendor))) => xila::log::information!(
+            "Xila: ST7796 on HSPI, FT6336U chip {chip:#04x}, vendor {vendor:#04x}"
+        ),
+        Some(Err(error)) => xila::log::error!("Xila: the screen is off, {error}"),
+        None => {}
+    }
 }
 
 fn check_external_memory(report: &MemoryReport) {

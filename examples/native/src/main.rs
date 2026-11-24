@@ -559,6 +559,65 @@ async fn main(task_manager: &'static xila::task::Manager) {
         .expect("Failed to start the headless Debug app");
     }
 
+    // Everything already running is a runtime service; the shell (or the
+    // startup application) and what it launches are stopped by the lifecycle
+    // pipeline.
+    let services = task_manager.get_children(task).await.unwrap();
+
+    // - - A startup application (`/configuration/system/startup.json`)
+    // replaces the graphical shell. If it is invalid or cannot start, the
+    // graphical shell starts instead.
+    let startup_application = match config.interface {
+        cli::InterfaceMode::Graphical => {
+            match startup_application::load(virtual_file_system, users_manager, task).await {
+                Ok(application) => application,
+                Err(error) => {
+                    log::error!("Startup application: {error}; starting the shell instead");
+                    None
+                }
+            }
+        }
+        cli::InterfaceMode::Terminal => None,
+    };
+    if let Some(application) = startup_application {
+        use core::sync::atomic::{AtomicBool, Ordering};
+
+        log::information!(
+            "Startup application {}",
+            startup_application::describe(&application)
+        );
+        let application: &'static startup_application::Application =
+            Box::leak(Box::new(application));
+        let failed: &'static AtomicBool = Box::leak(Box::new(AtomicBool::new(false)));
+        task_manager
+            .spawn(task, "Application session", None, async move |session| {
+                if let Err(error) =
+                    startup_application::run(executable_context, session, application).await
+                {
+                    log::error!("{}: {error}; starting the shell instead", application.name);
+                    failed.store(true, Ordering::Release);
+                }
+            })
+            .await
+            .expect("Failed to spawn the application session");
+        // The application session runs until a lifecycle request, which ends
+        // in `power::finish` like leaving the shell does.
+        while !failed.load(Ordering::Acquire) {
+            if !xila::lifecycle::SYSTEM.is_running() {
+                power::finish(virtual_file_system, time_manager, task, &services, 0).await;
+                return;
+            }
+            #[cfg(feature = "audio")]
+            if let Some(runner) = &audio_runner
+                && let Err(error) = runner.check()
+            {
+                log::warning!("Native audio stopped: {error}; restart to reopen the host output");
+                audio_runner = None;
+            }
+            task::Manager::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
     let standard = Standard::open(
         &"/devices/standard_io/input",
         &"/devices/standard_io/output",
@@ -575,9 +634,6 @@ async fn main(task_manager: &'static xila::task::Manager) {
         cli::InterfaceMode::Graphical => "/applications/executables/graphical_shell",
         cli::InterfaceMode::Terminal => "/applications/executables/command_line_shell",
     };
-    // Everything already running is a runtime service; the shell and what it
-    // launches are stopped by the lifecycle pipeline.
-    let services = task_manager.get_children(task).await.unwrap();
     let shell =
         match executable::execute(executable_context, shell_path, vec![], standard, None).await {
             Ok(shell) => shell,

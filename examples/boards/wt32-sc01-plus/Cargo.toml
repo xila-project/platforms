@@ -14,7 +14,6 @@ drivers_espressif = { package = "xila-drivers-espressif", path = "../../../drive
 ] }
 drivers_shared = { package = "xila-drivers-shared", path = "../../../drivers/shared", default-features = false, features = [
   "display-mipidsi",
-  "touch-ft6336",
 ] }
 esp-bootloader-esp-idf = { version = "0.6", features = ["esp32s3"] }
 esp-hal = { version = "=1.2.2", features = ["esp32s3", "unstable"] }

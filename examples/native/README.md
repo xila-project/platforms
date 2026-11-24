@@ -211,6 +211,17 @@ Run the hardware-free VFS lifecycle regression with
 `cargo test -p xila-drivers-native --test wifi`. Generic payload validation and command
 identifier uniqueness are covered by `cargo test -p xila-network --test wifi_types`.
 
+## Startup application
+
+With the graphical interface, a disk holding `/configuration/system/startup.json`
+boots into that one application instead of the graphical shell and its login,
+as on the boards (see [the startup application](../../firmware/startup_application/README.md)).
+For example, `{"shortcut": "settings", "user": "root"}` starts Settings full
+screen. If the file is invalid or the application cannot start, the log says
+why and the graphical shell starts. The terminal interface ignores the file.
+`cargo test -p xila-native-example --test startup_application` checks it
+headless through the Debug transport.
+
 ## System activity dashboard
 
 The native System activity app reports uptime, registered tasks and allocator

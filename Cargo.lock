@@ -1626,6 +1626,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "embedded-hal-bus"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "513e0b3a8fb7d3013a8ae17a834283f170deaf7d0eeab0a7c1a36ad4dd356d22"
+dependencies = [
+ "critical-section",
+ "embedded-hal 1.0.0",
+]
+
+[[package]]
 name = "embedded-i18n"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6499,10 +6509,13 @@ dependencies = [
 name = "xila-board-wt32-sc01"
 version = "0.1.0"
 dependencies = [
+ "critical-section",
+ "embedded-hal-bus",
  "esp-bootloader-esp-idf",
  "esp-hal",
  "esp-println",
  "esp-storage",
+ "mipidsi",
  "static_cell",
  "xila",
  "xila-drivers-espressif",
@@ -6904,6 +6917,7 @@ dependencies = [
  "embedded-storage",
  "esp-hal",
  "esp-storage",
+ "mipidsi",
  "xila",
  "xila-activity",
  "xila-command-line-shell",
@@ -6914,6 +6928,7 @@ dependencies = [
  "xila-file-manager",
  "xila-graphical-shell",
  "xila-settings",
+ "xila-startup-application",
  "xila-terminal",
  "xila-wasm",
 ]
@@ -6953,6 +6968,7 @@ version = "0.1.0"
 dependencies = [
  "xila-file-system",
  "xila-little-fs",
+ "xila-startup-application",
  "xila-tools-image",
  "xila-users",
 ]
@@ -7110,6 +7126,7 @@ dependencies = [
  "xila-graphical-shell",
  "xila-package-application",
  "xila-settings",
+ "xila-startup-application",
  "xila-terminal",
  "xila-wasm",
 ]
@@ -7300,6 +7317,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "xila-startup-application"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-executor",
+ "embassy-time",
+ "miniserde",
+ "xila",
+ "xila-drivers-std",
+ "xila-little-fs",
+ "xila-task",
+ "xila-testing",
+ "xila-time",
+ "xila-users",
+ "xila-virtual-file-system",
+]
+
+[[package]]
 name = "xila-synchronization"
 version = "0.1.0"
 source = "git+https://github.com/xila-project/core?branch=main#802515fcb688e8eb9f74aa3b0a92aaccfc239cc1"
@@ -7484,6 +7519,7 @@ dependencies = [
  "xila-file-manager",
  "xila-graphical-shell",
  "xila-settings",
+ "xila-startup-application",
  "xila-terminal",
  "xila-wasm",
 ]
