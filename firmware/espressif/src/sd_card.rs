@@ -6,7 +6,9 @@
 //!
 //! - The card appears as the block device `/devices/storage/sd_card`, readable
 //!   and writable by its owner only.
-//! - A card that holds LittleFS is mounted at `/media/sd_card`.
+//! - A card that holds LittleFS is mounted at `/media/sd_card`. The root of
+//!   a new card becomes a shared directory: every user can create entries,
+//!   and only the owner of an entry can remove or rename it.
 //! - The firmware never formats a card by itself. A card from another device
 //!   holds files, so a card without LittleFS stays unmounted. The user formats
 //!   it by creating [`FORMAT_REQUEST_PATH`] with the text `erase` and
@@ -240,8 +242,41 @@ pub(super) async fn start(
     }
     log::information!("Xila: SD card: LittleFS mounted at {MOUNT_PATH}");
 
+    share_new_root(virtual_file_system, task).await;
+
     if test == Request::Confirmed {
         run_test(virtual_file_system, task, time_manager).await;
+    }
+}
+
+/// Makes the root of a new card a shared directory, as `/data/shared`: every
+/// user can create entries, and only the owner of an entry can remove or
+/// rename it.
+///
+/// Core's LittleFS gives the root of a new file system to root, with no
+/// permissions, so only root could use the card. The firmware changes the
+/// root only while it still has no permissions: on the first mount after a
+/// format, including a format by an earlier firmware. A later change by root
+/// stays. This is the only write to the card at boot without a request.
+async fn share_new_root(virtual_file_system: &VirtualFileSystem, task: task::TaskIdentifier) {
+    let permissions = match virtual_file_system
+        .get_statistics_for_task(task, &MOUNT_PATH)
+        .await
+    {
+        Ok(statistics) => statistics.permissions,
+        Err(error) => {
+            log::warning!("Xila: SD card: cannot read the permissions of {MOUNT_PATH}: {error}");
+            return;
+        }
+    };
+    if permissions != Permissions::NONE {
+        return;
+    }
+    if let Err(error) = virtual_file_system
+        .set_permissions(task, &MOUNT_PATH, Permissions::SHARED_DIRECTORY)
+        .await
+    {
+        log::warning!("Xila: SD card: cannot set the permissions of {MOUNT_PATH}: {error}");
     }
 }
 

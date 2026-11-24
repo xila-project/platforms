@@ -143,6 +143,11 @@ measured.
 - The card is the block device `/devices/storage/sd_card`. Only its owner
   (root) can read and write it. Do not write it while LittleFS is mounted.
 - A card that holds LittleFS is mounted at `/media/sd_card`.
+- The root of a new card is a shared directory, as `/data/shared`: every
+  user can create files and directories in it, and only the owner of an
+  entry can remove or rename it. LittleFS creates the root without
+  permissions, so the firmware sets them at the first mount. It does not
+  change them after that.
 - A card that does not hold LittleFS is not mounted and not changed. The boot
   log says so.
 
