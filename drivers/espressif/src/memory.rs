@@ -21,9 +21,9 @@ pub const DEFAULT_LARGE_ALLOCATION_THRESHOLD: usize = 4096;
 /// Number of static memory regions managed on the selected chip.
 ///
 /// Chips with external PSRAM support (`esp32`, `esp32s2`, `esp32s3`, `esp32c5`, `esp32c61`,
-/// `esp32p4`, `esp32s31`) reserve slot `0` for internal SRAM and slot `1` for optional PSRAM.
-/// ESP32 also reserves slot `2` for reclaimed internal SRAM.
-/// Chips without PSRAM (`esp32c2`, `esp32c3`, `esp32c6`, `esp32h2`) allocate a single slot.
+/// `esp32p4`, `esp32s31`) reserve slot `0` for internal SRAM and the last slot,
+/// [`PSRAM_REGION`], for optional PSRAM. ESP32 also reserves slot `1` for reclaimed internal
+/// SRAM. Chips without PSRAM (`esp32c2`, `esp32c3`, `esp32c6`, `esp32h2`) allocate a single slot.
 pub const REGION_COUNT: usize = if cfg!(feature = "esp32") {
     3
 } else if cfg!(any(
@@ -40,10 +40,14 @@ pub const REGION_COUNT: usize = if cfg!(feature = "esp32") {
 };
 
 /// Region reserved for external PSRAM on chips that support it.
-pub const PSRAM_REGION: usize = 1;
+///
+/// It is the last region: allocations at or above the large-allocation threshold probe the
+/// regions in reverse order, so they reach PSRAM before any internal SRAM, and smaller ones
+/// reach it only when every internal region is full.
+pub const PSRAM_REGION: usize = if cfg!(feature = "esp32") { 2 } else { 1 };
 
 #[cfg(feature = "esp32")]
-const RECLAIMED_INTERNAL_REGION: usize = 2;
+const RECLAIMED_INTERNAL_REGION: usize = 1;
 
 const INTERNAL_DMA_ALIGNMENT: usize = if cfg!(feature = "esp32p4") { 64 } else { 4 };
 
@@ -63,7 +67,9 @@ const INTERNAL_DESCRIPTOR: RegionDescriptor = RegionDescriptor::new(
 ))]
 const PSRAM_DESCRIPTOR: RegionDescriptor = {
     if cfg!(any(feature = "esp32", feature = "esp32s2")) {
-        // ESP32: esp-hal does not enable dma_can_access_psram at all.
+        // ESP32: esp-hal does not enable dma_can_access_psram at all. PSRAM is
+        // safe for ordinary data there only with the firmware requirements of
+        // the `atomics` module.
         // ESP32-S2: only SPI2, I2S0 and the crypto DMA can reach PSRAM
         // (`can_access_psram()` is false for SPI3 and copy DMA), and a
         // capability flag cannot say which channel will use the buffer.
@@ -101,9 +107,9 @@ const fn default_descriptors() -> [RegionDescriptor; REGION_COUNT] {
 /// Espressif platform memory manager backing Xila's global allocator.
 ///
 /// Region `0` is internal SRAM (`DirectMemoryAccess | AlwaysAccessible`). On PSRAM-capable chips,
-/// region `1` is optional external PSRAM, left uninitialized until the board registers it via
-/// [`Self::init_psram`] or [`Self::init_psram_from_hal`]. ESP32 uses region `2` for
-/// optional reclaimed internal SRAM.
+/// the last region, [`PSRAM_REGION`], is optional external PSRAM, left uninitialized until the
+/// board registers it via [`Self::init_psram`] or [`Self::init_psram_from_hal`]. ESP32 uses
+/// region `1` for optional reclaimed internal SRAM.
 pub struct MemoryManager {
     inner: RegionManager<REGION_COUNT>,
     internal_only: AtomicBool,
