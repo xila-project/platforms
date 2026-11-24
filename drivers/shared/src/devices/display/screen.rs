@@ -217,32 +217,32 @@ where
 {
 }
 
-struct AsyncState<Bus> {
+struct AsynchronousState<Bus> {
     bus: Bus,
     area: Area,
 }
 
-/// A Xila screen device backed by an [`super::AsyncDisplayBus`].
+/// A Xila screen device backed by an [`super::AsynchronousDisplayBus`].
 ///
 /// The [`DirectCharacterDevice`] implementation remains synchronous for
 /// generic callers, while [`start_flush`](Self::start_flush) and
 /// [`wait_for_flush`](Self::wait_for_flush) let LVGL double-buffered flushes
 /// overlap DMA transfers with rendering.
-pub struct AsyncScreenDevice<Bus, ResetPin> {
+pub struct AsynchronousScreenDevice<Bus, ResetPin> {
     resolution: Point,
-    state: Exclusive<AsyncState<Bus>>,
+    state: Exclusive<AsynchronousState<Bus>>,
     /// Kept alive for the lifetime of the panel so the pin state is preserved.
     _reset: ResetPin,
     /// Set after a transfer failed: later frames are dropped.
     failed: AtomicBool,
 }
 
-impl<Bus: super::AsyncDisplayBus, ResetPin> AsyncScreenDevice<Bus, ResetPin> {
+impl<Bus: super::AsynchronousDisplayBus, ResetPin> AsynchronousScreenDevice<Bus, ResetPin> {
     /// Wraps an already-initialised panel bus and its reset pin.
     pub fn new(bus: Bus, reset: ResetPin, resolution: Point) -> Self {
         Self {
             resolution,
-            state: Exclusive::new(AsyncState {
+            state: Exclusive::new(AsynchronousState {
                 bus,
                 area: Area::default(),
             }),
@@ -331,9 +331,9 @@ impl<Bus: super::AsyncDisplayBus, ResetPin> AsyncScreenDevice<Bus, ResetPin> {
     }
 }
 
-impl<Bus, ResetPin> DirectBaseOperations for AsyncScreenDevice<Bus, ResetPin>
+impl<Bus, ResetPin> DirectBaseOperations for AsynchronousScreenDevice<Bus, ResetPin>
 where
-    Bus: super::AsyncDisplayBus + Send,
+    Bus: super::AsynchronousDisplayBus + Send,
     ResetPin: Send + Sync,
 {
     fn read(&self, _: &mut Context<'_>, _: &mut [u8], _: Size) -> Poll<Result<usize>> {
@@ -408,16 +408,16 @@ where
     }
 }
 
-impl<Bus, ResetPin> MountOperations for AsyncScreenDevice<Bus, ResetPin>
+impl<Bus, ResetPin> MountOperations for AsynchronousScreenDevice<Bus, ResetPin>
 where
-    Bus: super::AsyncDisplayBus + Send,
+    Bus: super::AsynchronousDisplayBus + Send,
     ResetPin: Send + Sync,
 {
 }
 
-impl<Bus, ResetPin> DirectCharacterDevice for AsyncScreenDevice<Bus, ResetPin>
+impl<Bus, ResetPin> DirectCharacterDevice for AsynchronousScreenDevice<Bus, ResetPin>
 where
-    Bus: super::AsyncDisplayBus + Send,
+    Bus: super::AsynchronousDisplayBus + Send,
     ResetPin: Send + Sync,
 {
 }

@@ -309,7 +309,7 @@ struct WindowFlush {
 }
 
 #[derive(Default)]
-struct MockAsyncState {
+struct MockAsynchronousState {
     commands: Vec<(u8, Vec<u8>)>,
     sync_pixels: Vec<Vec<u8>>,
     window_flushes: Vec<WindowFlush>,
@@ -319,12 +319,12 @@ struct MockAsyncState {
 }
 
 #[derive(Clone, Default)]
-struct MockAsyncBus(Rc<RefCell<MockAsyncState>>);
+struct MockAsynchronousBus(Rc<RefCell<MockAsynchronousState>>);
 
 // SAFETY: tests drive the mock bus on one thread.
-unsafe impl Send for MockAsyncBus {}
+unsafe impl Send for MockAsynchronousBus {}
 
-impl super::AsyncDisplayBus for MockAsyncBus {
+impl super::AsynchronousDisplayBus for MockAsynchronousBus {
     type Error = ();
 
     fn send_command(&mut self, command: u8, arguments: &[u8]) -> Result<(), Self::Error> {
@@ -384,7 +384,7 @@ impl super::AsyncDisplayBus for MockAsyncBus {
 
 #[test]
 fn serial_interface_initialises_st7796_and_releases_bus() {
-    let bus = MockAsyncBus::default();
+    let bus = MockAsynchronousBus::default();
     let display = Builder::new(ST7796, super::SerialInterface::new(bus.clone()))
         .display_size(320, 480)
         .orientation(Orientation {
@@ -406,9 +406,9 @@ fn serial_interface_initialises_st7796_and_releases_bus() {
 }
 
 #[test]
-fn async_screen_device_overlaps_and_waits_cleanly() {
-    let bus = MockAsyncBus::default();
-    let screen = super::AsyncScreenDevice::new(bus.clone(), (), Point::new(480, 320));
+fn asynchronous_screen_device_overlaps_and_waits_cleanly() {
+    let bus = MockAsynchronousBus::default();
+    let screen = super::AsynchronousScreenDevice::new(bus.clone(), (), Point::new(480, 320));
     let buffer_one = vec![0xAA; 480 * 20 * 2];
     let buffer_two = vec![0x55; 480 * 20 * 2];
 
@@ -453,9 +453,9 @@ fn async_screen_device_overlaps_and_waits_cleanly() {
 }
 
 #[test]
-fn async_screen_device_synchronous_write_waits_before_returning() {
-    let bus = MockAsyncBus::default();
-    let screen = super::AsyncScreenDevice::new(bus.clone(), (), Point::new(480, 320));
+fn asynchronous_screen_device_synchronous_write_waits_before_returning() {
+    let bus = MockAsynchronousBus::default();
+    let screen = super::AsynchronousScreenDevice::new(bus.clone(), (), Point::new(480, 320));
     let mut area = Area::new(Point::new(0, 0), Point::new(9, 9));
     screen
         .control_sync(
@@ -471,10 +471,10 @@ fn async_screen_device_synchronous_write_waits_before_returning() {
 }
 
 #[test]
-fn async_screen_device_failure_marks_failed_and_clears_pending() {
-    let bus = MockAsyncBus::default();
+fn asynchronous_screen_device_failure_marks_failed_and_clears_pending() {
+    let bus = MockAsynchronousBus::default();
     bus.0.borrow_mut().fail_window = true;
-    let screen = super::AsyncScreenDevice::new(bus, (), Point::new(480, 320));
+    let screen = super::AsynchronousScreenDevice::new(bus, (), Point::new(480, 320));
     let pixels = vec![0; 10 * 10 * 2];
     let pending =
         unsafe { screen.start_flush(Area::new(Point::new(0, 0), Point::new(9, 9)), &pixels) };

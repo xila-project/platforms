@@ -84,7 +84,7 @@ pub(super) fn start(pins: Pins) -> Result<(Display, (u8, u8)), String> {
     let bus = SpiDisplayBus::new(spi, select, command_data, descriptors)
         .map_err(|error| format!("cannot configure HSPI display bus: {error:?}"))?;
 
-    let result = panel::start_async(
+    let result = panel::start_asynchronous(
         bus,
         reset,
         pins.i2c,

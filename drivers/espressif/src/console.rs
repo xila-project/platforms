@@ -17,7 +17,6 @@ use core::{
     cell::{Cell, RefCell},
     fmt,
     future::poll_fn,
-    sync::atomic::{AtomicU8, Ordering},
     task::{Context, Poll},
 };
 
@@ -242,27 +241,14 @@ pub struct Logger;
 pub static LOGGER: Logger = Logger;
 
 #[cfg(feature = "debug-log")]
-const DEFAULT_MAXIMUM_LEVEL: u8 = log::LevelFilter::Debug as u8;
+const MAXIMUM_LEVEL: log::LevelFilter = log::LevelFilter::Debug;
 #[cfg(not(feature = "debug-log"))]
-const DEFAULT_MAXIMUM_LEVEL: u8 = log::LevelFilter::Information as u8;
+const MAXIMUM_LEVEL: log::LevelFilter = log::LevelFilter::Information;
 
-static MAXIMUM_LEVEL: AtomicU8 = AtomicU8::new(DEFAULT_MAXIMUM_LEVEL);
-
-/// Returns the most verbose log level accepted by [`LOGGER`].
-pub fn maximum_level() -> log::LevelFilter {
-    match MAXIMUM_LEVEL.load(Ordering::Relaxed) {
-        0 => log::LevelFilter::Off,
-        1 => log::LevelFilter::Error,
-        2 => log::LevelFilter::Warning,
-        3 => log::LevelFilter::Information,
-        4 => log::LevelFilter::Debug,
-        _ => log::LevelFilter::Trace,
-    }
-}
-
-/// Sets the most verbose log level accepted by [`LOGGER`].
-pub fn set_maximum_level(level: log::LevelFilter) {
-    MAXIMUM_LEVEL.store(level as u8, Ordering::Relaxed);
+/// Returns the most verbose log level accepted by [`LOGGER`]: debug with the
+/// `debug-log` feature, information otherwise.
+pub const fn maximum_level() -> log::LevelFilter {
+    MAXIMUM_LEVEL
 }
 
 fn monotonic_now() -> core::time::Duration {

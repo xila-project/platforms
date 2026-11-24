@@ -24,7 +24,7 @@ use xila::{
     log, task, time,
 };
 
-use crate::{AsyncFlush, Display};
+use crate::{AsynchronousFlush, Display};
 
 /// A cell that grants exclusive access to one caller at a time without masking
 /// interrupts, so long bus transactions (such as I²C touch reads) do not stall
@@ -55,20 +55,34 @@ impl<T> Exclusive<T> {
         self.busy.store(false, Ordering::Release);
         Some(result)
     }
+
+    /// Like [`try_with`](Self::try_with), but waits for a concurrent holder.
+    ///
+    /// Tasks never yield while they hold the cell and interrupts never take it,
+    /// so the holder is another core running bounded, synchronous code: the
+    /// wait is short and cannot deadlock.
+    fn with<R>(&self, mut function: impl FnMut(&mut T) -> R) -> R {
+        loop {
+            if let Some(result) = self.try_with(&mut function) {
+                return result;
+            }
+            core::hint::spin_loop();
+        }
+    }
 }
 
 /// Active asynchronous flush driver for the board's single display, initialized
 /// once before installing the LVGL flush callbacks.
-struct AsyncFlushSlot {
+struct AsynchronousFlushSlot {
     initialized: AtomicBool,
-    driver: UnsafeCell<Option<&'static dyn AsyncFlush>>,
+    driver: UnsafeCell<Option<&'static dyn AsynchronousFlush>>,
 }
 
 // SAFETY: written once during `graphics::start` before setting `initialized`
 // with `Release` ordering; read-only thereafter with `Acquire`.
-unsafe impl Sync for AsyncFlushSlot {}
+unsafe impl Sync for AsynchronousFlushSlot {}
 
-impl AsyncFlushSlot {
+impl AsynchronousFlushSlot {
     const fn new() -> Self {
         Self {
             initialized: AtomicBool::new(false),
@@ -76,7 +90,7 @@ impl AsyncFlushSlot {
         }
     }
 
-    fn install(&self, driver: &'static dyn AsyncFlush) {
+    fn install(&self, driver: &'static dyn AsynchronousFlush) {
         assert!(
             !self.initialized.load(Ordering::Acquire),
             "asynchronous display flush driver was already installed"
@@ -88,7 +102,7 @@ impl AsyncFlushSlot {
         self.initialized.store(true, Ordering::Release);
     }
 
-    fn get(&self) -> Option<&'static dyn AsyncFlush> {
+    fn get(&self) -> Option<&'static dyn AsynchronousFlush> {
         if !self.initialized.load(Ordering::Acquire) {
             return None;
         }
@@ -97,17 +111,17 @@ impl AsyncFlushSlot {
     }
 }
 
-static ASYNC_FLUSH: AsyncFlushSlot = AsyncFlushSlot::new();
+static ASYNCHRONOUS_FLUSH: AsynchronousFlushSlot = AsynchronousFlushSlot::new();
 static DISPLAY_PERFORMANCE: Exclusive<DisplayPerformance> = Exclusive::new(
     DisplayPerformance::new(DEFAULT_REPORT_INTERVAL_MICROSECONDS),
 );
 
-unsafe extern "C" fn async_flush_callback(
+unsafe extern "C" fn asynchronous_flush_callback(
     display: *mut lvgl::lv_disp_t,
     area: *const lvgl::lv_area_t,
     data: *mut u8,
 ) {
-    let Some(driver) = ASYNC_FLUSH.get() else {
+    let Some(driver) = ASYNCHRONOUS_FLUSH.get() else {
         // SAFETY: LVGL calls this from its refresh loop with a valid display.
         unsafe { lvgl::lv_display_flush_ready(display) };
         return;
@@ -115,7 +129,7 @@ unsafe extern "C" fn async_flush_callback(
     // SAFETY: LVGL passes a valid `lv_area_t` and a draw buffer containing at
     // least `width * height` pixels in the display's color format. Because the
     // graphics manager is leaked for `'static`, the draw buffers live for the
-    // rest of the firmware's lifetime and LVGL calls `async_flush_wait_callback`
+    // rest of the firmware's lifetime and LVGL calls `asynchronous_flush_wait_callback`
     // before reusing this buffer.
     let pending = unsafe {
         let lv_area = *area;
@@ -136,8 +150,8 @@ unsafe extern "C" fn async_flush_callback(
     }
 }
 
-unsafe extern "C" fn async_flush_wait_callback(_display: *mut lvgl::lv_disp_t) {
-    if let Some(driver) = ASYNC_FLUSH.get() {
+unsafe extern "C" fn asynchronous_flush_wait_callback(_display: *mut lvgl::lv_disp_t) {
+    if let Some(driver) = ASYNCHRONOUS_FLUSH.get() {
         driver.wait_for_flush();
     }
 }
@@ -153,9 +167,6 @@ unsafe extern "C" fn round_area_even_width(event: *mut lvgl::lv_event_t) {
 }
 
 unsafe extern "C" fn record_display_performance(event: *mut lvgl::lv_event_t) {
-    if !console::maximum_level().enables(log::Level::Debug) {
-        return;
-    }
     let now = Instant::now().duration_since_epoch().as_micros();
     // SAFETY: LVGL passes a valid event handle to display event callbacks.
     let code = unsafe { lvgl::lv_event_get_code(event) };
@@ -208,23 +219,23 @@ impl<T: TouchSensor + Send> DirectBaseOperations for TouchInputDevice<T> {
             let data: &mut InputData = buffer
                 .try_into()
                 .map_err(|_| IoErrorKind::InvalidArgument)?;
-            self.state
-                .try_with(|(sensor, last)| {
-                    // A failed read counts as a release at the last point.
-                    let point = sensor.read().ok().flatten();
-                    if let Some((x, y)) = point {
-                        *last = Point::new(x, y);
-                    }
-                    data.set(
-                        *last,
-                        if point.is_some() {
-                            State::Pressed
-                        } else {
-                            State::Released
-                        },
-                    );
-                })
-                .ok_or(IoErrorKind::ResourceBusy)?;
+            // Core's input callback panics on a read error, so wait for a
+            // concurrent reader rather than report the device busy.
+            self.state.with(|(sensor, last)| {
+                // A failed read counts as a release at the last point.
+                let point = sensor.read().ok().flatten();
+                if let Some((x, y)) = point {
+                    *last = Point::new(x, y);
+                }
+                data.set(
+                    *last,
+                    if point.is_some() {
+                        State::Pressed
+                    } else {
+                        State::Released
+                    },
+                );
+            });
             Ok(size_of::<InputData>())
         })
     }
@@ -282,10 +293,13 @@ pub(crate) async fn start(
                     lvgl::lv_color_format_t_LV_COLOR_FORMAT_RGB565_SWAPPED,
                 );
             }
-            if let Some(driver) = display.async_flush {
-                ASYNC_FLUSH.install(driver);
-                lvgl::lv_display_set_flush_cb(lvgl_display, Some(async_flush_callback));
-                lvgl::lv_display_set_flush_wait_cb(lvgl_display, Some(async_flush_wait_callback));
+            if let Some(driver) = display.asynchronous_flush {
+                ASYNCHRONOUS_FLUSH.install(driver);
+                lvgl::lv_display_set_flush_cb(lvgl_display, Some(asynchronous_flush_callback));
+                lvgl::lv_display_set_flush_wait_cb(
+                    lvgl_display,
+                    Some(asynchronous_flush_wait_callback),
+                );
             }
             if display.align_area_width_even && resolution.get_x() % 2 == 0 {
                 lvgl::lv_display_add_event_cb(
@@ -313,20 +327,24 @@ pub(crate) async fn start(
                     input_device = lvgl::lv_indev_get_next(input_device);
                 }
             }
-            for event_code in [
-                lvgl::lv_event_code_t_LV_EVENT_RENDER_START,
-                lvgl::lv_event_code_t_LV_EVENT_FLUSH_START,
-                lvgl::lv_event_code_t_LV_EVENT_FLUSH_FINISH,
-                lvgl::lv_event_code_t_LV_EVENT_FLUSH_WAIT_START,
-                lvgl::lv_event_code_t_LV_EVENT_FLUSH_WAIT_FINISH,
-                lvgl::lv_event_code_t_LV_EVENT_RENDER_READY,
-            ] {
-                lvgl::lv_display_add_event_cb(
-                    lvgl_display,
-                    Some(record_display_performance),
-                    event_code,
-                    null_mut(),
-                );
+            // Display timings are only reported at the debug level: without it,
+            // do not add callbacks to every display event.
+            if console::maximum_level().enables(log::Level::Debug) {
+                for event_code in [
+                    lvgl::lv_event_code_t_LV_EVENT_RENDER_START,
+                    lvgl::lv_event_code_t_LV_EVENT_FLUSH_START,
+                    lvgl::lv_event_code_t_LV_EVENT_FLUSH_FINISH,
+                    lvgl::lv_event_code_t_LV_EVENT_FLUSH_WAIT_START,
+                    lvgl::lv_event_code_t_LV_EVENT_FLUSH_WAIT_FINISH,
+                    lvgl::lv_event_code_t_LV_EVENT_RENDER_READY,
+                ] {
+                    lvgl::lv_display_add_event_cb(
+                        lvgl_display,
+                        Some(record_display_performance),
+                        event_code,
+                        null_mut(),
+                    );
+                }
             }
         }
     }

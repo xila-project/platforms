@@ -1,10 +1,12 @@
 //! Shared ST7796 panel initialization and FT6336U touch setup.
 
-use crate::{AsyncFlush, Display, graphics::TouchInputDevice};
+use crate::{AsynchronousFlush, Display, graphics::TouchInputDevice};
 use alloc::{boxed::Box, format, string::String};
 use core::fmt::Debug;
 use drivers_shared::devices::{
-    display::{AsyncDisplayBus, AsyncScreenDevice, MipidsiScreenDevice, SerialInterface},
+    display::{
+        AsynchronousDisplayBus, AsynchronousScreenDevice, MipidsiScreenDevice, SerialInterface,
+    },
     touch::{FT6336_ADDRESS, Ft6336, TouchTransform},
 };
 use esp_hal::{
@@ -39,19 +41,19 @@ type Touch = TouchInputDevice<Ft6336<I2c<'static, Blocking>>>;
 #[repr(C, align(4))]
 struct AlignedBlackRow([u8; WIDTH as usize * 2]);
 
-impl<Bus, ResetPin> AsyncFlush for AsyncScreenDevice<Bus, ResetPin>
+impl<Bus, ResetPin> AsynchronousFlush for AsynchronousScreenDevice<Bus, ResetPin>
 where
-    Bus: AsyncDisplayBus + Send,
+    Bus: AsynchronousDisplayBus + Send,
     ResetPin: Send + Sync,
 {
     unsafe fn start_flush(&self, area: Area, data: &[u8]) -> bool {
-        // SAFETY: `AsyncFlush::start_flush` carries the same lifetime contract
-        // as `AsyncScreenDevice::start_flush`.
-        unsafe { AsyncScreenDevice::start_flush(self, area, data) }
+        // SAFETY: `AsynchronousFlush::start_flush` carries the same lifetime contract
+        // as `AsynchronousScreenDevice::start_flush`.
+        unsafe { AsynchronousScreenDevice::start_flush(self, area, data) }
     }
 
     fn wait_for_flush(&self) {
-        AsyncScreenDevice::wait_for_flush(self);
+        AsynchronousScreenDevice::wait_for_flush(self);
     }
 }
 
@@ -151,7 +153,7 @@ where
             double_buffered: false,
             byte_swapped_rgb565: true,
             internal_draw_buffers: true,
-            async_flush: None,
+            asynchronous_flush: None,
             refresh_period_milliseconds: None,
             align_area_width_even: false,
         },
@@ -162,7 +164,7 @@ where
 /// Starts the panel with a double-buffered asynchronous DMA bus and probes the
 /// polled touch controller for a board with the WT32-SC01 landscape wiring.
 #[expect(clippy::too_many_arguments)]
-pub fn start_async<Bus>(
+pub fn start_asynchronous<Bus>(
     bus: Bus,
     reset: Output<'static>,
     i2c: I2C0<'static>,
@@ -173,16 +175,19 @@ pub fn start_async<Bus>(
     refresh_period_milliseconds: u32,
 ) -> Result<(Display, (u8, u8)), String>
 where
-    Bus: AsyncDisplayBus + Send + 'static,
+    Bus: AsynchronousDisplayBus + Send + 'static,
 {
     let display = initialize_panel(SerialInterface::new(bus), reset, inversion)?;
     let (interface, _model, reset) = display.release();
     let bus = interface.release();
     let (touch, identifiers) = initialize_touch(i2c, touch_data, touch_clock)?;
 
-    let screen: &'static AsyncScreenDevice<Bus, Option<Output<'static>>> = Box::leak(Box::new(
-        AsyncScreenDevice::new(bus, reset, Point::new(WIDTH as i16, HEIGHT as i16)),
-    ));
+    let screen: &'static AsynchronousScreenDevice<Bus, Option<Output<'static>>> =
+        Box::leak(Box::new(AsynchronousScreenDevice::new(
+            bus,
+            reset,
+            Point::new(WIDTH as i16, HEIGHT as i16),
+        )));
     Ok((
         Display {
             screen,
@@ -191,7 +196,7 @@ where
             double_buffered: true,
             byte_swapped_rgb565: true,
             internal_draw_buffers: true,
-            async_flush: Some(screen),
+            asynchronous_flush: Some(screen),
             refresh_period_milliseconds: Some(refresh_period_milliseconds),
             align_area_width_even: true,
         },

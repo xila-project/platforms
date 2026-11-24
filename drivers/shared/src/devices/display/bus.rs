@@ -94,7 +94,7 @@ impl<Bus: ParallelBus> Interface for ParallelInterface<Bus> {
 
 /// A 4-wire serial display bus (such as SPI with DMA) that can overlap an
 /// asynchronous pixel transfer with CPU rendering into a second draw buffer.
-pub trait AsyncDisplayBus {
+pub trait AsynchronousDisplayBus {
     type Error: core::fmt::Debug;
 
     /// Sends a command byte and optional parameters synchronously, waiting for
@@ -131,14 +131,14 @@ pub trait AsyncDisplayBus {
     fn wait_for_transfer(&mut self) -> Result<(), Self::Error>;
 }
 
-/// A `mipidsi` 4-wire serial interface over an [`AsyncDisplayBus`], used for
+/// A `mipidsi` 4-wire serial interface over an [`AsynchronousDisplayBus`], used for
 /// synchronous panel initialisation and clearing before handing the bus to
-/// [`super::AsyncScreenDevice`].
+/// [`super::AsynchronousScreenDevice`].
 pub struct SerialInterface<Bus> {
     bus: Bus,
 }
 
-impl<Bus: AsyncDisplayBus> SerialInterface<Bus> {
+impl<Bus: AsynchronousDisplayBus> SerialInterface<Bus> {
     pub const fn new(bus: Bus) -> Self {
         Self { bus }
     }
@@ -149,7 +149,7 @@ impl<Bus: AsyncDisplayBus> SerialInterface<Bus> {
     }
 }
 
-impl<Bus: AsyncDisplayBus> Interface for SerialInterface<Bus> {
+impl<Bus: AsynchronousDisplayBus> Interface for SerialInterface<Bus> {
     type Word = u8;
     type Error = Bus::Error;
 

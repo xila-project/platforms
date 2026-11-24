@@ -42,7 +42,7 @@ pub struct Board {
 /// Asynchronous flush hooks for a screen whose bus can stream one LVGL draw
 /// buffer over DMA while LVGL renders into the second draw buffer.
 #[cfg(feature = "display")]
-pub trait AsyncFlush: Send + Sync {
+pub trait AsynchronousFlush: Send + Sync {
     /// Starts flushing `data` (already in the panel's wire pixel format) to
     /// `area`. Returns `true` when an asynchronous transfer is now in flight
     /// and must be completed by [`wait_for_flush`](Self::wait_for_flush) before
@@ -79,7 +79,7 @@ pub struct Display {
     /// Optional asynchronous flush driver. When present, LVGL starts flushes
     /// here and waits in its `flush_wait_cb` so rendering overlaps DMA.
     #[cfg(feature = "display")]
-    pub async_flush: Option<&'static dyn AsyncFlush>,
+    pub asynchronous_flush: Option<&'static dyn AsynchronousFlush>,
     /// Optional LVGL display refresh and pointer polling period in
     /// milliseconds. When `None`, LVGL keeps `LV_DEF_REFR_PERIOD` (33 ms).
     pub refresh_period_milliseconds: Option<u32>,

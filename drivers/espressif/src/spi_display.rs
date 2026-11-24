@@ -1,7 +1,7 @@
 //! Asynchronous 4-wire SPI display bus over esp-hal's HSPI/VSPI DMA driver
 //! (feature `spi-display`, ESP32).
 //!
-//! [`SpiDisplayBus`] implements [`AsyncDisplayBus`] so that:
+//! [`SpiDisplayBus`] implements [`AsynchronousDisplayBus`] so that:
 //!
 //! - Panel commands (`0x2A`, `0x2B`, `0x2C`, and initialisation sequences) go
 //!   directly through the 64-byte hardware SPI FIFO without DMA resets or
@@ -13,7 +13,7 @@
 //! - Small (`<= 64` bytes), unaligned, or non-DMA-capable slices fall back to
 //!   synchronous FIFO transfers cleanly.
 
-use drivers_shared::devices::display::AsyncDisplayBus;
+use drivers_shared::devices::display::AsynchronousDisplayBus;
 use esp_hal::{
     Blocking,
     dma::{BurstConfig, DmaDescriptor, DmaTxBuffer, Preparation},
@@ -240,8 +240,17 @@ impl SpiDisplayBus {
     }
 
     /// Launches a single DMA transfer with chip select already low and
-    /// data/command already high.
+    /// data/command already high. Raises chip select again when the transfer
+    /// cannot start.
     fn start_dma_slice(&mut self, data: &[u8]) -> Result<(), SpiDisplayError> {
+        let result = self.try_start_dma_slice(data);
+        if result.is_err() {
+            self.select.set_high();
+        }
+        result
+    }
+
+    fn try_start_dma_slice(&mut self, data: &[u8]) -> Result<(), SpiDisplayError> {
         let descriptors = self
             .descriptors
             .take()
@@ -265,7 +274,6 @@ impl SpiDisplayBus {
             Err((error, spi, buffer)) => {
                 self.descriptors = Some(buffer.into_descriptors());
                 self.state = BusState::Idle(spi);
-                self.select.set_high();
                 Err(SpiDisplayError::Spi(error))
             }
         }
@@ -313,7 +321,7 @@ impl Drop for SpiDisplayBus {
     }
 }
 
-impl AsyncDisplayBus for SpiDisplayBus {
+impl AsynchronousDisplayBus for SpiDisplayBus {
     type Error = SpiDisplayError;
 
     fn send_command(&mut self, command: u8, arguments: &[u8]) -> Result<(), Self::Error> {
