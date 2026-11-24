@@ -17,6 +17,7 @@ board's console port explicitly.
 """
 
 import argparse
+import contextlib
 import os
 import re
 import select
@@ -25,21 +26,39 @@ import termios
 import time
 
 BAUD_RATE = termios.B115200
-ANSI_ESCAPE_SEQUENCE = re.compile(rb"\x1b\[[0-9;]*[A-Za-z]")
+# Control sequence introducer: parameter bytes (including private markers such
+# as "?"), intermediate bytes, then the final byte.
+ANSI_ESCAPE_SEQUENCE = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]")
 EMPTY_LINE = "<empty>"
 
 
-def open_port(port):
-    """Open the serial device in raw mode at the console baud rate."""
+@contextlib.contextmanager
+def open_raw_port(port):
+    """Open the serial device in raw mode at the console baud rate.
+
+    The device's original settings are restored, and the device is closed,
+    when the block exits, whether it exits normally or by an error.
+    """
     descriptor = os.open(port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
-    attributes = termios.tcgetattr(descriptor)
-    attributes[0] = 0  # input flags
-    attributes[1] = 0  # output flags
-    attributes[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
-    attributes[3] = 0  # local flags: raw mode
-    attributes[4] = attributes[5] = BAUD_RATE
-    termios.tcsetattr(descriptor, termios.TCSANOW, attributes)
-    return descriptor
+    try:
+        original = termios.tcgetattr(descriptor)
+        attributes = list(original)
+        attributes[0] = 0  # input flags
+        attributes[1] = 0  # output flags
+        # HUPCL stays set so that the last close releases RTS and DTR.
+        attributes[2] = termios.CS8 | termios.CREAD | termios.CLOCAL | termios.HUPCL
+        attributes[3] = 0  # local flags: raw mode
+        attributes[4] = attributes[5] = BAUD_RATE
+        attributes[6] = list(original[6])  # copied, so the original settings stay untouched
+        attributes[6][termios.VMIN] = 0  # reads never block; select() does the waiting
+        attributes[6][termios.VTIME] = 0
+        termios.tcsetattr(descriptor, termios.TCSANOW, attributes)
+        try:
+            yield descriptor
+        finally:
+            termios.tcsetattr(descriptor, termios.TCSANOW, original)
+    finally:
+        os.close(descriptor)
 
 
 def read_for(descriptor, seconds):
@@ -74,13 +93,11 @@ def send(descriptor, line, wait=1.5):
 
 def run_commands(port, commands, wait=2.0):
     """Open the port, send each command line and return the raw transcript."""
-    descriptor = open_port(port)
-    try:
+    transcript = b""
+    with open_raw_port(port) as descriptor:
         transcript = read_for(descriptor, 1.0)
         for command in commands:
             transcript += send(descriptor, "" if command == EMPTY_LINE else command, wait)
-    finally:
-        os.close(descriptor)
     return transcript
 
 

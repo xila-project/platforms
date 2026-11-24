@@ -15,15 +15,17 @@ hand against real hardware.
 ## Board serial helpers
 
 All three helpers talk to the board's UART console (115200 baud, 8N1, raw)
-over a USB-to-UART bridge on the host, using only `termios` — no pyserial or
-other dependency. Linux only.
+over a USB-to-UART bridge on the host, using only the standard library
+(`termios`, and `fcntl` for the modem lines) — no pyserial or other
+dependency. Each helper restores the port's settings when it exits. Linux only.
 
 ### `serial_shell.py` — run commands in the board's serial shell
 
-Logs in and runs commands read from standard input, one per line, starting
-with the login (user name, then password). The line `<empty>` sends an empty
-line, for prompts that take no input. The transcript of everything the board
-prints is written to standard output with ANSI escape sequences stripped.
+Sends the lines read from standard input to the board's shell, one per line.
+Start them with the login: the user name, then the password. The line
+`<empty>` sends an empty line, for prompts that take no input. The transcript
+of everything the board prints is written to standard output with ANSI escape
+sequences stripped.
 
 ```sh
 python3 tools/dev/serial_shell.py /dev/ttyUSB0 <<'COMMANDS'
@@ -51,9 +53,13 @@ python3 tools/dev/esp32_reset_capture.py /dev/ttyUSB0 5
 Writes `/configuration/system/wifi` through the serial shell: it logs in with
 the administrator account, switches to a root command-line shell (the file
 must be owned by root with no group or other permissions) and writes one
-value per line — the network name, the passphrase (an empty line means an
-open network) and optionally a static IPv4 address as `ADDRESS/PREFIX
-GATEWAY NAME_SERVER` (without those three lines the board uses DHCP).
+value per line — the network name (1 to 32 bytes), the passphrase (an empty
+line means an open network; otherwise 8 to 63 printable ASCII characters, or
+64 hexadecimal digits for a key) and optionally a static IPv4 address as
+`ADDRESS/PREFIX GATEWAY NAME_SERVER` (without those three lines the board
+uses DHCP). The file is written under a temporary name, restricted to mode
+600 before any secret goes into it, and renamed over the Wi-Fi file, so an
+existing profile stays in place until the new one is complete.
 
 The network name and the passphrase are read from the files given as
 arguments, never from the command line, and are never printed — everything

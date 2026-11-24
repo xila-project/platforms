@@ -15,6 +15,7 @@ device has no default: pass the board's port explicitly.
 
 import argparse
 import fcntl
+import math
 import os
 import select
 import struct
@@ -22,20 +23,7 @@ import sys
 import termios
 import time
 
-BAUD_RATE = termios.B115200
-
-
-def open_port(port):
-    """Open the serial device in raw mode at the console baud rate."""
-    descriptor = os.open(port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
-    attributes = termios.tcgetattr(descriptor)
-    attributes[0] = 0  # input flags
-    attributes[1] = 0  # output flags
-    attributes[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
-    attributes[3] = 0  # local flags: raw mode
-    attributes[4] = attributes[5] = BAUD_RATE
-    termios.tcsetattr(descriptor, termios.TCSANOW, attributes)
-    return descriptor
+from serial_shell import open_raw_port
 
 
 def set_modem_lines(descriptor, set_bits, clear_bits):
@@ -48,13 +36,15 @@ def set_modem_lines(descriptor, set_bits, clear_bits):
 
 def reset_and_capture(port, seconds):
     """Reset the chip through RTS and return everything it prints in `seconds`."""
-    descriptor = open_port(port)
-    try:
-        # DTR low keeps GPIO0 high (normal boot); RTS asserted holds EN low.
-        set_modem_lines(descriptor, termios.TIOCM_RTS, termios.TIOCM_DTR)
-        time.sleep(0.2)
-        set_modem_lines(descriptor, 0, termios.TIOCM_RTS)  # release reset
-        output = b""
+    output = b""
+    with open_raw_port(port) as descriptor:
+        try:
+            # DTR low keeps GPIO0 high (normal boot); RTS asserted holds EN low.
+            set_modem_lines(descriptor, termios.TIOCM_RTS, termios.TIOCM_DTR)
+            time.sleep(0.2)
+        finally:
+            # Release the reset on every exit path, so an interrupt never leaves the chip held in reset.
+            set_modem_lines(descriptor, 0, termios.TIOCM_RTS)
         end = time.time() + seconds
         while time.time() < end:
             ready, _, _ = select.select([descriptor], [], [], 0.2)
@@ -63,9 +53,18 @@ def reset_and_capture(port, seconds):
                     output += os.read(descriptor, 4096)
                 except BlockingIOError:
                     pass
-    finally:
-        os.close(descriptor)
     return output.decode("utf-8", "replace")
+
+
+def capture_duration(text):
+    """Parse the capture duration: a finite, positive number of seconds."""
+    try:
+        seconds = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a number of seconds: {text!r}")
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise argparse.ArgumentTypeError("the capture must last a finite, positive number of seconds")
+    return seconds
 
 
 def main():
@@ -78,7 +77,7 @@ def main():
     )
     parser.add_argument(
         "seconds",
-        type=float,
+        type=capture_duration,
         help="how long to capture the boot log after the reset, in seconds",
     )
     arguments = parser.parse_args()
