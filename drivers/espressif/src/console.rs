@@ -17,6 +17,7 @@ use core::{
     cell::{Cell, RefCell},
     fmt,
     future::poll_fn,
+    sync::atomic::{AtomicU8, Ordering},
     task::{Context, Poll},
 };
 
@@ -240,6 +241,30 @@ pub struct Logger;
 
 pub static LOGGER: Logger = Logger;
 
+#[cfg(feature = "debug-log")]
+const DEFAULT_MAXIMUM_LEVEL: u8 = log::LevelFilter::Debug as u8;
+#[cfg(not(feature = "debug-log"))]
+const DEFAULT_MAXIMUM_LEVEL: u8 = log::LevelFilter::Information as u8;
+
+static MAXIMUM_LEVEL: AtomicU8 = AtomicU8::new(DEFAULT_MAXIMUM_LEVEL);
+
+/// Returns the most verbose log level accepted by [`LOGGER`].
+pub fn maximum_level() -> log::LevelFilter {
+    match MAXIMUM_LEVEL.load(Ordering::Relaxed) {
+        0 => log::LevelFilter::Off,
+        1 => log::LevelFilter::Error,
+        2 => log::LevelFilter::Warning,
+        3 => log::LevelFilter::Information,
+        4 => log::LevelFilter::Debug,
+        _ => log::LevelFilter::Trace,
+    }
+}
+
+/// Sets the most verbose log level accepted by [`LOGGER`].
+pub fn set_maximum_level(level: log::LevelFilter) {
+    MAXIMUM_LEVEL.store(level as u8, Ordering::Relaxed);
+}
+
 fn monotonic_now() -> core::time::Duration {
     core::time::Duration::from_micros(Instant::now().duration_since_epoch().as_micros())
 }
@@ -262,7 +287,11 @@ pub fn set_interactive(interactive: bool) {
 
 fn importance(level: log::Level) -> LogImportance {
     match level {
-        log::Level::Error | log::Level::Warning => LogImportance::Problem,
+        // Debug messages only pass `enabled()` when explicitly requested
+        // (for example with the `debug-log` feature). Admit them through the
+        // interactive rate limiter so diagnostics remain visible without
+        // flooding the console.
+        log::Level::Error | log::Level::Warning | log::Level::Debug => LogImportance::Problem,
         _ => LogImportance::Information,
     }
 }
@@ -332,10 +361,7 @@ impl Logger {
 
 impl log::LoggerTrait for Logger {
     fn enabled(&self, level: log::Level) -> bool {
-        matches!(
-            level,
-            log::Level::Error | log::Level::Warning | log::Level::Information
-        )
+        maximum_level().enables(level)
     }
 
     fn write(&self, arguments: fmt::Arguments<'_>) {

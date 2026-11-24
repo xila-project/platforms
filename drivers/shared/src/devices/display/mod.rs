@@ -7,9 +7,11 @@
 //! screen device: each LVGL flush becomes one `set_pixels_raw` call.
 
 mod bus;
+mod performance;
 mod screen;
 
 pub use bus::*;
+pub use performance::*;
 pub use screen::*;
 
 #[cfg(test)]

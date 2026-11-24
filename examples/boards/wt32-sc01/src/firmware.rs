@@ -25,8 +25,12 @@ const STORAGE: StoragePartition = StoragePartition {
     length: parse_decimal(env!("XILA_STORAGE_LENGTH")) as u32,
 };
 
-// The primary DRAM linker region is 192 KiB, shared by static data and the stack.
-const INTERNAL_HEAP_SIZE: usize = 64 * 1024;
+// The primary DRAM linker region is 192 KiB, shared by static data and the
+// stack. Reserving 96 KiB here alongside the 96 KiB reclaimed DRAM2 region
+// gives 192 KiB of DMA-capable internal heap while keeping more than 75 KiB of
+// primary DRAM for the main stack (checked at link time against 40 KiB) and
+// headroom for future Wi-Fi static allocations.
+const INTERNAL_HEAP_SIZE: usize = 96 * 1024;
 static INTERNAL_HEAP: StaticCell<[MaybeUninit<u8>; INTERNAL_HEAP_SIZE]> = StaticCell::new();
 
 // esp-hal's ESP32 DRAM2 region excludes the ROM data and stacks. The ESP-IDF

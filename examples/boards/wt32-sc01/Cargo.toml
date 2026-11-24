@@ -9,6 +9,7 @@ description = "Wireless-Tag's WT32-SC01 (ESP32, 4 MB flash, 8 MB PSRAM)."
 [target.'cfg(all(target_os = "none", target_arch = "xtensa"))'.dependencies]
 drivers_espressif = { package = "xila-drivers-espressif", path = "../../../drivers/espressif", default-features = false, features = [
   "esp32",
+  "spi-display",
 ] }
 critical-section = { workspace = true }
 embedded-hal-bus = "0.3"
@@ -25,6 +26,11 @@ esp-println = { version = "0.18", default-features = false, features = [
 mipidsi = { git = "https://github.com/almindor/mipidsi", rev = "5ed6df58d9b8a2b9037221bc03de1328340eaf47", default-features = false }
 static_cell = "2"
 xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
+
+[features]
+# Enables debug-level serial logging, including periodic display flush and
+# frame-rate summaries.
+debug-log = ["firmware/debug-log"]
 
 [[bin]]
 name = "wt32_sc01"

@@ -49,6 +49,8 @@ use xila::{
     virtual_file_system::{self, AccessTimePolicy, File, MountOptions, mount_static},
 };
 
+#[cfg(feature = "display")]
+pub use board::AsyncFlush;
 pub use board::{Board, Display, ExternalMemory, MemoryReport, StoragePartition, parse_decimal};
 pub use drivers_espressif;
 
