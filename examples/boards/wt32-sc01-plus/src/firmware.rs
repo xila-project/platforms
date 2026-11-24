@@ -9,7 +9,7 @@
 //!   speed once at boot.
 //! - PSRAM: added to the heap, and checked at boot by [`firmware::psram_self_test`].
 //! - Flash: 16 MB, partitioned by `partitions.csv`.
-//! - Screen: a 480 × 320 ST7796 panel on the 8080 bus, its backlight and an
+//! - Screen: a 480 × 320 ST7796 panel on the 8080 bus, its dimmable backlight and an
 //!   FT6336U touch panel, in [`screen`]. The graphical shell runs on it, and
 //!   the command-line shell on the console, as two sessions.
 //! - WebAssembly runtime: mounted at `/applications/executables/wasm` with lazy
@@ -99,6 +99,7 @@ fn main() -> ! {
         command_data: peripherals.GPIO0,
         reset: peripherals.GPIO4,
         backlight: peripherals.GPIO45,
+        ledc: peripherals.LEDC,
         i2c: peripherals.I2C0,
         touch_data: peripherals.GPIO6,
         touch_clock: peripherals.GPIO5,

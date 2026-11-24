@@ -9,13 +9,13 @@ use esp_hal::{
     dma::DmaDescriptor,
     gpio::{Level, Output, OutputConfig},
     peripherals::{
-        DMA_SPI2, GPIO13, GPIO14, GPIO15, GPIO18, GPIO19, GPIO21, GPIO22, GPIO23, I2C0, SPI2,
+        DMA_SPI2, GPIO13, GPIO14, GPIO15, GPIO18, GPIO19, GPIO21, GPIO22, GPIO23, I2C0, LEDC, SPI2,
     },
     spi::master::{Config as SpiConfiguration, Spi},
     time::Rate,
 };
 use firmware::{
-    Display,
+    Display, backlight,
     panel::{self, WIDTH},
 };
 use mipidsi::options::ColorInversion;
@@ -55,14 +55,17 @@ pub(super) struct Pins {
     pub select: GPIO15<'static>,
     pub command_data: GPIO21<'static>,
     pub reset: GPIO22<'static>,
+    /// The backlight, active high, dimmed by LEDC PWM.
     pub backlight: GPIO23<'static>,
+    pub ledc: LEDC<'static>,
     pub i2c: I2C0<'static>,
     pub touch_data: GPIO18<'static>,
     pub touch_clock: GPIO19<'static>,
 }
 
 pub(super) fn start(pins: Pins) -> Result<(Display, (u8, u8)), String> {
-    let mut backlight = Output::new(pins.backlight, Level::Low, OutputConfig::default());
+    // Dark until the panel holds a black frame.
+    let backlight = backlight::start(pins.ledc, pins.backlight)?;
     let spi = Spi::new(
         pins.spi,
         SpiConfiguration::default()
@@ -97,6 +100,7 @@ pub(super) fn start(pins: Pins) -> Result<(Display, (u8, u8)), String> {
     // The 40 MHz SPI bus needs at least 61 ms to send a whole frame, so an
     // animation over most of the screen shows three or four of its steps.
     display.light_rendering = true;
-    backlight.set_high();
+    // Full brightness until the saved appearance sets the user's level.
+    backlight::attach(&mut display, backlight)?;
     Ok((display, identifiers))
 }

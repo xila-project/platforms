@@ -108,7 +108,8 @@ The 3.5-inch 480 × 320 ST7796 panel runs on the 8-bit 8080 bus of the chip's
 LCD_CAM peripheral, with DMA, through `mipidsi`: each LVGL flush is one
 `set_pixels_raw` call, one address window and one DMA transfer of LVGL's draw
 buffer (40 rows, in internal SRAM, rendered in the panel's byte order). The
-FT6336U touch panel is polled over I²C, and the backlight is on GPIO45. Two
+FT6336U touch panel is polled over I²C, and the backlight is on GPIO45,
+dimmed by a 25 kHz LEDC PWM signal (see "Backlight brightness" below). Two
 sessions run side by side, each with its own login: the graphical shell on the
 screen and the command-line shell on the USB console. The firmware mounts the
 WebAssembly runtime at `/applications/executables/wasm` with lazy function
@@ -280,22 +281,49 @@ The 192 KiB runtime heap comprises 96 KiB in primary DRAM and 96 KiB in
 DRAM2 reclaimed after ESP-IDF bootloader handoff. The rest of primary DRAM
 holds static data and the main stack (about 77 KiB; the link fails below
 40 KiB, see [main_stack.x](wt32-sc01/main_stack.x)). The ESP32 can
-directly map 4 MiB of the module's 8 MiB of PSRAM. The firmware registers that
-mapping in a separate data heap and runs a 1 MiB allocation and readback
-test. This keeps pointers that may be used by hardware atomics or flash ROM
-routines in internal SRAM. The ESP32 target applies the compiler workaround
-for the PSRAM cache erratum. LittleFS C code uses the internal runtime heap. See the [Wireless-Tag datasheet][classic-board],
-[Espressif module datasheet][wrover] and [ESP32 external RAM guide][external-ram].
+directly map 4 MiB of the module's 8 MiB of PSRAM. The firmware adds that
+mapping to the heap as region 2: allocations of 4 KiB or more go there first,
+and smaller ones only when the internal regions are full. See the
+[Wireless-Tag datasheet][classic-board], [Espressif module datasheet][wrover]
+and [ESP32 external RAM guide][external-ram].
+
+PSRAM on this chip needs the measures that ESP-IDF takes:
+
+- **Cache erratum (revision v1).** A write to PSRAM followed closely by a read
+  of the same address can be lost ([erratum CPU-3.9][esp32-errata]). All code
+  is built with the compiler workaround: Rust through the target's Rust flags
+  in `.cargo/config.toml`, and C (LittleFS, LVGL) through
+  `-mfix-esp32-psram-cache-issue` in `tools/dev/build_espressif_image.sh`.
+  The ROM's `memcpy`, `memmove` and `memset` are not built with it, so calls
+  that write to PSRAM run loops of `xila-drivers-espressif`
+  (`src/rom_memory.rs`) in their place.
+- **Atomic operations.** Espressif does not support the compare-and-set
+  instruction (S32C1I) on PSRAM. One uncontended instruction gives the right
+  result on this board, but nothing assures that it is atomic there, and a
+  race would raise no exception. The target disables the `s32c1i` feature and
+  the C code is built with `-mdisable-hardware-atomics`, so every atomic
+  operation calls a function of `xila-drivers-espressif` (`src/atomics.rs`)
+  that uses the instruction for internal memory and a critical section for
+  PSRAM. The build fails if the instruction appears anywhere else in the
+  firmware.
+- **DMA and flash.** SPI DMA cannot read PSRAM: the draw buffers are allocated
+  in internal SRAM, and the display bus sends any other buffer through the
+  FIFO. The flash routines get a transfer buffer on the stack, and the stacks
+  are internal.
+
+At boot the PSRAM self-test checks a 1 MiB allocation and readback, the atomic
+operations on values in PSRAM, fills and copies, and a reference-counted
+allocation in PSRAM.
 
 The graphical shell shows the login screen on the 480 × 320 ST7796S and
 accepts input from the FT6336U touch panel. The boot log reports the draw buffer
-size, the FT6336U identifiers and the used and free bytes in heap regions 0 and 2
-after graphics starts.
+size, the FT6336U identifiers and the used and free bytes in heap regions 0, 1
+and 2 after graphics starts.
 
 | Signal | ESP32 GPIO |
 |---|---|
 | HSPI MOSI, clock, chip select | 13, 14, 15 |
-| LCD command/data, reset, backlight (active high) | 21, 22, 23 |
+| LCD command/data, reset, backlight (active high, LEDC PWM) | 21, 22, 23 |
 | FT6336U I²C data and clock | 18, 19 |
 | FT6336U interrupt (polled instead) | 39 |
 
@@ -388,9 +416,11 @@ mise run run:espflash -- write-bin --chip esp32 --port /dev/ttyUSB0 \
 ```
 
 Look for `Xila: board WT32-SC01`, `Xila: PSRAM 4194304 bytes (registered: true)`,
-`Xila: PSRAM self-test passed`, `Xila: LittleFS mounted`,
-`Random generator works`, the two internal heap regions, and
-`Xila: main stack high-water … bytes (estimate)` before the `User name:`
+`Xila: PSRAM self-test passed`, `Xila: PSRAM atomics self-test passed`,
+`Xila: PSRAM copy self-test passed`,
+`Xila: PSRAM shared allocation self-test passed`, `Xila: LittleFS mounted`,
+`Random generator works`, the two internal heap regions and the PSRAM
+region, and `Xila: main stack high-water … bytes (estimate)` before the `User name:`
 prompt. The estimate covers execution from early application startup through
 the shell's first console output. On first boot, the seeded or freshly formatted
 file system creates the default `administrator` account with an empty password.
@@ -399,4 +429,18 @@ The display and touch bring-up is tracked in [issue #177][classic-issue].
 [classic-board]: https://files.seeedstudio.com/products/102991455/WT32-SC01-datasheet.pdf
 [wrover]: https://documentation.espressif.com/esp32-wrover-b_datasheet_en.html
 [external-ram]: https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/external-ram.html
+[esp32-errata]: https://docs.espressif.com/projects/esp-chip-errata/en/latest/esp32/03-errata-description/index.html
 [classic-issue]: https://github.com/xila-project/platforms/issues/177
+
+## Backlight brightness
+
+Both WT32-SC01 boards drive their backlight pin with the LED controller
+(LEDC, low-speed timer 0 and channel 0) at 25 kHz with a 10-bit duty: above
+the audible range and far above any visible flicker.
+`firmware::backlight::attach` wraps the panel's screen device in the shared
+`BacklightScreenDevice`, which implements the brightness commands of Core's
+screen contract. The backlight stays off until the panel holds a black frame,
+then starts at full brightness; restoring the saved appearance at boot and at
+login then sets the user's level from Settings, which never goes below about
+10 %. Other boards, and the native and browser examples, report brightness as
+unsupported, and Settings hides its slider there.

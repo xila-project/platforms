@@ -278,7 +278,9 @@ impl DirectBaseOperations for CanvasScreenDevice {
                     *was_resized = inner.was_resized;
                     inner.was_resized = false;
                 }
-                _ => return Err(file_system::IoErrorKind::InvalidArgument),
+                // Optional commands, such as brightness control, are
+                // reported as unsupported so that Settings can hide them.
+                _ => return Err(file_system::IoErrorKind::Unsupported),
             }
 
             Ok(())

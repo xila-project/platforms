@@ -54,7 +54,12 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", compone
 ], targets = [
   "wasm32-wasip1",
 ] }
-run = "cargo build --locked --manifest-path .application-src/Cargo.toml --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth -p xila-digits"
+tools."aqua:WebAssembly/binaryen" = "{{ vars.binaryen_version }}"
+run = '''
+set -eu
+cargo build --locked --manifest-path .application-src/Cargo.toml --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth -p xila-digits
+bash tools/optimize_wasm.sh "${CARGO_TARGET_DIR:-.application-src/target}/wasm32-wasip1/release-wasm"
+'''
 
 [tasks."ci:bundle-applications"]
 description = "Package the built Applications guests as unsigned bundles with their own manifests and shortcuts"
@@ -304,7 +309,12 @@ description = "Build Applications guests with the selected integration checkouts
 tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", targets = [
   "wasm32-wasip1",
 ] }
-run = 'cargo build --manifest-path ../applications/Cargo.toml --config "$RUNNER_TEMP/xila-local.toml" --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth -p xila-digits'
+tools."aqua:WebAssembly/binaryen" = "{{ vars.binaryen_version }}"
+run = '''
+set -eu
+cargo build --manifest-path ../applications/Cargo.toml --config "$RUNNER_TEMP/xila-local.toml" --target wasm32-wasip1 --profile release-wasm -p xila-calculator -p xila-clock -p xila-weather -p xila-pixel-painter -p xila-text-editor -p xila-synth -p xila-digits
+bash tools/optimize_wasm.sh "${CARGO_TARGET_DIR:-../applications/target}/wasm32-wasip1/release-wasm"
+'''
 
 [tasks."ci:packages-espressif"]
 description = "Install the shared libraries required by Espressif QEMU and espflash"
