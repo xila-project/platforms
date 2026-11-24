@@ -1,6 +1,6 @@
 # Prepare a pinned application artifact
 
-`xila-prepare-applications ARCHIVE SHA256 NAME VERSION OUTPUT_DIR [PUBLIC_KEY]` verifies an archive against the supplied lowercase SHA-256, checks its package identity and version, requires `wasm32-wasip1`, checks that its declared `xila_version` is compatible with the Core version compiled into the tool, and validates the Wasm entrypoint with memory64 disabled. Every archive entry is checked with `xila-package-reader`; with `PUBLIC_KEY` (a raw 32-byte Ed25519 key) the publisher signature is required too. It then extracts the **complete bundle** (`.xila/manifest.json`, `.xila/manifest.sig` when signed, and every declared file) into `OUTPUT_DIR`, which must not exist. A valid module and compatible Xila version do not prove that every import is supported by a particular runtime.
+`xila-prepare-applications ARCHIVE SHA256 NAME VERSION OUTPUT_DIR [PUBLIC_KEY]` verifies an archive against the supplied lowercase SHA-256, checks its package identity and version, requires `wasm32-wasip1`, checks that its declared `xila_version` is compatible with the Core version compiled into the tool, and validates the Wasm entrypoint with exactly the WebAssembly proposals the Xila host engine accepts (custom page sizes enabled, memory64 and SIMD disabled). Every archive entry is checked with `xila-package-reader`; with `PUBLIC_KEY` (a raw 32-byte Ed25519 key) the publisher signature is required too. It then extracts the **complete bundle** (`.xila/manifest.json`, `.xila/manifest.sig` when signed, and every declared file) into `OUTPUT_DIR`, which must not exist. A valid module and compatible Xila version do not prove that every import is supported by a particular runtime.
 
 To prepare an entire seed profile, `tools/prepare_seed.py` reads a JSON lockfile (default [`tools/fs_image/profiles/bundles.lock.json`](../fs_image/profiles/bundles.lock.json)) with an entry per application, for example:
 
@@ -10,8 +10,8 @@ To prepare an entire seed profile, `tools/prepare_seed.py` reads a JSON lockfile
   "applications": {
     "clock": {
       "name": "xila.clock",
-      "version": "0.1.0",
-      "url": "https://github.com/xila-project/applications/releases/download/xila.clock-v0.1.0/xila.clock-0.1.0-wasm32-wasip1.xpk",
+      "version": "0.2.1",
+      "url": "https://github.com/xila-project/applications/releases/download/xila.clock-v0.2.1/xila.clock-0.2.1-wasm32-wasip1.xpk",
       "sha256": "<64 lowercase hex characters>"
     }
   }

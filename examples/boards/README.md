@@ -272,19 +272,46 @@ through the CP210x bridge and starts the graphical shell when the display
 initializes.
 The 192 KiB runtime heap comprises 96 KiB in primary DRAM and 96 KiB in
 DRAM2 reclaimed after ESP-IDF bootloader handoff. The rest of primary DRAM
-holds static data and the main stack, with a 40 KiB minimum enforced by
-[main_stack.x](wt32-sc01/main_stack.x). The ESP32 can
-directly map 4 MiB of the module's 8 MiB of PSRAM. The firmware registers that
-mapping in a separate data heap and runs a 1 MiB allocation and readback
-test. This keeps pointers that may be used by hardware atomics or flash ROM
-routines in internal SRAM. The ESP32 target applies the compiler workaround
-for the PSRAM cache erratum. LittleFS C code uses the internal runtime heap. See the [Wireless-Tag datasheet][classic-board],
-[Espressif module datasheet][wrover] and [ESP32 external RAM guide][external-ram].
+holds static data and the main stack (the link fails below 40 KiB, see
+[main_stack.x](wt32-sc01/main_stack.x)). The ESP32 can
+directly map 4 MiB of the module's 8 MiB of PSRAM. The firmware adds that
+mapping to the heap as region 2: allocations of 4 KiB or more go there first,
+and smaller ones only when the internal regions are full. See the
+[Wireless-Tag datasheet][classic-board], [Espressif module datasheet][wrover]
+and [ESP32 external RAM guide][external-ram].
+
+PSRAM on this chip needs the measures that ESP-IDF takes:
+
+- **Cache erratum (revision v1).** A write to PSRAM followed closely by a read
+  of the same address can be lost ([erratum CPU-3.9][esp32-errata]). All code
+  is built with the compiler workaround: Rust through the target's Rust flags
+  in `.cargo/config.toml`, and C (LittleFS, LVGL) through
+  `-mfix-esp32-psram-cache-issue` in `tools/dev/build_espressif_image.sh`.
+  The ROM's `memcpy`, `memmove` and `memset` are not built with it, so calls
+  that write to PSRAM run loops of `xila-drivers-espressif`
+  (`src/rom_memory.rs`) in their place.
+- **Atomic operations.** Espressif does not support the compare-and-set
+  instruction (S32C1I) on PSRAM. One uncontended instruction gives the right
+  result on this board, but nothing assures that it is atomic there, and a
+  race would raise no exception. The target disables the `s32c1i` feature and
+  the C code is built with `-mdisable-hardware-atomics`, so every atomic
+  operation calls a function of `xila-drivers-espressif` (`src/atomics.rs`)
+  that uses the instruction for internal memory and a critical section for
+  PSRAM. The build fails if the instruction appears anywhere else in the
+  firmware.
+- **DMA and flash.** SPI DMA cannot read PSRAM: the draw buffers are allocated
+  in internal SRAM, and the display bus sends any other buffer through the
+  FIFO. The flash routines get a transfer buffer on the stack, and the stacks
+  are internal.
+
+At boot the PSRAM self-test checks a 1 MiB allocation and readback, the atomic
+operations on values in PSRAM, fills and copies, and a reference-counted
+allocation in PSRAM.
 
 The graphical shell shows the login screen on the 480 × 320 ST7796S and
 accepts input from the FT6336U touch panel. The boot log reports the draw buffer
-size, the FT6336U identifiers and the used and free bytes in heap regions 0 and 2
-after graphics starts.
+size, the FT6336U identifiers and the used and free bytes in heap regions 0, 1
+and 2 after graphics starts.
 
 | Signal | ESP32 GPIO |
 |---|---|
@@ -326,7 +353,6 @@ mise run build:wt32-sc01 -- --features debug-log
 
 ```sh
 mise run setup:espressif-rust
-npm ci
 mise run build:wt32-sc01
 ```
 
@@ -334,14 +360,14 @@ WT32-SC01 modules carry ESP32 revision v1.0 silicon, older than esp-hal's
 default minimum (v3.0), so the build lowers `ESP_HAL_CONFIG_MIN_CHIP_REVISION`
 to v1.0; the PSRAM cache workaround above covers that revision's erratum.
 
-On the 4 MiB flash, the factory application occupies 2.75 MiB at `0x10000`.
-The 1.1875 MiB LittleFS partition starts at `0x2D0000` and ends at `0x400000`.
+On the 4 MiB flash, the factory application occupies 2.25 MiB at `0x10000`.
+LittleFS uses the remaining 1.6875 MiB at `0x250000`.
 
-**Migration from the 1.5 MiB or 2.25 MiB factory layout.** Back up your
-storage data before upgrading. Flash the firmware with the new partition
-table, then reflash the storage image at `0x2D0000`. The old storage
-partition overlaps the new factory partition. Restore your saved files
-after the upgrade. The merged flash image also erases the storage partition.
+**Migration from the 1.5 MiB factory layout.** Back up your storage data before
+upgrading. Flash the firmware with the new partition table, then reflash the
+storage image at the new offset. Without a storage image, the firmware cannot
+mount the moved partition and formats it on first boot. Restore any saved files
+after the upgrade.
 
 ```sh
 espflash flash --chip esp32 --port /dev/ttyUSB0 \
@@ -350,33 +376,25 @@ espflash flash --chip esp32 --port /dev/ttyUSB0 \
   --monitor target/espressif-emulator/wt32-sc01.elf
 ```
 
-The firmware mounts the WebAssembly runtime at `/applications/executables/wasm`
-with lazy translation and mounts the CPU neural network loader at
-`/devices/nn/cpu` for Digits. Guest startup and model loading require the
-board's PSRAM allocator support for large allocations. Wi-Fi is not enabled:
-the radio and HTTPS build falls below the 40 KiB main-stack minimum, and the
-factory partition it needs leaves too little storage on the 4 MiB flash
-(#200). Weather therefore stays on the WT32-SC01 Plus.
-
-The raw LittleFS image seeds Calculator and Digits, the official
-package registry, and the native shortcuts for Activity, File Manager,
-Settings and Terminal. The task reads the image size from the `storage` row
-in [partitions.csv](wt32-sc01/partitions.csv). Until format-v2 releases are
-pinned, build the guests from the locked Applications revision and package
-them with `tools/bundle_applications.sh`. See the
-[seed image documentation](../../tools/fs_image/README.md) for the bundle
-inputs. Writing the image replaces the partition contents.
+Build and write the raw LittleFS image to populate the application menu with
+Activity, File Manager, Settings and Terminal. The task reads the image size
+from the `storage` row in [partitions.csv](wt32-sc01/partitions.csv).
+The classic firmware does not enable the WebAssembly runtime (the firmware's
+`wasm` feature), so its seed image contains only native application shortcuts
+and no WebAssembly bundles. Writing the storage image replaces the partition contents.
 
 ```sh
-XILA_BUNDLES_DIR=/path/to/bundles mise run image:wt32-sc01
+mise run image:wt32-sc01
 mise run run:espflash -- write-bin --chip esp32 --port /dev/ttyUSB0 \
-  --flash-size 4mb --flash-mode dio 0x2D0000 target/seed/wt32-sc01/storage.img
+  --flash-size 4mb --flash-mode dio 0x250000 target/seed/wt32-sc01/storage.img
 ```
 
 Look for `Xila: board WT32-SC01`, `Xila: PSRAM 4194304 bytes (registered: true)`,
-`Xila: PSRAM self-test passed`, `Xila: LittleFS mounted`,
-`Random generator works`, the two internal heap regions, and
-`Xila: main stack high-water … bytes (estimate)` before the `User name:`
+`Xila: PSRAM self-test passed`, `Xila: PSRAM atomics self-test passed`,
+`Xila: PSRAM copy self-test passed`,
+`Xila: PSRAM shared allocation self-test passed`, `Xila: LittleFS mounted`,
+`Random generator works`, the two internal heap regions and the PSRAM
+region, and `Xila: main stack high-water … bytes (estimate)` before the `User name:`
 prompt. The estimate covers execution from early application startup through
 the shell's first console output. On first boot, the seeded or freshly formatted
 file system creates the default `administrator` account with an empty password.
@@ -385,4 +403,5 @@ The display and touch bring-up is tracked in [issue #177][classic-issue].
 [classic-board]: https://files.seeedstudio.com/products/102991455/WT32-SC01-datasheet.pdf
 [wrover]: https://documentation.espressif.com/esp32-wrover-b_datasheet_en.html
 [external-ram]: https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/external-ram.html
+[esp32-errata]: https://docs.espressif.com/projects/esp-chip-errata/en/latest/esp32/03-errata-description/index.html
 [classic-issue]: https://github.com/xila-project/platforms/issues/177

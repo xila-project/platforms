@@ -552,6 +552,22 @@ class PlatformWorkflowPolicy(unittest.TestCase):
         self.assertIn('--profile release-wasm', build['run'])
         self.assertIn('wasm32-wasip1/release-wasm', workflow)
 
+    def test_guest_builds_are_size_optimized_like_released_bundles(self):
+        tasks = tomllib.loads(read('mise.ci.toml'))
+        for name in ('ci:build-applications', 'ci:integration-build-applications'):
+            task = tasks['tasks'][name]
+            self.assertEqual(task['tools']['aqua:WebAssembly/binaryen'], '{{ vars.binaryen_version }}', name)
+            self.assertIn('bash tools/optimize_wasm.sh', task['run'], name)
+            self.assertLess(task['run'].index('cargo build'), task['run'].index('optimize_wasm.sh'), name)
+        script = read('tools/optimize_wasm.sh')
+        proposals = sorted(flag for flag in script.split() if flag.startswith('--enable-'))
+        # Exactly the proposals Applications' host engine enables.
+        self.assertEqual(proposals, sorted([
+            '--enable-bulk-memory', '--enable-extended-const', '--enable-multivalue',
+            '--enable-mutable-globals', '--enable-nontrapping-float-to-int',
+            '--enable-reference-types', '--enable-sign-ext', '--enable-tail-call']))
+        self.assertIn('-Oz', script.split())
+
     def test_profiles_are_explicit_and_both_seed_weather(self):
         profiles = ROOT / 'tools/fs_image/profiles'
         native = (profiles / 'native.txt').read_text().splitlines()

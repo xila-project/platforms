@@ -82,8 +82,21 @@ pub fn prepare(
         .find(|file| file.path == entrypoint)
         .ok_or("missing payload")?
         .bytes;
-    let mut features = wasmparser::WasmFeatures::default();
-    features.set(wasmparser::WasmFeatures::MEMORY64, false);
+    // Exactly the proposals the Xila host engine accepts in its default build
+    // (executables/wasm/src/host/engine.rs), so a bundle is refused here when
+    // the engine would refuse it. Floating-point types are core Wasm, not a
+    // proposal. Custom page sizes are needed by guests linked with 1-byte
+    // pages; memory64 is only accepted by the engine's memory_64 build.
+    let features = wasmparser::WasmFeatures::FLOATS
+        | wasmparser::WasmFeatures::MUTABLE_GLOBAL
+        | wasmparser::WasmFeatures::SIGN_EXTENSION
+        | wasmparser::WasmFeatures::SATURATING_FLOAT_TO_INT
+        | wasmparser::WasmFeatures::MULTI_VALUE
+        | wasmparser::WasmFeatures::BULK_MEMORY
+        | wasmparser::WasmFeatures::REFERENCE_TYPES
+        | wasmparser::WasmFeatures::TAIL_CALL
+        | wasmparser::WasmFeatures::EXTENDED_CONST
+        | wasmparser::WasmFeatures::CUSTOM_PAGE_SIZES;
     wasmparser::Validator::new_with_features(features)
         .validate_all(payload)
         .map_err(|_| "invalid or incompatible Wasm module")?;
@@ -197,6 +210,39 @@ mod tests {
         );
         assert_eq!(files[1].bytes, WASM);
         assert_eq!(files[2].bytes, SHORTCUT);
+    }
+
+    #[test]
+    fn accepts_byte_and_default_pages_but_not_memory64() {
+        // (memory 1 (pagesize 1)), (memory 1) and (memory i64 1).
+        let byte_pages: &[u8] = b"\0asm\x01\0\0\0\x05\x04\x01\x08\x01\x00";
+        let default_pages: &[u8] = b"\0asm\x01\0\0\0\x05\x03\x01\x00\x01";
+        let memory64: &[u8] = b"\0asm\x01\0\0\0\x05\x03\x01\x04\x01";
+        // (type (func (result f32))): core floating-point types.
+        let float_type: &[u8] = b"\0asm\x01\0\0\0\x01\x05\x01\x60\x00\x01\x7d";
+        for (payload, valid) in [
+            (byte_pages, true),
+            (default_pages, true),
+            (float_type, true),
+            (memory64, false),
+        ] {
+            let bytes = package("wasm32-wasip1", payload, None);
+            let result = prepare(&bytes, "xila.clock", "1.0.0", sha256(&bytes), None);
+            assert_eq!(result.is_ok(), valid, "{payload:?}");
+        }
+    }
+
+    #[test]
+    fn rejects_proposals_the_host_engine_does_not_accept() {
+        // (memory 1) (memory 1): multi-memory.
+        let two_memories: &[u8] = b"\0asm\x01\0\0\0\x05\x05\x02\x00\x01\x00\x01";
+        // (type (func (result v128))): SIMD.
+        let simd_type: &[u8] = b"\0asm\x01\0\0\0\x01\x05\x01\x60\x00\x01\x7b";
+        for payload in [two_memories, simd_type] {
+            let bytes = package("wasm32-wasip1", payload, None);
+            let result = prepare(&bytes, "xila.clock", "1.0.0", sha256(&bytes), None);
+            assert!(result.is_err(), "{payload:?}");
+        }
     }
 
     #[test]
