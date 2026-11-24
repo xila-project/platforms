@@ -1,11 +1,37 @@
 use mipidsi::interface::{Interface, InterfaceKind};
 
+/// The MIPI DCS command that starts a memory write at the start of the
+/// address window (`RAMWR`).
+pub const MEMORY_WRITE_START: u8 = 0x2C;
+
+/// The MIPI DCS command that continues a memory write after the last pixel
+/// written (`RAMWRC`).
+pub const MEMORY_WRITE_CONTINUE: u8 = 0x3C;
+
+/// The command that a bus gives to each transaction that it adds when it
+/// splits the data of a write that starts with `command`.
+///
+/// A memory write continues with [`MEMORY_WRITE_CONTINUE`], which keeps the
+/// write position of the panel. Any other command has no continuation: its
+/// parameters follow without a command.
+pub const fn continuation_command(command: Option<u8>) -> Option<u8> {
+    match command {
+        Some(MEMORY_WRITE_START | MEMORY_WRITE_CONTINUE) => Some(MEMORY_WRITE_CONTINUE),
+        _ => None,
+    }
+}
+
 /// An 8-bit parallel (8080) display bus.
 pub trait ParallelBus {
     type Error: core::fmt::Debug;
 
     /// Writes `command`, when present, with the data/command line low, then
     /// `data` with it high, as one transaction.
+    ///
+    /// A bus that splits `data` into several transactions must give each
+    /// added transaction the command that [`continuation_command`] returns:
+    /// [`MEMORY_WRITE_CONTINUE`] for a memory write. Some bus peripherals do
+    /// not send data without a command reliably.
     fn write(&mut self, command: Option<u8>, data: &[u8]) -> Result<(), Self::Error>;
 }
 
@@ -28,9 +54,16 @@ pub const STAGING_SIZE: usize = 512;
 ///   write of the caller's slice, without copying: with a DMA bus, that is one
 ///   DMA transfer.
 /// - Pixels that `mipidsi` converts itself are staged in a small buffer.
+/// - Each write of pixels carries a memory write command, so that the bus
+///   never sends data without a command. `mipidsi` sends
+///   [`MEMORY_WRITE_START`] alone, before the pixels: the interface holds it
+///   back and sends it with the first write of pixels. Each later write of
+///   pixels carries [`MEMORY_WRITE_CONTINUE`].
 pub struct ParallelInterface<Bus> {
     bus: Bus,
     staging: [u8; STAGING_SIZE],
+    /// Whether [`MEMORY_WRITE_START`] is held back for the next pixels.
+    memory_write_start_pending: bool,
 }
 
 impl<Bus: ParallelBus> ParallelInterface<Bus> {
@@ -38,12 +71,22 @@ impl<Bus: ParallelBus> ParallelInterface<Bus> {
         Self {
             bus,
             staging: [0; STAGING_SIZE],
+            memory_write_start_pending: false,
         }
     }
 
     /// Gives the bus back.
     pub fn release(self) -> Bus {
         self.bus
+    }
+
+    /// The command of the next write of pixels.
+    fn take_memory_write_command(&mut self) -> u8 {
+        if core::mem::take(&mut self.memory_write_start_pending) {
+            MEMORY_WRITE_START
+        } else {
+            MEMORY_WRITE_CONTINUE
+        }
     }
 }
 
@@ -54,6 +97,15 @@ impl<Bus: ParallelBus> Interface for ParallelInterface<Bus> {
     const KIND: InterfaceKind = InterfaceKind::Parallel8Bit;
 
     fn send_command(&mut self, command: u8, arguments: &[u8]) -> Result<(), Self::Error> {
+        // No pixels followed an earlier memory write start: send it now, in
+        // order, before this command.
+        if core::mem::take(&mut self.memory_write_start_pending) {
+            self.bus.write(Some(MEMORY_WRITE_START), &[])?;
+        }
+        if command == MEMORY_WRITE_START && arguments.is_empty() {
+            self.memory_write_start_pending = true;
+            return Ok(());
+        }
         self.bus.write(Some(command), arguments)
     }
 
@@ -64,14 +116,16 @@ impl<Bus: ParallelBus> Interface for ParallelInterface<Bus> {
         let mut length = 0;
         for pixel in pixels {
             if length + N > STAGING_SIZE {
-                self.bus.write(None, &self.staging[..length])?;
+                let command = self.take_memory_write_command();
+                self.bus.write(Some(command), &self.staging[..length])?;
                 length = 0;
             }
             self.staging[length..length + N].copy_from_slice(&pixel);
             length += N;
         }
         if length != 0 {
-            self.bus.write(None, &self.staging[..length])?;
+            let command = self.take_memory_write_command();
+            self.bus.write(Some(command), &self.staging[..length])?;
         }
         Ok(())
     }
@@ -88,7 +142,8 @@ impl<Bus: ParallelBus> Interface for ParallelInterface<Bus> {
         if data.is_empty() {
             return Ok(());
         }
-        self.bus.write(None, data)
+        let command = self.take_memory_write_command();
+        self.bus.write(Some(command), data)
     }
 }
 

@@ -14,10 +14,26 @@
 //! - anywhere else, such as constants in flash, which the DMA cannot read, or
 //!   unaligned PSRAM: copied through a staging buffer on the stack, in internal
 //!   SRAM, one chunk per transfer.
+//!
+//! # Data without a command
+//!
+//! ESP32-S3 erratum LCD-239: in the 8080 format, the first data value and the
+//! number of data values that the peripheral sends can be wrong if the data
+//! phase starts two LCD_CLK cycles or less after the transaction starts. The
+//! count is `(setup + command + dummy cycles) * (LCD_CLK cycles per LCD_PCLK
+//! cycle)`. esp-hal divides LCD_CLK by two and uses one setup cycle, so a
+//! transaction without a command has a count of two, and one with a command
+//! has a count of four.
+//!
+//! The bus thus gives a command to each transaction that carries pixels, as
+//! ESP-IDF's driver does: `ParallelInterface` sends the pixels with their
+//! memory write command, and a write that the bus splits continues with
+//! `RAMWRC` (see [`continuation_command`]). Only the parameters of another command, when
+//! they need more than one transaction, go without a command.
 
 use core::marker::PhantomData;
 
-use drivers_shared::devices::display::ParallelBus;
+use drivers_shared::devices::display::{ParallelBus, continuation_command};
 use esp_hal::{
     Blocking,
     dma::{BurstConfig, DmaDescriptor, DmaError, DmaTxBuffer, Preparation, aligned::DmaAlignedRef},
@@ -228,6 +244,7 @@ impl ParallelBus for I8080Bus {
     type Error = I8080Error;
 
     fn write(&mut self, command: Option<u8>, data: &[u8]) -> Result<(), Self::Error> {
+        let continuation = continuation_command(command).map_or(Command::None, Command::One);
         let mut command = command.map_or(Command::None, Command::One);
         if data.is_empty() {
             return match command {
@@ -243,14 +260,14 @@ impl ParallelBus for I8080Bus {
                 for chunk in data.chunks(STAGING_SIZE) {
                     staging[..chunk.len()].copy_from_slice(chunk);
                     self.transfer(command, &staging[..chunk.len()], false)?;
-                    command = Command::None;
+                    command = continuation;
                 }
                 return Ok(());
             }
         };
         for chunk in data.chunks(self.capacity()) {
             self.transfer(command, chunk, psram)?;
-            command = Command::None;
+            command = continuation;
         }
         Ok(())
     }
