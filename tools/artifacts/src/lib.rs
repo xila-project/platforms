@@ -84,10 +84,11 @@ pub fn prepare(
         .bytes;
     // Exactly the proposals the Xila host engine accepts in its default build
     // (executables/wasm/src/host/engine.rs), so a bundle is refused here when
-    // the engine would refuse it. Custom page sizes are needed by guests linked
-    // with 1-byte pages; memory64 is only accepted by the engine's memory_64
-    // build.
-    let features = wasmparser::WasmFeatures::MUTABLE_GLOBAL
+    // the engine would refuse it. Floating-point types are core Wasm, not a
+    // proposal. Custom page sizes are needed by guests linked with 1-byte
+    // pages; memory64 is only accepted by the engine's memory_64 build.
+    let features = wasmparser::WasmFeatures::FLOATS
+        | wasmparser::WasmFeatures::MUTABLE_GLOBAL
         | wasmparser::WasmFeatures::SIGN_EXTENSION
         | wasmparser::WasmFeatures::SATURATING_FLOAT_TO_INT
         | wasmparser::WasmFeatures::MULTI_VALUE
@@ -217,7 +218,14 @@ mod tests {
         let byte_pages: &[u8] = b"\0asm\x01\0\0\0\x05\x04\x01\x08\x01\x00";
         let default_pages: &[u8] = b"\0asm\x01\0\0\0\x05\x03\x01\x00\x01";
         let memory64: &[u8] = b"\0asm\x01\0\0\0\x05\x03\x01\x04\x01";
-        for (payload, valid) in [(byte_pages, true), (default_pages, true), (memory64, false)] {
+        // (type (func (result f32))): core floating-point types.
+        let float_type: &[u8] = b"\0asm\x01\0\0\0\x01\x05\x01\x60\x00\x01\x7d";
+        for (payload, valid) in [
+            (byte_pages, true),
+            (default_pages, true),
+            (float_type, true),
+            (memory64, false),
+        ] {
             let bytes = package("wasm32-wasip1", payload, None);
             let result = prepare(&bytes, "xila.clock", "1.0.0", sha256(&bytes), None);
             assert_eq!(result.is_ok(), valid, "{payload:?}");
