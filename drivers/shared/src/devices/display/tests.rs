@@ -493,21 +493,32 @@ fn display_performance_reports_after_window_and_formats_summary() {
 
     let mut tracker = super::DisplayPerformance::new(1_000_000);
     // Two frames across 1.0 second: 20 ms and 40 ms total, 2 flushes each.
+    // The first redraws a button that was invalidated twice, the second a
+    // list and a label inside it.
+    let mut named = Vec::new();
+    let mut name = |class: &'static str| {
+        named.push(class);
+        Some(class)
+    };
+    tracker.on_invalidate(4_000, || name("lv_button"));
+    tracker.on_invalidate(4_000, || name("lv_button"));
     tracker.on_render_start(100_000);
-    tracker.on_flush_start(105_000);
+    tracker.on_flush_start(105_000, 2_000);
     tracker.on_flush_finish(106_000);
     tracker.on_wait_start(110_000);
     tracker.on_wait_finish(118_000);
-    tracker.on_flush_start(118_000);
+    tracker.on_flush_start(118_000, 2_000);
     tracker.on_flush_finish(119_000);
     assert_eq!(tracker.on_render_ready(120_000), None);
 
+    tracker.on_invalidate(96_000, || name("lv_list"));
+    tracker.on_invalidate(1_000, || name("lv_label"));
     tracker.on_render_start(1_060_000);
-    tracker.on_flush_start(1_070_000);
+    tracker.on_flush_start(1_070_000, 9_600);
     tracker.on_flush_finish(1_072_000);
     tracker.on_wait_start(1_080_000);
     tracker.on_wait_finish(1_096_000);
-    tracker.on_flush_start(1_096_000);
+    tracker.on_flush_start(1_096_000, 86_400);
     tracker.on_flush_finish(1_098_000);
     let report = tracker
         .on_render_ready(1_100_000)
@@ -521,9 +532,35 @@ fn display_performance_reports_after_window_and_formats_summary() {
     assert_eq!(report.frame_maximum_microseconds, 40_000);
     assert_eq!(report.flush_average_microseconds, 3_000);
     assert_eq!(report.wait_average_microseconds, 12_000);
+    assert_eq!(report.invalidations_average_tenths, 20);
+    assert_eq!(report.invalidated_pixels_average, 52_500);
+    assert_eq!(report.flushed_pixels_average, 50_000);
+    assert_eq!(
+        report.largest_invalidation,
+        Some(super::Invalidation {
+            pixels: 96_000,
+            class: Some("lv_list"),
+        })
+    );
+    // Only an area larger than the ones before it is looked up.
+    assert_eq!(named, ["lv_button", "lv_list"]);
     assert_eq!(
         report.to_string(),
-        "Display performance: 2.0 frames/s (2 frames, 4 flushes, frame average 30.0 ms, maximum 40.0 ms, flush average 3.0 ms, wait average 12.0 ms)"
+        "Display performance: 2.0 frames/s (2 frames, 4 flushes, frame average 30.0 ms, maximum 40.0 ms, flush average 3.0 ms, wait average 12.0 ms; per frame 2.0 invalidations of 52500 pixels, 50000 pixels flushed; largest invalidation 96000 pixels by lv_list)"
+    );
+
+    // The next window starts from nothing.
+    tracker.on_invalidate(300, || None);
+    tracker.on_render_start(2_090_000);
+    tracker.on_flush_start(2_091_000, 300);
+    tracker.on_flush_finish(2_092_000);
+    let report = tracker.on_render_ready(2_100_000).unwrap();
+    assert_eq!(report.invalidations_average_tenths, 10);
+    assert_eq!(report.flushed_pixels_average, 300);
+    assert!(
+        report
+            .to_string()
+            .ends_with("largest invalidation 300 pixels by an unknown object)")
     );
 }
 

@@ -35,6 +35,9 @@ xila = { git = "https://github.com/xila-project/core", branch = "main", default-
 # Logs CPU, flash and PSRAM timings once at boot, right after the PSRAM
 # self-test. Off by default so production boots stay fast and quiet.
 boot-benchmark = []
+# Enables debug-level serial logging, including periodic display flush,
+# frame-rate and invalidation summaries.
+debug-log = ["firmware/debug-log"]
 
 [[bin]]
 name = "wt32_sc01_plus"

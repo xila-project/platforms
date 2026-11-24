@@ -97,6 +97,9 @@ pub(super) fn start(pins: Pins) -> Result<(Display, (u8, u8)), String> {
         DRAW_BUFFER_ROWS,
         REFRESH_PERIOD_MILLISECONDS,
     )?;
+    // The 40 MHz SPI bus needs at least 61 ms to send a whole frame, so an
+    // animation over most of the screen shows three or four of its steps.
+    display.light_rendering = true;
     // Full brightness until the saved appearance sets the user's level.
     backlight::attach(&mut display, backlight)?;
     Ok((display, identifiers))
