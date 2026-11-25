@@ -322,7 +322,7 @@ impl DirectBaseOperations for InternalFlashDevice {
                 Ok(())
             }
             GET_BLOCK_COUNT::IDENTIFIER => {
-                *GET_BLOCK_COUNT::cast_output(output)? = (self.length / PAGE_SIZE) as u32;
+                *GET_BLOCK_COUNT::cast_output(output)? = (self.length / PAGE_SIZE) as Size;
                 Ok(())
             }
             _ => Err(IoErrorKind::Unsupported),

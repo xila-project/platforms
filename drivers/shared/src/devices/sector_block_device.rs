@@ -200,7 +200,8 @@ impl<S: SectorStorage> DirectBaseOperations for SectorBlockDevice<S> {
             }
             GET_BLOCK_COUNT::IDENTIFIER => {
                 // The sectors after the last whole block are not in a block.
-                *GET_BLOCK_COUNT::cast_output(output)? = self.sector_count / SECTORS_PER_BLOCK;
+                *GET_BLOCK_COUNT::cast_output(output)? =
+                    Size::from(self.sector_count / SECTORS_PER_BLOCK);
                 Ok(())
             }
             ERASE::IDENTIFIER => {

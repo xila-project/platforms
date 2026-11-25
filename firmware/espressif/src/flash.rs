@@ -114,7 +114,7 @@ impl DirectBaseOperations for LittleFsPartition {
                 Ok(())
             }
             GET_BLOCK_COUNT::IDENTIFIER => {
-                *GET_BLOCK_COUNT::cast_output(output)? = self.partition.length / BLOCK;
+                *GET_BLOCK_COUNT::cast_output(output)? = Size::from(self.partition.length / BLOCK);
                 Ok(())
             }
             ERASE::IDENTIFIER => {
