@@ -26,20 +26,46 @@ pub const BTN_MIDDLE: u16 = 0x112;
 pub const KEY_ESC: u16 = 1;
 pub const KEY_1: u16 = 2;
 pub const KEY_0: u16 = 11;
+pub const KEY_MINUS: u16 = 12;
+pub const KEY_EQUAL: u16 = 13;
 pub const KEY_BACKSPACE: u16 = 14;
 pub const KEY_TAB: u16 = 15;
+pub const KEY_LEFTBRACE: u16 = 26;
+pub const KEY_RIGHTBRACE: u16 = 27;
 pub const KEY_ENTER: u16 = 28;
 pub const KEY_LEFTCTRL: u16 = 29;
+pub const KEY_A: u16 = 30;
+pub const KEY_SEMICOLON: u16 = 39;
+pub const KEY_APOSTROPHE: u16 = 40;
+pub const KEY_GRAVE: u16 = 41;
 pub const KEY_LEFTSHIFT: u16 = 42;
+pub const KEY_BACKSLASH: u16 = 43;
 pub const KEY_RIGHTSHIFT: u16 = 54;
+pub const KEY_KPASTERISK: u16 = 55;
 pub const KEY_LEFTALT: u16 = 56;
 pub const KEY_SPACE: u16 = 57;
 pub const KEY_CAPSLOCK: u16 = 58;
 pub const KEY_F1: u16 = 59;
-pub const KEY_F10: u16 = 68;
+pub const KEY_NUMLOCK: u16 = 69;
+pub const KEY_SCROLLLOCK: u16 = 70;
+pub const KEY_KP7: u16 = 71;
+pub const KEY_KP8: u16 = 72;
+pub const KEY_KP9: u16 = 73;
+pub const KEY_KPMINUS: u16 = 74;
+pub const KEY_KP4: u16 = 75;
+pub const KEY_KP5: u16 = 76;
+pub const KEY_KP6: u16 = 77;
+pub const KEY_KPPLUS: u16 = 78;
+pub const KEY_KP1: u16 = 79;
+pub const KEY_KP2: u16 = 80;
+pub const KEY_KP3: u16 = 81;
+pub const KEY_KP0: u16 = 82;
+pub const KEY_KPDOT: u16 = 83;
+pub const KEY_102ND: u16 = 86;
 pub const KEY_F11: u16 = 87;
 pub const KEY_F12: u16 = 88;
 pub const KEY_RIGHTCTRL: u16 = 97;
+pub const KEY_KPSLASH: u16 = 98;
 pub const KEY_SYSRQ: u16 = 99;
 pub const KEY_RIGHTALT: u16 = 100;
 pub const KEY_HOME: u16 = 102;
@@ -56,10 +82,15 @@ pub const KEY_MUTE: u16 = 113;
 pub const KEY_VOLUMEDOWN: u16 = 114;
 pub const KEY_VOLUMEUP: u16 = 115;
 pub const KEY_POWER: u16 = 116;
+pub const KEY_KPEQUAL: u16 = 117;
+pub const KEY_KPENTER: u16 = 96;
 pub const KEY_PAUSE: u16 = 119;
 pub const KEY_LEFTMETA: u16 = 125;
 pub const KEY_RIGHTMETA: u16 = 126;
-pub const KEY_SCROLLLOCK: u16 = 70;
+pub const KEY_COMPOSE: u16 = 127;
+pub const KEY_COMMA: u16 = 51;
+pub const KEY_DOT: u16 = 52;
+pub const KEY_SLASH: u16 = 53;
 pub const KEY_SLEEP: u16 = 142;
 pub const KEY_WAKEUP: u16 = 143;
 pub const KEY_NEXTSONG: u16 = 163;
@@ -67,37 +98,36 @@ pub const KEY_PLAYPAUSE: u16 = 164;
 pub const KEY_PREVIOUSSONG: u16 = 165;
 pub const KEY_STOPCD: u16 = 166;
 pub const KEY_F13: u16 = 183;
-pub const KEY_F24: u16 = 194;
 
 /// Linux key codes of the letter usages `keyboard::A` to `keyboard::Z` (QWERTY layout order
 /// of the Linux key codes).
 const LETTER_CODES: [u16; 26] = [
-    30, // A
-    48, // B
-    46, // C
-    32, // D
-    18, // E
-    33, // F
-    34, // G
-    35, // H
-    23, // I
-    36, // J
-    37, // K
-    38, // L
-    50, // M
-    49, // N
-    24, // O
-    25, // P
-    16, // Q
-    19, // R
-    31, // S
-    20, // T
-    22, // U
-    47, // V
-    17, // W
-    45, // X
-    21, // Y
-    44, // Z
+    KEY_A, // A
+    48,    // B
+    46,    // C
+    32,    // D
+    18,    // E
+    33,    // F
+    34,    // G
+    35,    // H
+    23,    // I
+    36,    // J
+    37,    // K
+    38,    // L
+    50,    // M
+    49,    // N
+    24,    // O
+    25,    // P
+    16,    // Q
+    19,    // R
+    31,    // S
+    20,    // T
+    22,    // U
+    47,    // V
+    17,    // W
+    45,    // X
+    21,    // Y
+    44,    // Z
 ];
 
 /// Linux key code of a Keyboard/Keypad page (0x07) usage, or `None` when unmapped.
@@ -113,6 +143,20 @@ pub fn keyboard_usage(usage: u8) -> Option<u16> {
         keyboard::BACKSPACE => Some(KEY_BACKSPACE),
         keyboard::TAB => Some(KEY_TAB),
         keyboard::SPACE => Some(KEY_SPACE),
+        // Punctuation 0x2D to 0x38: minus, equal, brackets, backslash, non-US #/~,
+        // semicolon, apostrophe, grave, comma, dot, slash.
+        0x2D => Some(KEY_MINUS),
+        0x2E => Some(KEY_EQUAL),
+        0x2F => Some(KEY_LEFTBRACE),
+        0x30 => Some(KEY_RIGHTBRACE),
+        0x31 => Some(KEY_BACKSLASH),
+        0x32 => Some(KEY_102ND),
+        0x33 => Some(KEY_SEMICOLON),
+        0x34 => Some(KEY_APOSTROPHE),
+        0x35 => Some(KEY_GRAVE),
+        0x36 => Some(KEY_COMMA),
+        0x37 => Some(KEY_DOT),
+        0x38 => Some(KEY_SLASH),
         keyboard::CAPS_LOCK => Some(KEY_CAPSLOCK),
         keyboard::F1..=keyboard::F10 => Some(KEY_F1 + u16::from(usage - keyboard::F1)),
         keyboard::F11 => Some(KEY_F11),
@@ -130,6 +174,27 @@ pub fn keyboard_usage(usage: u8) -> Option<u16> {
         keyboard::ARROW_LEFT => Some(KEY_LEFT),
         keyboard::ARROW_DOWN => Some(KEY_DOWN),
         keyboard::ARROW_UP => Some(KEY_UP),
+        // Keypad 0x53 to 0x67.
+        0x53 => Some(KEY_NUMLOCK),
+        0x54 => Some(KEY_KPSLASH),
+        0x55 => Some(KEY_KPASTERISK),
+        0x56 => Some(KEY_KPMINUS),
+        0x57 => Some(KEY_KPPLUS),
+        0x58 => Some(KEY_KPENTER),
+        0x59 => Some(KEY_KP1),
+        0x5A => Some(KEY_KP2),
+        0x5B => Some(KEY_KP3),
+        0x5C => Some(KEY_KP4),
+        0x5D => Some(KEY_KP5),
+        0x5E => Some(KEY_KP6),
+        0x5F => Some(KEY_KP7),
+        0x60 => Some(KEY_KP8),
+        0x61 => Some(KEY_KP9),
+        0x62 => Some(KEY_KP0),
+        0x63 => Some(KEY_KPDOT),
+        0x64 => Some(KEY_102ND),
+        0x65 => Some(KEY_COMPOSE),
+        0x67 => Some(KEY_KPEQUAL),
         keyboard::F13..=keyboard::F24 => Some(KEY_F13 + u16::from(usage - keyboard::F13)),
         0xE0..=0xE7 => Some(MODIFIER_KEY_CODES[usize::from(usage - 0xE0)]),
         _ => None,
@@ -175,62 +240,35 @@ pub const MODIFIER_KEY_CODES: [u16; 8] = [
 /// Linux button code of each mouse button bit: bit 0 left, bit 1 right, bit 2 middle.
 pub const MOUSE_BUTTON_CODES: [u16; 3] = [BTN_LEFT, BTN_RIGHT, BTN_MIDDLE];
 
-/// Key codes that are not letters, digits or function keys, registered with `UI_SET_KEYBIT`
-/// together with the generated tables of [`all_key_codes`].
-const BASE_KEY_CODES: [u16; 40] = [
-    KEY_ESC,
-    KEY_BACKSPACE,
-    KEY_TAB,
-    KEY_ENTER,
-    KEY_LEFTCTRL,
-    KEY_LEFTSHIFT,
-    KEY_RIGHTSHIFT,
-    KEY_LEFTALT,
-    KEY_SPACE,
-    KEY_CAPSLOCK,
-    KEY_RIGHTCTRL,
-    KEY_SYSRQ,
-    KEY_RIGHTALT,
-    KEY_HOME,
-    KEY_UP,
-    KEY_PAGEUP,
-    KEY_LEFT,
-    KEY_RIGHT,
-    KEY_END,
-    KEY_DOWN,
-    KEY_PAGEDOWN,
-    KEY_INSERT,
-    KEY_DELETE,
-    KEY_MUTE,
-    KEY_VOLUMEDOWN,
-    KEY_VOLUMEUP,
-    KEY_POWER,
-    KEY_PAUSE,
-    KEY_LEFTMETA,
-    KEY_RIGHTMETA,
-    KEY_SCROLLLOCK,
-    KEY_SLEEP,
-    KEY_WAKEUP,
-    KEY_NEXTSONG,
-    KEY_PLAYPAUSE,
-    KEY_PREVIOUSSONG,
-    KEY_STOPCD,
-    BTN_LEFT,
-    BTN_RIGHT,
-    BTN_MIDDLE,
-];
-
-/// Every key code this driver can emit, for `UI_SET_KEYBIT` registration.
-pub fn all_key_codes() -> impl Iterator<Item = u16> {
-    BASE_KEY_CODES
-        .iter()
-        .copied()
-        .chain(LETTER_CODES.iter().copied())
-        .chain(KEY_1..=(KEY_1 + 8))
-        .chain(core::iter::once(KEY_0))
-        .chain(KEY_F1..=KEY_F10)
-        .chain([KEY_F11, KEY_F12])
-        .chain(KEY_F13..=KEY_F24)
+/// Every key code this driver can emit, sorted and without duplicates, for `UI_SET_KEYBIT`
+/// registration: all mapped keyboard usages, the consumer and system usages and the mouse
+/// buttons.
+pub fn all_key_codes() -> std::vec::Vec<u16> {
+    let mut codes: std::vec::Vec<u16> = (0u8..=0xE7)
+        .filter_map(keyboard_usage)
+        .chain(
+            [
+                consumer::PLAY_PAUSE,
+                consumer::NEXT_TRACK,
+                consumer::PREVIOUS_TRACK,
+                consumer::STOP,
+                consumer::VOLUME_UP,
+                consumer::VOLUME_DOWN,
+                consumer::MUTE,
+            ]
+            .into_iter()
+            .filter_map(consumer_usage),
+        )
+        .chain(
+            [system::POWER_DOWN, system::SLEEP, system::WAKE_UP]
+                .into_iter()
+                .filter_map(system_usage),
+        )
+        .chain(MOUSE_BUTTON_CODES)
+        .collect();
+    codes.sort_unstable();
+    codes.dedup();
+    codes
 }
 
 #[cfg(test)]
@@ -240,7 +278,7 @@ mod tests {
 
     #[test]
     fn letters_map_to_the_linux_qwerty_codes() {
-        assert_eq!(keyboard_usage(keyboard::A), Some(30));
+        assert_eq!(keyboard_usage(keyboard::A), Some(KEY_A));
         assert_eq!(keyboard_usage(keyboard::B), Some(48));
         assert_eq!(keyboard_usage(keyboard::M), Some(50));
         assert_eq!(keyboard_usage(keyboard::Q), Some(16));
@@ -277,12 +315,52 @@ mod tests {
         assert_eq!(keyboard_usage(keyboard::F1), Some(KEY_F1));
         assert_eq!(keyboard_usage(keyboard::F12), Some(KEY_F12));
         assert_eq!(keyboard_usage(keyboard::F13), Some(KEY_F13));
-        assert_eq!(keyboard_usage(keyboard::F24), Some(KEY_F24));
+        assert_eq!(keyboard_usage(keyboard::F24), Some(KEY_F13 + 11));
+    }
+
+    #[test]
+    fn punctuation_maps_to_its_linux_code() {
+        assert_eq!(keyboard_usage(0x2D), Some(KEY_MINUS));
+        assert_eq!(keyboard_usage(0x2E), Some(KEY_EQUAL));
+        assert_eq!(keyboard_usage(0x2F), Some(KEY_LEFTBRACE));
+        assert_eq!(keyboard_usage(0x30), Some(KEY_RIGHTBRACE));
+        assert_eq!(keyboard_usage(0x31), Some(KEY_BACKSLASH));
+        assert_eq!(keyboard_usage(0x32), Some(KEY_102ND));
+        assert_eq!(keyboard_usage(0x33), Some(KEY_SEMICOLON));
+        assert_eq!(keyboard_usage(0x34), Some(KEY_APOSTROPHE));
+        assert_eq!(keyboard_usage(0x35), Some(KEY_GRAVE));
+        assert_eq!(keyboard_usage(0x36), Some(KEY_COMMA));
+        assert_eq!(keyboard_usage(0x37), Some(KEY_DOT));
+        assert_eq!(keyboard_usage(0x38), Some(KEY_SLASH));
+    }
+
+    #[test]
+    fn keypad_and_application_keys_map_to_their_linux_codes() {
+        assert_eq!(keyboard_usage(0x53), Some(KEY_NUMLOCK));
+        assert_eq!(keyboard_usage(0x54), Some(KEY_KPSLASH));
+        assert_eq!(keyboard_usage(0x55), Some(KEY_KPASTERISK));
+        assert_eq!(keyboard_usage(0x56), Some(KEY_KPMINUS));
+        assert_eq!(keyboard_usage(0x57), Some(KEY_KPPLUS));
+        assert_eq!(keyboard_usage(0x58), Some(KEY_KPENTER));
+        assert_eq!(keyboard_usage(0x59), Some(KEY_KP1));
+        assert_eq!(keyboard_usage(0x5A), Some(KEY_KP2));
+        assert_eq!(keyboard_usage(0x5B), Some(KEY_KP3));
+        assert_eq!(keyboard_usage(0x5C), Some(KEY_KP4));
+        assert_eq!(keyboard_usage(0x5D), Some(KEY_KP5));
+        assert_eq!(keyboard_usage(0x5E), Some(KEY_KP6));
+        assert_eq!(keyboard_usage(0x5F), Some(KEY_KP7));
+        assert_eq!(keyboard_usage(0x60), Some(KEY_KP8));
+        assert_eq!(keyboard_usage(0x61), Some(KEY_KP9));
+        assert_eq!(keyboard_usage(0x62), Some(KEY_KP0));
+        assert_eq!(keyboard_usage(0x63), Some(KEY_KPDOT));
+        assert_eq!(keyboard_usage(0x64), Some(KEY_102ND));
+        assert_eq!(keyboard_usage(0x65), Some(KEY_COMPOSE));
+        assert_eq!(keyboard_usage(0x67), Some(KEY_KPEQUAL));
     }
 
     #[test]
     fn unmapped_keyboard_usages_are_none() {
-        for usage in [0x00, 0x01, 0x2D, 0x38, 0x64, 0xE8, 0xFF] {
+        for usage in [0x00, 0x01, 0x66, 0xE8, 0xFF] {
             assert_eq!(keyboard_usage(usage), None, "usage 0x{usage:02X}");
         }
     }
@@ -340,44 +418,12 @@ mod tests {
 
     #[test]
     fn every_mappable_usage_is_registered() {
-        let registered: std::vec::Vec<u16> = all_key_codes().collect();
+        let registered = all_key_codes();
         let contains = |code: u16| registered.contains(&code);
-        for usage in keyboard::A..=keyboard::Z {
-            let code = keyboard_usage(usage).unwrap();
-            assert!(contains(code), "letter 0x{usage:02X}");
-        }
-        for usage in [
-            keyboard::NUMBER_1,
-            keyboard::NUMBER_0,
-            keyboard::ENTER,
-            keyboard::ESCAPE,
-            keyboard::BACKSPACE,
-            keyboard::TAB,
-            keyboard::SPACE,
-            keyboard::CAPS_LOCK,
-            keyboard::F1,
-            keyboard::F12,
-            keyboard::PRINT_SCREEN,
-            keyboard::SCROLL_LOCK,
-            keyboard::PAUSE,
-            keyboard::INSERT,
-            keyboard::HOME,
-            keyboard::PAGE_UP,
-            keyboard::DELETE,
-            keyboard::END,
-            keyboard::PAGE_DOWN,
-            keyboard::ARROW_RIGHT,
-            keyboard::ARROW_LEFT,
-            keyboard::ARROW_DOWN,
-            keyboard::ARROW_UP,
-            keyboard::F13,
-            keyboard::F24,
-        ] {
-            let code = keyboard_usage(usage).unwrap();
-            assert!(contains(code), "key 0x{usage:02X}");
-        }
-        for code in MODIFIER_KEY_CODES {
-            assert!(contains(code));
+        for usage in 0u8..=0xE7 {
+            if let Some(code) = keyboard_usage(usage) {
+                assert!(contains(code), "keyboard usage 0x{usage:02X}");
+            }
         }
         for usage in [
             consumer::PLAY_PAUSE,
@@ -398,9 +444,14 @@ mod tests {
         for code in MOUSE_BUTTON_CODES {
             assert!(contains(code));
         }
-        // No duplicates, so registration is a set.
+        // Sorted and without duplicates, so registration is a set.
         for (index, code) in registered.iter().enumerate() {
-            assert!(!registered[index + 1..].contains(code), "duplicate {code}");
+            if index + 1 < registered.len() {
+                assert!(
+                    registered[index + 1] > *code,
+                    "duplicate or unsorted {code}"
+                );
+            }
         }
     }
 }

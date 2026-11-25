@@ -215,18 +215,17 @@ identifier uniqueness are covered by `cargo test -p xila-network --test wifi_typ
 
 On Linux, the example mounts `/devices/human_interface/emulation` through the Linux
 `uinput` interface, so an application can make this computer receive keyboard, media
-remote and mouse input from Xila (shortcuts, screenshots, play/pause, volume), for
-example:
+remote and mouse input from Xila (shortcuts, screenshots, play/pause, volume).
 
-```sh
-printf '\x01\x00\x04\x00\x00\x00\x00\x00' > /devices/human_interface/emulation   # press A
-printf '\x01\x00\x00\x00\x00\x00\x00\x00' > /devices/human_interface/emulation   # release all
-```
-
-Each write holds one or more 8-byte messages; see the `device::human_interface`
-contract in Core for the message kinds. Watch the events on the host with `evtest`
-(select the `Xila human interface emulation` device). The `GET_STATUS` control command
-reports whether a computer is connected and the keyboard LED state.
+Applications write binary 8-byte messages to the node through the `File` API; see the
+`device::human_interface` contract in Core for the message kinds. For example, the bytes
+`01 00 04 00 00 00 00 00` are one keyboard message that presses A and
+`01 00 00 00 00 00 00 00` releases all keys, and `02 CD 00 00 00 00 00 00` is one
+consumer control message that presses play/pause. The Xila shell has no `printf` and
+`/devices/...` is a Xila path, not a host path, so these messages cannot be sent from a
+host shell. Watch the events on the host with `evtest` (select the
+`Xila human interface emulation` device). The `GET_STATUS` control command reports
+whether a computer is connected and the keyboard LED state.
 
 Writing to the node needs write access to `/dev/uinput`. Grant it with the `input`
 group:
@@ -242,8 +241,9 @@ echo 'KERNEL=="uinput", MODE="0660", GROUP="input"' | sudo tee /etc/udev/rules.d
 sudo udevadm control --reload-rules
 ```
 
-If `/dev/uinput` cannot be opened, the runtime logs one warning, does not mount the
-device and still starts.
+If `/dev/uinput` cannot be opened, the runtime logs one warning with the actual error,
+does not mount the device and still starts. When the error is "No such file or
+directory", the `uinput` kernel module is not loaded: run `sudo modprobe uinput`.
 
 ## Startup application
 
