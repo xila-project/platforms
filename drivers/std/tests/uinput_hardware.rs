@@ -1,15 +1,17 @@
 //! Ignored hardware test for the Linux `uinput` human interface controller.
 //!
-//! Run it on a computer where `/dev/uinput` is writable, with `evtest` open on the
-//! `Xila human interface emulation` device:
+//! Run it on a computer where `/dev/uinput` is writable:
 //!
 //! ```sh
-//! sudo evtest
 //! cargo test -p xila-drivers-std --features human-interface -- --ignored --nocapture uinput_hardware
 //! ```
 //!
+//! Then, during the start delay, open the printed event device in another
+//! terminal with `sudo evtest /dev/input/eventN`. `evtest` only lists the devices
+//! that exist when it starts.
+//!
 //! The test opens the real `/dev/uinput`, prints the created device and its
-//! `/dev/input/event*` path, waits 3 seconds so the device can be selected in
+//! `/dev/input/event*` path, waits 10 seconds so the device can be opened in
 //! `evtest`, then sends harmless reports with 300 ms between steps and a printed
 //! line for each: keyboard F24 press and release, Caps Lock press and release
 //! (then the keyboard indicators are read and printed, then Caps Lock again to
@@ -107,8 +109,8 @@ fn uinput_hardware() {
         Some(path) => println!("event device: {path} (select it in evtest)"),
         None => println!("no event device found under /sys/devices/virtual/input yet"),
     }
-    println!("waiting 3 seconds so the device can be selected in evtest...");
-    sleep(Duration::from_secs(3));
+    println!("waiting 10 seconds: open the event device with sudo evtest now...");
+    sleep(Duration::from_secs(10));
 
     // Keyboard F24 press and release (unbound on desktops, harmless).
     step(

@@ -249,25 +249,26 @@ directory", the `uinput` kernel module is not loaded: run `sudo modprobe uinput`
 
 On a computer where `/dev/uinput` is writable, an ignored integration test drives the
 real virtual device with harmless inputs (F24, Caps Lock, volume up and down, mouse
-moves, horizontal pan). In one terminal, start `evtest` as root and select the
-`Xila human interface emulation` device:
-
-```sh
-sudo evtest
-```
-
-Then, in another terminal, run:
+moves, horizontal pan). In one terminal, run the test:
 
 ```sh
 cargo test -p xila-drivers-std --features human-interface -- --ignored --nocapture uinput_hardware
 ```
 
-The test prints the created device, its `/dev/input/event*` path (found under
-`/sys/devices/virtual/input`) and one line per step, 300 ms apart. It waits 3 seconds
-at the start so the device can be selected in `evtest`, reads and prints the keyboard
-indicators after the Caps Lock step, and never sends anything that types text, opens
-programs or changes the power state. Without write access to `/dev/uinput` the test
-prints the error and returns without failing.
+The test creates the `Xila human interface emulation` device, prints its
+`/dev/input/event*` path (found under `/sys/devices/virtual/input`) and waits 10
+seconds. During that time, open the printed path with `evtest` in another terminal,
+for example:
+
+```sh
+sudo evtest /dev/input/event21
+```
+
+`evtest` only lists the devices that exist when it starts, so start it after the test
+has created the device. The test then prints one line per step, 300 ms apart, reads and
+prints the keyboard indicators after the Caps Lock step, and never sends anything that
+types text, opens programs or changes the power state. Without write access to
+`/dev/uinput` the test prints the error and returns without failing.
 
 ## Startup application
 
