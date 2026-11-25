@@ -5,7 +5,7 @@ use graphics::{InputData, Key, State};
 use synchronization::{
     blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel, channel::Sender,
 };
-use wasm_bindgen::{JsCast, prelude::Closure};
+use wasm_bindgen::{JsCast, JsValue, prelude::Closure};
 use web_sys::{ClipboardEvent, HtmlCanvasElement, KeyboardEvent};
 
 #[derive(Debug)]
@@ -54,7 +54,12 @@ impl KeyboardDevice {
         // A focusable canvas receives keyboard and clipboard input without
         // intercepting the surrounding page's controls.
         canvas.set_tab_index(0);
-        canvas.focus().map_err(|_| "Failed to focus canvas")?;
+        // Focus at startup only when the demonstration is the top-level page.
+        // In a frame the canvas must not take the keyboard focus from the
+        // embedding page; it still gets the focus on pointerdown or Tab.
+        if is_top_level_window() {
+            canvas.focus().map_err(|_| "Failed to focus canvas")?;
+        }
 
         let focus_closure = Closure::wrap(Box::new(move |event: web_sys::Event| {
             if let Some(canvas) = event
@@ -193,6 +198,19 @@ fn map_key(key: &str) -> Option<Key> {
     };
 
     Some(key)
+}
+
+/// Whether this window is the top-level page. In a frame, also a cross-origin
+/// one, `window.top` is a different window from `window.self`. An error or
+/// `None` also counts as framed.
+fn is_top_level_window() -> bool {
+    let Some(window) = web_sys::window() else {
+        return false;
+    };
+    match window.top() {
+        Ok(Some(top)) => JsValue::from(top) == JsValue::from(window.self_()),
+        _ => false,
+    }
 }
 
 fn is_focused_canvas(event: &web_sys::Event) -> bool {
