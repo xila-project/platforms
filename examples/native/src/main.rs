@@ -285,6 +285,43 @@ async fn main(task_manager: &'static xila::task::Manager) {
     )
     .await
     .expect("Failed to mount the power device");
+
+    // Human interface emulation: on Linux, a uinput controller mounted through the upper
+    // half lets applications act as a keyboard, media remote and mouse toward this
+    // computer. Without write access to /dev/uinput the device is not mounted and the
+    // system still starts. The uinput ioctl request numbers use the generic ioctl layout
+    // of the Linux kernel, available on these architectures only.
+    #[cfg(all(
+        feature = "human-interface",
+        target_os = "linux",
+        any(
+            target_arch = "x86",
+            target_arch = "x86_64",
+            target_arch = "arm",
+            target_arch = "aarch64",
+            target_arch = "riscv32",
+            target_arch = "riscv64"
+        )
+    ))]
+    match drivers_std::human_interface::UinputController::open() {
+        Ok(controller) => {
+            drivers_peripherals::human_interface::mount_human_interface(
+                virtual_file_system,
+                task,
+                "emulation",
+                controller,
+            )
+            .await
+            .expect("Failed to mount the human interface emulation device");
+            log::information!("Human interface emulation ready");
+        }
+        Err(error) => {
+            log::warning!(
+                "Human interface emulation unavailable, cannot create the uinput device ({error}); write access to /dev/uinput is required"
+            );
+        }
+    }
+
     virtual_file_system
         .set_permissions(
             task,

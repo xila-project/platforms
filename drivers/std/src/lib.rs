@@ -8,6 +8,22 @@ pub mod executable_memory;
 pub mod executor;
 #[cfg(all(feature = "heaptrack", target_os = "linux"))]
 mod heaptrack;
+// The uinput ioctl request numbers use the generic ioctl layout of the Linux kernel
+// (direction in bits 30-31, size in bits 16-29, type in bits 8-15, number in bits 0-7),
+// which the kernel uses on these architectures only.
+#[cfg(all(
+    feature = "human-interface",
+    target_os = "linux",
+    any(
+        target_arch = "x86",
+        target_arch = "x86_64",
+        target_arch = "arm",
+        target_arch = "aarch64",
+        target_arch = "riscv32",
+        target_arch = "riscv64"
+    )
+))]
+pub mod human_interface;
 pub mod io;
 pub mod loader;
 pub mod log;
