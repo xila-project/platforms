@@ -84,13 +84,16 @@ pub enum Error {
     UnsafeConfiguration,
     Configuration(ConfigurationError),
     ShortcutNotFound(String),
-    UnknownUser(String),
+    /// The configuration names an account that does not exist. The message
+    /// names no account: an unknown account has no identifier, and the log
+    /// identifies accounts by their identifier only.
+    UnknownUser,
     /// The command does not exist.
     MissingCommand(String),
     /// The user may not run the command.
     NotExecutable {
         command: String,
-        user: String,
+        user: UserIdentifier,
     },
     /// A bundle file that the shortcut names does not exist.
     MissingFile(String),
@@ -117,10 +120,10 @@ impl fmt::Display for Error {
                 formatter,
                 "no shortcut \"{identifier}\" in {BUNDLES_PATH}/{identifier}/ or {SHORTCUTS_PATH}/"
             ),
-            Self::UnknownUser(user) => write!(formatter, "no user account \"{user}\""),
+            Self::UnknownUser => write!(formatter, "no user account"),
             Self::MissingCommand(command) => write!(formatter, "no program {command}"),
             Self::NotExecutable { command, user } => {
-                write!(formatter, "{user} may not run {command}")
+                write!(formatter, "user {} may not run {command}", user.as_u16())
             }
             Self::MissingFile(path) => write!(formatter, "missing application file {path}"),
             Self::Identity(error) => {
@@ -185,11 +188,11 @@ pub async fn load(
     let user = users_manager
         .get_user_identifier(&configuration.user)
         .await
-        .map_err(|_| Error::UnknownUser(configuration.user.clone()))?;
+        .map_err(|_| Error::UnknownUser)?;
     let group = users_manager
         .get_user_primary_group(user)
         .await
-        .map_err(|_| Error::UnknownUser(configuration.user.clone()))?;
+        .map_err(|_| Error::UnknownUser)?;
 
     let statistics = match virtual_file_system.get_statistics(&command.as_str()).await {
         Ok(statistics) if statistics.kind != Kind::Directory => statistics,
@@ -202,10 +205,7 @@ pub async fn load(
         }
     };
     if !executable::is_execute_allowed(users_manager, &statistics, user).await {
-        return Err(Error::NotExecutable {
-            command,
-            user: configuration.user,
-        });
+        return Err(Error::NotExecutable { command, user });
     }
     for path in bundle_files {
         match virtual_file_system.get_statistics(&path.as_str()).await {
@@ -483,6 +483,20 @@ mod tests {
             "xila.clock (/applications/executables/runtime) as user 1001"
         );
         assert!(!line.contains("kiosk"));
+    }
+
+    #[test]
+    fn error_messages_name_the_account_by_identifier_only() {
+        use alloc::string::ToString;
+        let error = Error::NotExecutable {
+            command: "/applications/executables/runtime".into(),
+            user: UserIdentifier::new(1001),
+        };
+        assert_eq!(
+            error.to_string(),
+            "user 1001 may not run /applications/executables/runtime"
+        );
+        assert_eq!(Error::UnknownUser.to_string(), "no user account");
     }
 
     fn statistics(user: u16, group: u16, permissions: u16) -> Statistics {
