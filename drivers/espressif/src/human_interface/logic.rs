@@ -188,6 +188,46 @@ pub fn led_indicators_from_control_payload(report_identifier: u8, payload: &[u8]
     }
 }
 
+/// Direction of a GET_REPORT control request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReportDirection {
+    /// An input report, read by the host.
+    In,
+    /// An output report, written by the host.
+    Out,
+    /// A feature report.
+    Feature,
+}
+
+/// Builds the GET_REPORT response for a report into `buffer`: the report
+/// identifier byte first, then the report bytes, because the descriptor uses
+/// numbered reports. The keyboard output report answers the current LED byte;
+/// an input report is answered with zeros of its declared length. Returns the
+/// response length, or `None` for an unknown report, an unsupported direction or
+/// a buffer that is too small.
+pub fn get_report_response(
+    direction: ReportDirection,
+    identifier: u8,
+    led_indicators: u8,
+    buffer: &mut [u8],
+) -> Option<usize> {
+    let report_bytes = match direction {
+        ReportDirection::Out if identifier == REPORT_IDENTIFIER_KEYBOARD => 1,
+        ReportDirection::In => report_length(identifier)?,
+        _ => return None,
+    };
+    let length = 1 + report_bytes;
+    if buffer.len() < length {
+        return None;
+    }
+    buffer[0] = identifier;
+    match direction {
+        ReportDirection::Out => buffer[1] = led_indicators,
+        _ => buffer[1..length].fill(0),
+    }
+    Some(length)
+}
+
 /// A USB bus event, as the `embassy_usb::Handler` callbacks report them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BusEvent {
@@ -210,10 +250,14 @@ pub enum BusEvent {
 pub struct EventOutcome {
     /// Whether a computer is connected and listening now.
     pub connected: bool,
-    /// Queued and in-flight reports are stale: drop them and clear the LED state.
+    /// Queued and in-flight reports are stale: drop them.
     pub invalidate: bool,
     /// The host came back: send the release reports, so no key stays held.
     pub host_returned: bool,
+    /// The LED state is stale too: clear it. Only on a reset, an
+    /// unconfiguration, a suspend or a power removal, not on a resume: the host
+    /// is still there and its LED state is still valid.
+    pub clear_indicators: bool,
 }
 
 /// Connection state of the USB device, driven by the bus events. `is_connected` is
@@ -248,6 +292,12 @@ impl ConnectionState {
         self.generation
     }
 
+    /// Whether a bus event happened since `generation` was captured: the
+    /// asynchronous operation that captured it must not complete with its result.
+    pub const fn is_stale(&self, generation: u32) -> bool {
+        self.generation != generation
+    }
+
     /// Apply a bus event and return what it means for the emulation. Every event
     /// bumps the generation.
     pub fn apply(&mut self, event: BusEvent) -> EventOutcome {
@@ -260,6 +310,7 @@ impl ConnectionState {
                     connected: false,
                     invalidate: true,
                     host_returned: false,
+                    clear_indicators: true,
                 }
             }
             BusEvent::Configured => {
@@ -269,6 +320,7 @@ impl ConnectionState {
                     connected: true,
                     invalidate: true,
                     host_returned: true,
+                    clear_indicators: false,
                 }
             }
             BusEvent::Unconfigured => {
@@ -277,6 +329,7 @@ impl ConnectionState {
                     connected: false,
                     invalidate: true,
                     host_returned: false,
+                    clear_indicators: true,
                 }
             }
             BusEvent::Suspended => {
@@ -285,6 +338,7 @@ impl ConnectionState {
                     connected: false,
                     invalidate: true,
                     host_returned: false,
+                    clear_indicators: true,
                 }
             }
             BusEvent::Resumed => {
@@ -293,6 +347,7 @@ impl ConnectionState {
                     connected: self.configured,
                     invalidate: true,
                     host_returned: self.configured,
+                    clear_indicators: false,
                 }
             }
             BusEvent::PowerRemoved => {
@@ -302,6 +357,7 @@ impl ConnectionState {
                     connected: false,
                     invalidate: true,
                     host_returned: false,
+                    clear_indicators: true,
                 }
             }
         }
@@ -563,7 +619,8 @@ mod tests {
             EventOutcome {
                 connected: true,
                 invalidate: true,
-                host_returned: true
+                host_returned: true,
+                clear_indicators: false
             }
         );
         assert!(state.is_connected());
@@ -580,17 +637,20 @@ mod tests {
             EventOutcome {
                 connected: false,
                 invalidate: true,
-                host_returned: false
+                host_returned: false,
+                clear_indicators: true
             }
         );
         assert!(!state.is_connected());
+        // A resume keeps the LED state: the host is still there.
         let outcome = state.apply(BusEvent::Resumed);
         assert_eq!(
             outcome,
             EventOutcome {
                 connected: true,
                 invalidate: true,
-                host_returned: true
+                host_returned: true,
+                clear_indicators: false
             }
         );
         assert!(state.is_connected());
@@ -605,7 +665,8 @@ mod tests {
             EventOutcome {
                 connected: false,
                 invalidate: true,
-                host_returned: false
+                host_returned: false,
+                clear_indicators: false
             }
         );
         assert!(!state.is_connected());
@@ -627,7 +688,8 @@ mod tests {
                 EventOutcome {
                     connected: false,
                     invalidate: true,
-                    host_returned: false
+                    host_returned: false,
+                    clear_indicators: true
                 }
             );
             assert!(!state.is_connected());
@@ -670,5 +732,77 @@ mod tests {
         // packet size from the OUT buffer.
         assert_eq!(ENDPOINT_OUT_BUFFER_SIZE, 3 * ENDPOINT_MAX_PACKET_SIZE);
         assert_eq!(ENDPOINT_MAX_PACKET_SIZE, 64);
+    }
+
+    #[test]
+    fn is_stale_only_after_a_bus_event() {
+        let mut state = ConnectionState::new();
+        let generation = state.generation();
+        assert!(!state.is_stale(generation));
+        state.apply(BusEvent::Suspended);
+        assert!(state.is_stale(generation));
+        assert!(!state.is_stale(state.generation()));
+    }
+
+    #[test]
+    fn get_report_answers_the_keyboard_output_report_with_the_led_byte() {
+        let mut buffer = [0u8; 8];
+        let length = get_report_response(
+            ReportDirection::Out,
+            REPORT_IDENTIFIER_KEYBOARD,
+            0b101,
+            &mut buffer,
+        )
+        .unwrap();
+        assert_eq!(length, 2);
+        assert_eq!(&buffer[..length], &[REPORT_IDENTIFIER_KEYBOARD, 0b101]);
+        // Another output report identifier is not answered.
+        assert!(
+            get_report_response(
+                ReportDirection::Out,
+                REPORT_IDENTIFIER_MOUSE,
+                0,
+                &mut buffer
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn get_report_answers_input_reports_with_the_identifier_and_zeros() {
+        let mut buffer = [0u8; 16];
+        for (identifier, report_bytes) in [
+            (REPORT_IDENTIFIER_KEYBOARD, 8),
+            (REPORT_IDENTIFIER_CONSUMER, 2),
+            (REPORT_IDENTIFIER_MOUSE, 5),
+            (REPORT_IDENTIFIER_SYSTEM, 1),
+        ] {
+            let length =
+                get_report_response(ReportDirection::In, identifier, 0xFF, &mut buffer).unwrap();
+            assert_eq!(length, 1 + report_bytes);
+            assert_eq!(buffer[0], identifier);
+            assert!(buffer[1..length].iter().all(|&byte| byte == 0));
+        }
+        // An unknown input report identifier, a feature report or a small buffer
+        // is not answered.
+        assert!(get_report_response(ReportDirection::In, 0, 0, &mut buffer).is_none());
+        assert!(
+            get_report_response(
+                ReportDirection::Feature,
+                REPORT_IDENTIFIER_KEYBOARD,
+                0,
+                &mut buffer
+            )
+            .is_none()
+        );
+        assert!(
+            get_report_response(
+                ReportDirection::In,
+                REPORT_IDENTIFIER_KEYBOARD,
+                0,
+                &mut buffer[..8]
+            )
+            .is_none()
+        );
     }
 }

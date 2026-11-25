@@ -23,7 +23,7 @@ them:
   plugged into, and applications drive it through
   `/devices/human_interface/emulation`.
 
-Build with the feature and merge the flash image as usual:
+Build as usual, with the feature:
 
 ```sh
 mise trust

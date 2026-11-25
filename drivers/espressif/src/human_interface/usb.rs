@@ -14,6 +14,7 @@ use core::task::Poll;
 
 use critical_section::Mutex;
 use embassy_futures::join::{join, join3};
+use embassy_futures::select::{Either, select};
 use embassy_sync::waitqueue::WakerRegistration;
 use embassy_usb::class::cdc_acm::{
     CdcAcmClass, ControlChanged, Receiver, Sender, State as CdcAcmState,
@@ -35,9 +36,9 @@ use peripherals::human_interface::{
 
 use super::logic::{
     BusEvent, CONTROL_BUFFER_SIZE, ConnectionState, ENDPOINT_MAX_PACKET_SIZE,
-    ENDPOINT_OUT_BUFFER_SIZE, HID_POLL_MILLISECONDS, REPORT_QUEUE_CAPACITY, ReportQueue,
-    frame_report, led_indicators_from_control_payload, led_indicators_from_output_report,
-    release_report, report_length,
+    ENDPOINT_OUT_BUFFER_SIZE, HID_POLL_MILLISECONDS, REPORT_QUEUE_CAPACITY, ReportDirection,
+    ReportQueue, frame_report, get_report_response, led_indicators_from_control_payload,
+    led_indicators_from_output_report, release_report,
 };
 use crate::console::ConsolePort;
 
@@ -101,15 +102,18 @@ fn with_usb_state<T>(function: impl FnOnce(&mut ConnectionState, &mut ReportStat
     })
 }
 
-/// Applies a USB bus event to the connection state and the report queue: on an
-/// event that disconnects, the queued reports are dropped and the LED state is
-/// cleared; when the host comes back, one all-zero release report per identifier
-/// is queued, so that no key stays held.
+/// Applies a USB bus event to the connection state and the report queue: every
+/// event drops the queued reports, an event that disconnects also clears the LED
+/// state (not a resume: the host is still there and its LED state is still
+/// valid), and when the host comes back, one all-zero release report per
+/// identifier is queued, so that no key stays held.
 fn apply_bus_event(event: BusEvent) {
     with_usb_state(|connection, state| {
         let outcome = connection.apply(event);
         if outcome.invalidate {
             state.queue.clear();
+        }
+        if outcome.clear_indicators {
             INDICATORS.store(0, Ordering::Relaxed);
         }
         if outcome.host_returned {
@@ -132,24 +136,20 @@ struct HidRequestHandler;
 
 impl RequestHandler for HidRequestHandler {
     fn get_report(&mut self, identifier: ReportId, buffer: &mut [u8]) -> Option<usize> {
-        match identifier {
-            ReportId::Out(REPORT_IDENTIFIER_KEYBOARD) => {
-                if buffer.is_empty() {
-                    return None;
-                }
-                buffer[0] = INDICATORS.load(Ordering::Relaxed);
-                Some(1)
-            }
-            ReportId::In(identifier) => {
-                let length = report_length(identifier)?;
-                if buffer.len() < length {
-                    return None;
-                }
-                buffer[..length].fill(0);
-                Some(length)
-            }
-            _ => None,
-        }
+        // The descriptor uses numbered reports, so the response carries the
+        // report identifier byte first: the LED byte for the keyboard output
+        // report, zeros for an input report.
+        let (direction, identifier) = match identifier {
+            ReportId::In(identifier) => (ReportDirection::In, identifier),
+            ReportId::Out(identifier) => (ReportDirection::Out, identifier),
+            ReportId::Feature(identifier) => (ReportDirection::Feature, identifier),
+        };
+        get_report_response(
+            direction,
+            identifier,
+            INDICATORS.load(Ordering::Relaxed),
+            buffer,
+        )
     }
 
     fn set_report(&mut self, identifier: ReportId, payload: &[u8]) -> OutResponse {
@@ -235,9 +235,10 @@ static mut USB_RUNNER: Option<UsbCompositeRunner> = None;
 /// already taken.
 pub(crate) fn take_runner() -> Option<UsbCompositeRunner> {
     // SAFETY: `UsbHumanInterface::new` writes the slot once (guarded by
-    // INITIALIZED). `take` moves the runner out and leaves `None` in the slot, so a
-    // second call returns `None` instead of copying the value, and no reference to
-    // the slot is created.
+    // INITIALIZED) before the console task starts, and the console task calls
+    // this once, so the access to the slot is exclusive. `take` on the raw place
+    // moves the runner out and leaves `None`, so a second call returns `None`
+    // instead of copying the value.
     unsafe { (*core::ptr::addr_of_mut!(USB_RUNNER)).take() }
 }
 
@@ -467,8 +468,8 @@ async fn pump_hid(
 ) {
     let write_future = async {
         loop {
-            // Pop one report and capture the connection generation with it, so that
-            // a report popped before a bus event is not delivered after it.
+            // Pop one report and capture the connection generation with it, in one
+            // poll: no bus event can happen between the pop and the check below.
             let (generation, identifier, bytes, length) = poll_fn(|context| {
                 with_usb_state(|connection, state| match state.queue.pop() {
                     Some((identifier, bytes, length)) => {
@@ -481,10 +482,8 @@ async fn pump_hid(
                 })
             })
             .await;
-            // A bus event happened between the pop and now: drop the report.
-            let still_current =
-                with_usb_state(|connection, _| connection.generation() == generation);
-            if !still_current {
+            // Cheap guard: a bus event between the pop and now drops the report.
+            if with_usb_state(|connection, _| connection.is_stale(generation)) {
                 continue;
             }
             // The descriptor declares report identifiers, so the frame on the wire
@@ -492,11 +491,35 @@ async fn pump_hid(
             let Some((frame, frame_length)) = frame_report(identifier, &bytes[..length]) else {
                 continue;
             };
-            if writer.write(&frame[..frame_length]).await.is_err() {
-                // Second defence: the endpoint was disabled (bus reset or
-                // unconfiguration). The report is dropped, not retried; wait for
-                // the endpoint to be enabled again by a new configuration.
-                writer.ready().await;
+            // Race the write against a bus event. The write awaits the endpoint, and
+            // a report popped before an unplug or a suspend would block there and be
+            // sent after the host comes back, so the host would see a spurious tap.
+            // `apply_bus_event` bumps the generation and wakes the runner waker on
+            // every event, so the stale future below resolves and the pending write is
+            // dropped (safe: loading the endpoint FIFO is one synchronous block). It
+            // is the first select argument, so it also wins when the write and the
+            // event become ready in the same poll, on the re-plug that re-enables the
+            // endpoint.
+            let stale = poll_fn(|context| {
+                with_usb_state(|connection, state| {
+                    if connection.is_stale(generation) {
+                        Poll::Ready(())
+                    } else {
+                        state.runner_waker.register(context.waker());
+                        Poll::Pending
+                    }
+                })
+            });
+            match select(stale, writer.write(&frame[..frame_length])).await {
+                // A bus event happened while the write was pending: drop the report.
+                Either::First(()) => continue,
+                Either::Second(Err(_)) => {
+                    // Second defence: the endpoint was disabled (bus reset or
+                    // unconfiguration). The report is dropped, not retried; wait for
+                    // the endpoint to be enabled again by a new configuration.
+                    writer.ready().await;
+                }
+                Either::Second(Ok(())) => {}
             }
         }
     };
