@@ -105,6 +105,22 @@ impl UinputController {
         self.file.as_raw_fd()
     }
 
+    /// Controller on an arbitrary file, without creating a device. Used by the tests,
+    /// which write to a pipe instead of `/dev/uinput`.
+    #[cfg(test)]
+    fn from_file_for_test(file: File) -> Self {
+        Self {
+            file,
+            created: false,
+            indicators: AtomicU8::new(0),
+            modifiers: 0,
+            keys: [0; 6],
+            consumer_usage: 0,
+            mouse_buttons: 0,
+            system_usage: 0,
+        }
+    }
+
     fn ioctl(&self, request: libc::Ioctl, argument: usize) -> io::Result<()> {
         // SAFETY: every request of this module is a uinput ioctl and the argument matches
         // what the request expects: the UI_SET_* and UI_DEV_* requests take an integer
@@ -139,8 +155,14 @@ impl UinputController {
             self.ioctl(UI_SET_LEDBIT, code as usize)?;
         }
 
+        // SAFETY: `uinput_setup` is a plain data struct of integers and a character
+        // array; all-zero bytes are a valid value for every field, and the fields that
+        // matter are overwritten below.
         let mut setup: libc::uinput_setup = unsafe { core::mem::zeroed() };
         let name = DEVICE_NAME;
+        // SAFETY: `name` points to `name.len()` valid bytes that stay alive for the
+        // call, `setup.name` is a `[c_char; 80]` array with room for the name, and the
+        // zero terminator after it comes from the `zeroed()` above.
         setup.name[..name.len()].copy_from_slice(unsafe {
             core::slice::from_raw_parts(name.as_ptr().cast::<libc::c_char>(), name.len())
         });
@@ -488,5 +510,180 @@ mod tests {
         let controller = controller_without_device();
         assert!(controller.is_connected());
         assert_eq!(controller.indicators(), 0);
+    }
+
+    /// Controller writing to a pipe, plus the read end of the pipe. No root needed.
+    fn controller_with_pipe() -> (UinputController, File) {
+        use std::os::unix::io::FromRawFd;
+
+        let mut fds = [0 as libc::c_int; 2];
+        // SAFETY: `fds` is a valid two-element buffer for the pipe fds.
+        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        for fd in fds {
+            // SAFETY: each fd is valid; F_GETFL reads the flags and F_SETFL adds
+            // O_NONBLOCK, so reads never block when the pipe is empty.
+            unsafe {
+                let flags = libc::fcntl(fd, libc::F_GETFL);
+                assert!(flags >= 0);
+                assert_eq!(libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK), 0);
+            }
+        }
+        // SAFETY: both fds are owned and valid; each end moves into exactly one File.
+        let read_end = unsafe { File::from_raw_fd(fds[0]) };
+        let write_end = unsafe { File::from_raw_fd(fds[1]) };
+        (UinputController::from_file_for_test(write_end), read_end)
+    }
+
+    /// Read every pending event of the pipe as `(type, code, value)` records.
+    fn read_events(read_end: &mut File) -> Vec<(u16, u16, i32)> {
+        use std::io::Read;
+
+        let mut buffer = [0u8; 4096];
+        let mut events = Vec::new();
+        loop {
+            match read_end.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(count) => {
+                    for chunk in buffer[..count].chunks_exact(size_of::<libc::input_event>()) {
+                        // SAFETY: `chunk` holds exactly one input_event written by the
+                        // controller; `read_unaligned` covers the buffer alignment.
+                        let event = unsafe {
+                            (chunk.as_ptr() as *const libc::input_event).read_unaligned()
+                        };
+                        events.push((event.type_, event.code, event.value));
+                    }
+                    if count < buffer.len() {
+                        break;
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                Err(error) => panic!("reading the event pipe failed: {error}"),
+            }
+        }
+        events
+    }
+
+    #[test]
+    fn keyboard_events_are_ordered_releases_then_presses_then_syn() {
+        use device::human_interface::keyboard;
+
+        let (mut controller, mut read_end) = controller_with_pipe();
+        let syn = (mapping::EV_SYN, mapping::SYN_REPORT, 0);
+
+        // Press A.
+        controller
+            .send_report(
+                REPORT_IDENTIFIER_KEYBOARD,
+                &[0, 0, keyboard::A, 0, 0, 0, 0, 0],
+            )
+            .unwrap();
+        assert_eq!(
+            read_events(&mut read_end),
+            vec![(mapping::EV_KEY, mapping::KEY_A, 1), syn]
+        );
+
+        // Switch to left control plus B: key release first, then the modifier press,
+        // then the key press, then SYN_REPORT.
+        controller
+            .send_report(
+                REPORT_IDENTIFIER_KEYBOARD,
+                &[0x01, 0, keyboard::B, 0, 0, 0, 0, 0],
+            )
+            .unwrap();
+        assert_eq!(
+            read_events(&mut read_end),
+            vec![
+                (mapping::EV_KEY, mapping::KEY_A, 0),
+                (mapping::EV_KEY, mapping::KEY_LEFTCTRL, 1),
+                (mapping::EV_KEY, mapping::KEY_B, 1),
+                syn,
+            ]
+        );
+
+        // Release everything: key release, then modifier release, then SYN_REPORT.
+        controller
+            .send_report(REPORT_IDENTIFIER_KEYBOARD, &[0; 8])
+            .unwrap();
+        assert_eq!(
+            read_events(&mut read_end),
+            vec![
+                (mapping::EV_KEY, mapping::KEY_B, 0),
+                (mapping::EV_KEY, mapping::KEY_LEFTCTRL, 0),
+                syn,
+            ]
+        );
+    }
+
+    #[test]
+    fn mouse_events_are_buttons_then_axes_then_syn() {
+        let (mut controller, mut read_end) = controller_with_pipe();
+        let syn = (mapping::EV_SYN, mapping::SYN_REPORT, 0);
+
+        // Press the left button and move.
+        controller
+            .send_report(REPORT_IDENTIFIER_MOUSE, &[0x01, 0xFF, 0x02, 0x00, 0x00])
+            .unwrap();
+        assert_eq!(
+            read_events(&mut read_end),
+            vec![
+                (mapping::EV_KEY, mapping::BTN_LEFT, 1),
+                (mapping::EV_REL, mapping::REL_X, -1),
+                (mapping::EV_REL, mapping::REL_Y, 2),
+                syn,
+            ]
+        );
+
+        // Release the button: button release, then SYN_REPORT.
+        controller
+            .send_report(REPORT_IDENTIFIER_MOUSE, &[0x00, 0, 0, 0, 0])
+            .unwrap();
+        assert_eq!(
+            read_events(&mut read_end),
+            vec![(mapping::EV_KEY, mapping::BTN_LEFT, 0), syn]
+        );
+    }
+
+    #[test]
+    fn a_failed_send_keeps_the_previous_state() {
+        use device::human_interface::keyboard;
+
+        let (mut controller, read_end) = controller_with_pipe();
+
+        // Press A and the play/pause consumer usage successfully.
+        controller
+            .send_report(
+                REPORT_IDENTIFIER_KEYBOARD,
+                &[0, 0, keyboard::A, 0, 0, 0, 0, 0],
+            )
+            .unwrap();
+        controller
+            .send_report(REPORT_IDENTIFIER_CONSUMER, &0x00CDu16.to_le_bytes())
+            .unwrap();
+        assert_eq!(controller.keys, [keyboard::A, 0, 0, 0, 0, 0]);
+        assert_eq!(controller.consumer_usage, 0x00CD);
+
+        // Break the pipe: every write now fails with EPIPE.
+        drop(read_end);
+        assert_eq!(
+            controller.send_report(
+                REPORT_IDENTIFIER_KEYBOARD,
+                &[0, 0, keyboard::B, 0, 0, 0, 0, 0]
+            ),
+            Err(Error::Other)
+        );
+        assert_eq!(
+            controller.send_report(REPORT_IDENTIFIER_CONSUMER, &0u16.to_le_bytes()),
+            Err(Error::Other)
+        );
+        assert_eq!(
+            controller.send_report(REPORT_IDENTIFIER_MOUSE, &[0x01, 0, 0, 0, 0]),
+            Err(Error::Other)
+        );
+
+        // The recorded state still holds the last successful reports.
+        assert_eq!(controller.keys, [keyboard::A, 0, 0, 0, 0, 0]);
+        assert_eq!(controller.modifiers, 0);
+        assert_eq!(controller.consumer_usage, 0x00CD);
+        assert_eq!(controller.mouse_buttons, 0);
     }
 }

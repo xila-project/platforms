@@ -1,7 +1,7 @@
 //! Mapping from the HID usages of `device::human_interface` to Linux input event codes
 //! (`linux/input-event-codes.h`). Usages without a mapping are skipped by the controller.
 
-use device::human_interface::{consumer, keyboard, system};
+use device::human_interface::{consumer, system};
 
 // Linux event types and codes (linux/input-event-codes.h).
 pub const EV_SYN: u16 = 0x00;
@@ -99,105 +99,364 @@ pub const KEY_PREVIOUSSONG: u16 = 165;
 pub const KEY_STOPCD: u16 = 166;
 pub const KEY_F13: u16 = 183;
 
-/// Linux key codes of the letter usages `keyboard::A` to `keyboard::Z` (QWERTY layout order
-/// of the Linux key codes).
-const LETTER_CODES: [u16; 26] = [
-    KEY_A, // A
-    48,    // B
-    46,    // C
-    32,    // D
-    18,    // E
-    33,    // F
-    34,    // G
-    35,    // H
-    23,    // I
-    36,    // J
-    37,    // K
-    38,    // L
-    50,    // M
-    49,    // N
-    24,    // O
-    25,    // P
-    16,    // Q
-    19,    // R
-    31,    // S
-    20,    // T
-    22,    // U
-    47,    // V
-    17,    // W
-    45,    // X
-    21,    // Y
-    44,    // Z
+// Additional Linux key codes used by the kernel keyboard table below.
+pub const KEY_2: u16 = 3;
+pub const KEY_3: u16 = 4;
+pub const KEY_4: u16 = 5;
+pub const KEY_5: u16 = 6;
+pub const KEY_6: u16 = 7;
+pub const KEY_7: u16 = 8;
+pub const KEY_8: u16 = 9;
+pub const KEY_9: u16 = 10;
+pub const KEY_Q: u16 = 16;
+pub const KEY_W: u16 = 17;
+pub const KEY_E: u16 = 18;
+pub const KEY_R: u16 = 19;
+pub const KEY_T: u16 = 20;
+pub const KEY_Y: u16 = 21;
+pub const KEY_U: u16 = 22;
+pub const KEY_I: u16 = 23;
+pub const KEY_O: u16 = 24;
+pub const KEY_P: u16 = 25;
+pub const KEY_S: u16 = 31;
+pub const KEY_D: u16 = 32;
+pub const KEY_F: u16 = 33;
+pub const KEY_G: u16 = 34;
+pub const KEY_H: u16 = 35;
+pub const KEY_J: u16 = 36;
+pub const KEY_K: u16 = 37;
+pub const KEY_L: u16 = 38;
+pub const KEY_Z: u16 = 44;
+pub const KEY_X: u16 = 45;
+pub const KEY_C: u16 = 46;
+pub const KEY_V: u16 = 47;
+pub const KEY_B: u16 = 48;
+pub const KEY_N: u16 = 49;
+pub const KEY_M: u16 = 50;
+pub const KEY_F2: u16 = 60;
+pub const KEY_F3: u16 = 61;
+pub const KEY_F4: u16 = 62;
+pub const KEY_F5: u16 = 63;
+pub const KEY_F6: u16 = 64;
+pub const KEY_F7: u16 = 65;
+pub const KEY_F8: u16 = 66;
+pub const KEY_F9: u16 = 67;
+pub const KEY_F10: u16 = 68;
+pub const KEY_ZENKAKUHANKAKU: u16 = 85;
+pub const KEY_RO: u16 = 89;
+pub const KEY_KATAKANA: u16 = 90;
+pub const KEY_HIRAGANA: u16 = 91;
+pub const KEY_HENKAN: u16 = 92;
+pub const KEY_KATAKANAHIRAGANA: u16 = 93;
+pub const KEY_MUHENKAN: u16 = 94;
+pub const KEY_KPJPCOMMA: u16 = 95;
+pub const KEY_KPCOMMA: u16 = 121;
+pub const KEY_HANGEUL: u16 = 122;
+pub const KEY_HANJA: u16 = 123;
+pub const KEY_YEN: u16 = 124;
+pub const KEY_STOP: u16 = 128;
+pub const KEY_AGAIN: u16 = 129;
+pub const KEY_PROPS: u16 = 130;
+pub const KEY_UNDO: u16 = 131;
+pub const KEY_FRONT: u16 = 132;
+pub const KEY_COPY: u16 = 133;
+pub const KEY_OPEN: u16 = 134;
+pub const KEY_PASTE: u16 = 135;
+pub const KEY_FIND: u16 = 136;
+pub const KEY_CUT: u16 = 137;
+pub const KEY_HELP: u16 = 138;
+pub const KEY_CALC: u16 = 140;
+pub const KEY_WWW: u16 = 150;
+pub const KEY_COFFEE: u16 = 152;
+pub const KEY_BACK: u16 = 158;
+pub const KEY_FORWARD: u16 = 159;
+pub const KEY_EJECTCD: u16 = 161;
+pub const KEY_REFRESH: u16 = 173;
+pub const KEY_EDIT: u16 = 176;
+pub const KEY_SCROLLUP: u16 = 177;
+pub const KEY_SCROLLDOWN: u16 = 178;
+pub const KEY_KPLEFTPAREN: u16 = 179;
+pub const KEY_KPRIGHTPAREN: u16 = 180;
+pub const KEY_F14: u16 = 184;
+pub const KEY_F15: u16 = 185;
+pub const KEY_F16: u16 = 186;
+pub const KEY_F17: u16 = 187;
+pub const KEY_F18: u16 = 188;
+pub const KEY_F19: u16 = 189;
+pub const KEY_F20: u16 = 190;
+pub const KEY_F21: u16 = 191;
+pub const KEY_F22: u16 = 192;
+pub const KEY_F23: u16 = 193;
+pub const KEY_F24: u16 = 194;
+
+/// HID Keyboard/Keypad page (0x07) usage to Linux key code. Mirrors the
+/// `hid_keyboard[]` table of the Linux kernel (`drivers/hid/hid-input.c` in
+/// `torvalds/linux`): `0` marks a usage the kernel does not map.
+const KEYBOARD_USAGE_CODES: [u16; 256] = [
+    0,
+    0,
+    0,
+    0,
+    KEY_A,
+    KEY_B,
+    KEY_C,
+    KEY_D,
+    KEY_E,
+    KEY_F,
+    KEY_G,
+    KEY_H,
+    KEY_I,
+    KEY_J,
+    KEY_K,
+    KEY_L, // 0x00..=0x0F
+    KEY_M,
+    KEY_N,
+    KEY_O,
+    KEY_P,
+    KEY_Q,
+    KEY_R,
+    KEY_S,
+    KEY_T,
+    KEY_U,
+    KEY_V,
+    KEY_W,
+    KEY_X,
+    KEY_Y,
+    KEY_Z,
+    KEY_1,
+    KEY_2, // 0x10..=0x1F
+    KEY_3,
+    KEY_4,
+    KEY_5,
+    KEY_6,
+    KEY_7,
+    KEY_8,
+    KEY_9,
+    KEY_0,
+    KEY_ENTER,
+    KEY_ESC,
+    KEY_BACKSPACE,
+    KEY_TAB,
+    KEY_SPACE,
+    KEY_MINUS,
+    KEY_EQUAL,
+    KEY_LEFTBRACE, // 0x20..=0x2F
+    KEY_RIGHTBRACE,
+    KEY_BACKSLASH,
+    KEY_BACKSLASH,
+    KEY_SEMICOLON,
+    KEY_APOSTROPHE,
+    KEY_GRAVE,
+    KEY_COMMA,
+    KEY_DOT,
+    KEY_SLASH,
+    KEY_CAPSLOCK,
+    KEY_F1,
+    KEY_F2,
+    KEY_F3,
+    KEY_F4,
+    KEY_F5,
+    KEY_F6, // 0x30..=0x3F
+    KEY_F7,
+    KEY_F8,
+    KEY_F9,
+    KEY_F10,
+    KEY_F11,
+    KEY_F12,
+    KEY_SYSRQ,
+    KEY_SCROLLLOCK,
+    KEY_PAUSE,
+    KEY_INSERT,
+    KEY_HOME,
+    KEY_PAGEUP,
+    KEY_DELETE,
+    KEY_END,
+    KEY_PAGEDOWN,
+    KEY_RIGHT, // 0x40..=0x4F
+    KEY_LEFT,
+    KEY_DOWN,
+    KEY_UP,
+    KEY_NUMLOCK,
+    KEY_KPSLASH,
+    KEY_KPASTERISK,
+    KEY_KPMINUS,
+    KEY_KPPLUS,
+    KEY_KPENTER,
+    KEY_KP1,
+    KEY_KP2,
+    KEY_KP3,
+    KEY_KP4,
+    KEY_KP5,
+    KEY_KP6,
+    KEY_KP7, // 0x50..=0x5F
+    KEY_KP8,
+    KEY_KP9,
+    KEY_KP0,
+    KEY_KPDOT,
+    KEY_102ND,
+    KEY_COMPOSE,
+    KEY_POWER,
+    KEY_KPEQUAL,
+    KEY_F13,
+    KEY_F14,
+    KEY_F15,
+    KEY_F16,
+    KEY_F17,
+    KEY_F18,
+    KEY_F19,
+    KEY_F20, // 0x60..=0x6F
+    KEY_F21,
+    KEY_F22,
+    KEY_F23,
+    KEY_F24,
+    KEY_OPEN,
+    KEY_HELP,
+    KEY_PROPS,
+    KEY_FRONT,
+    KEY_STOP,
+    KEY_AGAIN,
+    KEY_UNDO,
+    KEY_CUT,
+    KEY_COPY,
+    KEY_PASTE,
+    KEY_FIND,
+    KEY_MUTE, // 0x70..=0x7F
+    KEY_VOLUMEUP,
+    KEY_VOLUMEDOWN,
+    0,
+    0,
+    0,
+    KEY_KPCOMMA,
+    0,
+    KEY_RO,
+    KEY_KATAKANAHIRAGANA,
+    KEY_YEN,
+    KEY_HENKAN,
+    KEY_MUHENKAN,
+    KEY_KPJPCOMMA,
+    0,
+    0,
+    0, // 0x80..=0x8F
+    KEY_HANGEUL,
+    KEY_HANJA,
+    KEY_KATAKANA,
+    KEY_HIRAGANA,
+    KEY_ZENKAKUHANKAKU,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    KEY_DELETE,
+    0,
+    0,
+    0, // 0x90..=0x9F
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0, // 0xA0..=0xAF
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    KEY_KPLEFTPAREN,
+    KEY_KPRIGHTPAREN,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0, // 0xB0..=0xBF
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0, // 0xC0..=0xCF
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    KEY_DELETE,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0, // 0xD0..=0xDF
+    KEY_LEFTCTRL,
+    KEY_LEFTSHIFT,
+    KEY_LEFTALT,
+    KEY_LEFTMETA,
+    KEY_RIGHTCTRL,
+    KEY_RIGHTSHIFT,
+    KEY_RIGHTALT,
+    KEY_RIGHTMETA,
+    KEY_PLAYPAUSE,
+    KEY_STOPCD,
+    KEY_PREVIOUSSONG,
+    KEY_NEXTSONG,
+    KEY_EJECTCD,
+    KEY_VOLUMEUP,
+    KEY_VOLUMEDOWN,
+    KEY_MUTE, // 0xE0..=0xEF
+    KEY_WWW,
+    KEY_BACK,
+    KEY_FORWARD,
+    KEY_STOP,
+    KEY_FIND,
+    KEY_SCROLLUP,
+    KEY_SCROLLDOWN,
+    KEY_EDIT,
+    KEY_SLEEP,
+    KEY_COFFEE,
+    KEY_REFRESH,
+    KEY_CALC,
+    0,
+    0,
+    0,
+    0, // 0xF0..=0xFF
 ];
 
-/// Linux key code of a Keyboard/Keypad page (0x07) usage, or `None` when unmapped.
+/// Linux key code of a Keyboard/Keypad page (0x07) usage, or `None` when the
+/// kernel does not map the usage.
 pub fn keyboard_usage(usage: u8) -> Option<u16> {
-    match usage {
-        keyboard::A..=keyboard::Z => Some(LETTER_CODES[usize::from(usage - keyboard::A)]),
-        keyboard::NUMBER_1..=keyboard::NUMBER_9 => {
-            Some(KEY_1 + u16::from(usage - keyboard::NUMBER_1))
-        }
-        keyboard::NUMBER_0 => Some(KEY_0),
-        keyboard::ENTER => Some(KEY_ENTER),
-        keyboard::ESCAPE => Some(KEY_ESC),
-        keyboard::BACKSPACE => Some(KEY_BACKSPACE),
-        keyboard::TAB => Some(KEY_TAB),
-        keyboard::SPACE => Some(KEY_SPACE),
-        // Punctuation 0x2D to 0x38: minus, equal, brackets, backslash, non-US #/~,
-        // semicolon, apostrophe, grave, comma, dot, slash.
-        0x2D => Some(KEY_MINUS),
-        0x2E => Some(KEY_EQUAL),
-        0x2F => Some(KEY_LEFTBRACE),
-        0x30 => Some(KEY_RIGHTBRACE),
-        0x31 => Some(KEY_BACKSLASH),
-        0x32 => Some(KEY_102ND),
-        0x33 => Some(KEY_SEMICOLON),
-        0x34 => Some(KEY_APOSTROPHE),
-        0x35 => Some(KEY_GRAVE),
-        0x36 => Some(KEY_COMMA),
-        0x37 => Some(KEY_DOT),
-        0x38 => Some(KEY_SLASH),
-        keyboard::CAPS_LOCK => Some(KEY_CAPSLOCK),
-        keyboard::F1..=keyboard::F10 => Some(KEY_F1 + u16::from(usage - keyboard::F1)),
-        keyboard::F11 => Some(KEY_F11),
-        keyboard::F12 => Some(KEY_F12),
-        keyboard::PRINT_SCREEN => Some(KEY_SYSRQ),
-        keyboard::SCROLL_LOCK => Some(KEY_SCROLLLOCK),
-        keyboard::PAUSE => Some(KEY_PAUSE),
-        keyboard::INSERT => Some(KEY_INSERT),
-        keyboard::HOME => Some(KEY_HOME),
-        keyboard::PAGE_UP => Some(KEY_PAGEUP),
-        keyboard::DELETE => Some(KEY_DELETE),
-        keyboard::END => Some(KEY_END),
-        keyboard::PAGE_DOWN => Some(KEY_PAGEDOWN),
-        keyboard::ARROW_RIGHT => Some(KEY_RIGHT),
-        keyboard::ARROW_LEFT => Some(KEY_LEFT),
-        keyboard::ARROW_DOWN => Some(KEY_DOWN),
-        keyboard::ARROW_UP => Some(KEY_UP),
-        // Keypad 0x53 to 0x67.
-        0x53 => Some(KEY_NUMLOCK),
-        0x54 => Some(KEY_KPSLASH),
-        0x55 => Some(KEY_KPASTERISK),
-        0x56 => Some(KEY_KPMINUS),
-        0x57 => Some(KEY_KPPLUS),
-        0x58 => Some(KEY_KPENTER),
-        0x59 => Some(KEY_KP1),
-        0x5A => Some(KEY_KP2),
-        0x5B => Some(KEY_KP3),
-        0x5C => Some(KEY_KP4),
-        0x5D => Some(KEY_KP5),
-        0x5E => Some(KEY_KP6),
-        0x5F => Some(KEY_KP7),
-        0x60 => Some(KEY_KP8),
-        0x61 => Some(KEY_KP9),
-        0x62 => Some(KEY_KP0),
-        0x63 => Some(KEY_KPDOT),
-        0x64 => Some(KEY_102ND),
-        0x65 => Some(KEY_COMPOSE),
-        0x67 => Some(KEY_KPEQUAL),
-        keyboard::F13..=keyboard::F24 => Some(KEY_F13 + u16::from(usage - keyboard::F13)),
-        0xE0..=0xE7 => Some(MODIFIER_KEY_CODES[usize::from(usage - 0xE0)]),
-        _ => None,
+    match KEYBOARD_USAGE_CODES[usize::from(usage)] {
+        0 => None,
+        code => Some(code),
     }
 }
 
@@ -244,7 +503,7 @@ pub const MOUSE_BUTTON_CODES: [u16; 3] = [BTN_LEFT, BTN_RIGHT, BTN_MIDDLE];
 /// registration: all mapped keyboard usages, the consumer and system usages and the mouse
 /// buttons.
 pub fn all_key_codes() -> std::vec::Vec<u16> {
-    let mut codes: std::vec::Vec<u16> = (0u8..=0xE7)
+    let mut codes: std::vec::Vec<u16> = (0u8..=0xFF)
         .filter_map(keyboard_usage)
         .chain(
             [
@@ -274,7 +533,7 @@ pub fn all_key_codes() -> std::vec::Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use device::human_interface::Modifiers;
+    use device::human_interface::{Modifiers, keyboard};
 
     #[test]
     fn letters_map_to_the_linux_qwerty_codes() {
@@ -325,7 +584,10 @@ mod tests {
         assert_eq!(keyboard_usage(0x2F), Some(KEY_LEFTBRACE));
         assert_eq!(keyboard_usage(0x30), Some(KEY_RIGHTBRACE));
         assert_eq!(keyboard_usage(0x31), Some(KEY_BACKSLASH));
-        assert_eq!(keyboard_usage(0x32), Some(KEY_102ND));
+        // The kernel maps 0x31 and 0x32 to the same code; 0x64 (Non-US pipe)
+        // is the usage mapped to KEY_102ND.
+        assert_eq!(keyboard_usage(0x32), Some(KEY_BACKSLASH));
+        assert_eq!(keyboard_usage(0x64), Some(KEY_102ND));
         assert_eq!(keyboard_usage(0x33), Some(KEY_SEMICOLON));
         assert_eq!(keyboard_usage(0x34), Some(KEY_APOSTROPHE));
         assert_eq!(keyboard_usage(0x35), Some(KEY_GRAVE));
@@ -356,11 +618,13 @@ mod tests {
         assert_eq!(keyboard_usage(0x64), Some(KEY_102ND));
         assert_eq!(keyboard_usage(0x65), Some(KEY_COMPOSE));
         assert_eq!(keyboard_usage(0x67), Some(KEY_KPEQUAL));
+        // The kernel maps the keypad comma 0x66 to KEY_POWER.
+        assert_eq!(keyboard_usage(0x66), Some(KEY_POWER));
     }
 
     #[test]
     fn unmapped_keyboard_usages_are_none() {
-        for usage in [0x00, 0x01, 0x66, 0xE8, 0xFF] {
+        for usage in [0x00, 0x01, 0x95, 0x9D, 0xFC, 0xFF] {
             assert_eq!(keyboard_usage(usage), None, "usage 0x{usage:02X}");
         }
     }
@@ -384,6 +648,10 @@ mod tests {
                 "modifier bit {bit}"
             );
             assert!(modifier.bits() == 1 << bit);
+            assert_eq!(
+                keyboard_usage(0xE0 + bit),
+                Some(MODIFIER_KEY_CODES[usize::from(bit)])
+            );
         }
     }
 
@@ -420,7 +688,7 @@ mod tests {
     fn every_mappable_usage_is_registered() {
         let registered = all_key_codes();
         let contains = |code: u16| registered.contains(&code);
-        for usage in 0u8..=0xE7 {
+        for usage in 0u8..=0xFF {
             if let Some(code) = keyboard_usage(usage) {
                 assert!(contains(code), "keyboard usage 0x{usage:02X}");
             }
