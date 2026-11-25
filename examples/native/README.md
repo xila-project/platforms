@@ -211,6 +211,40 @@ Run the hardware-free VFS lifecycle regression with
 `cargo test -p xila-drivers-native --test wifi`. Generic payload validation and command
 identifier uniqueness are covered by `cargo test -p xila-network --test wifi_types`.
 
+## Human interface emulation
+
+On Linux, the example mounts `/devices/human_interface/emulation` through the Linux
+`uinput` interface, so an application can make this computer receive keyboard, media
+remote and mouse input from Xila (shortcuts, screenshots, play/pause, volume), for
+example:
+
+```sh
+printf '\x01\x00\x04\x00\x00\x00\x00\x00' > /devices/human_interface/emulation   # press A
+printf '\x01\x00\x00\x00\x00\x00\x00\x00' > /devices/human_interface/emulation   # release all
+```
+
+Each write holds one or more 8-byte messages; see the `device::human_interface`
+contract in Core for the message kinds. Watch the events on the host with `evtest`
+(select the `Xila human interface emulation` device). The `GET_STATUS` control command
+reports whether a computer is connected and the keyboard LED state.
+
+Writing to the node needs write access to `/dev/uinput`. Grant it with the `input`
+group:
+
+```sh
+sudo usermod -aG input "$USER"   # then log in again
+```
+
+or with a udev rule:
+
+```sh
+echo 'KERNEL=="uinput", MODE="0660", GROUP="input"' | sudo tee /etc/udev/rules.d/99-xila-uinput.rules
+sudo udevadm control --reload-rules
+```
+
+If `/dev/uinput` cannot be opened, the runtime logs one warning, does not mount the
+device and still starts.
+
 ## Startup application
 
 With the graphical interface, a disk holding `/configuration/system/startup.json`

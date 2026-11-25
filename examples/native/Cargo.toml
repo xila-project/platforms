@@ -34,8 +34,14 @@ getargs-derive = { workspace = true }
 [features]
 neural-network = ["drivers_shared/neural-network"]
 # Host audio and the portable NN demo are available in the default runtime.
-default = ["audio", "neural-network"]
+default = ["audio", "neural-network", "human-interface"]
 audio = ["dep:audio", "drivers_native/audio"]
+# Linux uinput human interface emulation at /devices/human_interface/emulation (no-op on
+# other hosts). Without write access to /dev/uinput the device is not mounted.
+human-interface = [
+  "drivers_std/human-interface",
+  "drivers_peripherals/human-interface",
+]
 # Compatibility flag: bundled applications now always come from the seed.
 prebuilt-applications = []
 profiling = ["drivers_std/profiling", "prebuilt-applications"]

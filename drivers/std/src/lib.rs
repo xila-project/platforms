@@ -8,6 +8,8 @@ pub mod executable_memory;
 pub mod executor;
 #[cfg(all(feature = "heaptrack", target_os = "linux"))]
 mod heaptrack;
+#[cfg(all(feature = "human-interface", target_os = "linux"))]
+pub mod human_interface;
 pub mod io;
 pub mod loader;
 pub mod log;

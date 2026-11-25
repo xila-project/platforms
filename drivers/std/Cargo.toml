@@ -18,6 +18,7 @@ virtual_file_system = { workspace = true }
 shared = { workspace = true }
 drivers_shared = { package = "xila-drivers-shared", path = "../shared", default-features = false }
 peripherals = { workspace = true, features = ["power"] }
+device = { workspace = true, optional = true }
 native_loader = { workspace = true }
 
 libc = { version = "0.2" }
@@ -35,6 +36,9 @@ miniserde = { workspace = true, optional = true }
 default = []
 heaptrack = []
 profiling = ["task/profiling", "dep:miniserde"]
+# Linux uinput human interface emulation controller (keyboard, media remote, mouse toward
+# this computer), mounted by the native example at /devices/human_interface/emulation.
+human-interface = ["dep:device", "peripherals/human-interface"]
 
 [dev-dependencies]
 task = { workspace = true, features = ["test_harness"] }
