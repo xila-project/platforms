@@ -529,6 +529,20 @@ async fn start(task_manager: &'static task::Manager) {
         )
         .await
         .expect("Failed to mount HTTP client devices");
+
+        // Set UTC from the network once Wi-Fi is up. The build date stays the
+        // initial value until the first successful synchronization.
+        if let Err(error) = xila::network::sntp::Service::new(
+            task_manager,
+            manager,
+            time_manager,
+            virtual_file_system,
+        )
+        .start(task)
+        .await
+        {
+            log::warning!("Xila: cannot start the SNTP service ({error:?})");
+        }
     }
 
     // - Executables.
