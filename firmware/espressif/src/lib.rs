@@ -70,11 +70,15 @@ static mut HEAP: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZ
 /// LittleFS cache: a divisor of the 4096-byte flash page.
 const CACHE_SIZE: usize = 256;
 
-/// When the firmware was built, in seconds since the Unix epoch.
-const BUILD_EPOCH: u64 = parse_decimal(env!("XILA_BUILD_EPOCH"));
+/// When the firmware was built, in seconds since the Unix epoch. The minimum
+/// timestamp a real-time clock reading must reach to seed UTC, and the fallback
+/// epoch itself when no clock is available. Board crates use it to floor their
+/// RTC lower half.
+pub const BUILD_EPOCH: u64 = parse_decimal(env!("XILA_BUILD_EPOCH"));
 
-/// The build date as a UTC timestamp: the initial clock value at boot and the
-/// floor for answers from the network.
+/// The build date as a UTC timestamp: the initial clock value at boot, the
+/// floor for real-time clock readings that may seed UTC, and the floor for
+/// answers from the network.
 fn build_date() -> time::Timestamp {
     time::Timestamp::from(Duration::from_secs(BUILD_EPOCH))
 }
@@ -195,6 +199,7 @@ async fn start(task_manager: &'static task::Manager) {
         sd_card,
         display,
         gpio,
+        real_time_clock,
         #[cfg(feature = "usb-human-interface")]
         human_interface,
         sessions,
@@ -234,17 +239,38 @@ async fn start(task_manager: &'static task::Manager) {
     // - Subsystems.
     let users_manager: &'static users::Manager = Box::leak(Box::new(users::Manager::new()));
     // No clock survives a power cycle, and the file system needs a date: start
-    // from the build date until something sets a better one.
+    // from the build date until something sets a better one. The build date is
+    // its own source, so the write-back task never stores it in the RTC.
     let time_manager: &'static time::Manager<'static> =
         Box::leak(Box::new(time::Manager::unsynchronized()));
     time_manager
         .set_realtime(time::RealtimeSample {
             timestamp: build_date(),
-            source: time::ClockSource::Manual,
+            source: time::ClockSource::BuildDate,
             resolution: Duration::from_secs(1),
             accuracy: None,
         })
         .expect("Invalid build date");
+    // Hardware clock to system, like Linux `hctosys`: when the RTC holds a valid
+    // time not earlier than the build date, it seeds UTC; otherwise the
+    // build-date fallback stays.
+    if let Some(real_time_clock) = real_time_clock {
+        match time::real_time_clock::synchronize_from_real_time_clock(
+            time_manager,
+            real_time_clock,
+            build_date(),
+        ) {
+            Ok(true) => log::information!("Xila: UTC initialized from the real-time clock"),
+            Ok(false) => {
+                log::information!(
+                    "Xila: the real-time clock holds no valid time; using the build date"
+                )
+            }
+            Err(error) => {
+                log::warning!("Xila: real-time clock read failed ({error}); using the build date")
+            }
+        }
+    }
 
     // - Root file system, in internal flash.
     let drive: &'static flash::LittleFsPartition = Box::leak(Box::new(
@@ -369,6 +395,28 @@ async fn start(task_manager: &'static task::Manager) {
     )
     .await
     .expect("Failed to mount the power device");
+
+    // - Real-time clock: the device node, and the write-back task that stores
+    // UTC in the clock when it is known to be good (system to hardware clock,
+    // like Linux `systohc`). The task runs outside the clock manager, because
+    // an external chip blocks on its I2C bus.
+    if let Some(real_time_clock) = real_time_clock {
+        drivers_peripherals::real_time_clock::mount_real_time_clock(
+            virtual_file_system,
+            task,
+            real_time_clock,
+        )
+        .await
+        .expect("Failed to mount the real-time clock device");
+        task_manager
+            .spawn(task, "Real-time clock write-back", None, async move |_| {
+                time::real_time_clock::write_back_to_real_time_clock(time_manager, real_time_clock)
+                    .await
+            })
+            .await
+            .expect("Failed to spawn the real-time clock write-back task");
+        log::information!("Xila: real-time clock mounted at /devices/time/real_time_clock");
+    }
 
     // - microSD card, on boards with a slot.
     if let Some(slot) = sd_card {

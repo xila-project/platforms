@@ -9,8 +9,11 @@ rust-version.workspace = true
 # esp-storage and `xila-drivers-espressif`, which then apply here too. On host
 # targets this crate is empty.
 [target.'cfg(all(target_os = "none", any(target_arch = "xtensa", target_arch = "riscv32")))'.dependencies]
-# Use the minimal shell unless the board selects Wi-Fi.
-command_line_shell = { package = "xila-command-line-shell", git = "https://github.com/xila-project/applications", branch = "main", default-features = false }
+# Use the minimal shell (plus the time commands, which operate the real-time
+# clock this firmware mounts); the board Wi-Fi feature adds the network ones.
+command_line_shell = { package = "xila-command-line-shell", git = "https://github.com/xila-project/applications", branch = "main", default-features = false, features = [
+  "time-commands",
+] }
 critical-section = { workspace = true }
 drivers_core = { workspace = true }
 drivers_espressif = { package = "xila-drivers-espressif", path = "../../drivers/espressif", default-features = false, features = [
@@ -19,17 +22,21 @@ drivers_espressif = { package = "xila-drivers-espressif", path = "../../drivers/
   "gpio",
   "power",
   "random",
+  "real-time-clock",
   "time",
 ] }
-drivers_peripherals = { workspace = true }
+drivers_peripherals = { workspace = true, features = ["real-time-clock"] }
 drivers_shared = { package = "xila-drivers-shared", path = "../../drivers/shared", default-features = false }
 mipidsi = { git = "https://github.com/almindor/mipidsi", rev = "5ed6df58d9b8a2b9037221bc03de1328340eaf47", default-features = false, optional = true }
 embedded-hal = { workspace = true, optional = true }
+peripherals = { workspace = true, features = ["real-time-clock"] }
 embedded-storage = "0.3"
 esp-hal = { version = "=1.2.2", features = ["unstable"] }
 esp-storage = { version = "0.10", features = ["embedded-storage"] }
 startup_application = { package = "xila-startup-application", path = "../startup_application" }
-xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
+xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false, features = [
+  "time_services",
+] }
 graphical_shell = { package = "xila-graphical-shell", git = "https://github.com/xila-project/applications", branch = "main", optional = true }
 # Native applications for boards with a screen.
 activity = { package = "xila-activity", git = "https://github.com/xila-project/applications", branch = "main", optional = true }

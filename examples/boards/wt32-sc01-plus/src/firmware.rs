@@ -138,6 +138,13 @@ fn main() -> ! {
         touch_clock: peripherals.GPIO5,
     });
 
+    let real_time_clock = Box::leak(Box::new(
+        drivers_espressif::real_time_clock::InternalRealTimeClock::new(
+            esp_hal::rtc_cntl::Rtc::new(peripherals.RTC_TIMER),
+            i64::try_from(firmware::BUILD_EPOCH)
+                .expect("the build date fits in a signed timestamp"),
+        ),
+    ));
     let board = Board {
         name: "WT32-SC01 Plus",
         console,
@@ -166,6 +173,7 @@ fn main() -> ! {
         gpio: Some(gpio::controller()),
         #[cfg(feature = "usb-human-interface")]
         human_interface: Some(usb_human_interface.controller),
+        real_time_clock: Some(real_time_clock),
         sessions: if display.is_some() {
             &[session::CONSOLE, session::GRAPHICAL]
         } else {
