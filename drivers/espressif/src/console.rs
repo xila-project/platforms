@@ -4,7 +4,9 @@
 //!
 //! The console runs over a UART or, on chips that have one, over the built-in
 //! USB Serial/JTAG controller, for boards whose USB port has no USB to UART
-//! bridge.
+//! bridge. On the ESP32-S3 with the `usb-human-interface` feature, it runs over
+//! the CDC-ACM interface of the composite USB device on the USB OTG controller,
+//! which shares the chip's single USB PHY with the Serial/JTAG controller.
 //!
 //! The logger shares the console with the interactive session. Call
 //! [`set_interactive`] once a session can read the console: from then on,
@@ -375,7 +377,7 @@ impl log::LoggerTrait for Logger {
 }
 
 /// Queues received bytes for the readers. Returns whether some did not fit.
-fn accept_input(bytes: &[u8]) -> bool {
+pub(crate) fn accept_input(bytes: &[u8]) -> bool {
     with_input(|input| {
         // Preserve bytes already queued and drop any new bytes that do not fit.
         let accepted = input.queue.push_slice(bytes);
@@ -387,7 +389,7 @@ fn accept_input(bytes: &[u8]) -> bool {
 }
 
 /// Warns about lost input at most once a second.
-fn report_overflow(last_warning: &mut Option<Instant>) {
+pub(crate) fn report_overflow(last_warning: &mut Option<Instant>) {
     let now = Instant::now();
     if last_warning
         .is_none_or(|previous| now < previous || now - previous >= Duration::from_secs(1))
@@ -398,7 +400,7 @@ fn report_overflow(last_warning: &mut Option<Instant>) {
 }
 
 /// Waits for queued output and moves it to `buffer`.
-async fn next_output(buffer: &mut [u8]) -> usize {
+pub(crate) async fn next_output(buffer: &mut [u8]) -> usize {
     poll_fn(|context| {
         with_output(|output| {
             let count = output.queue.pop_slice(buffer);
@@ -414,7 +416,7 @@ async fn next_output(buffer: &mut [u8]) -> usize {
     .await
 }
 
-fn output_is_empty() -> bool {
+pub(crate) fn output_is_empty() -> bool {
     with_output(|output| output.queue.is_empty())
 }
 
@@ -423,7 +425,7 @@ pub fn is_output_idle() -> bool {
     with_output(|output| output.queue.is_empty() && !output.transmitting)
 }
 
-fn finish_transmission() {
+pub(crate) fn finish_transmission() {
     with_output(|output| {
         output.transmitting = false;
         output.writers.wake();
@@ -495,6 +497,10 @@ enum Transport {
         feature = "esp32s31",
     ))]
     UsbSerialJtag(esp_hal::usb::usb_serial_jtag::UsbSerialJtag<'static, Async>),
+    /// The CDC-ACM interface of the composite USB device that also carries the
+    /// human interface emulation (`usb-human-interface`, ESP32-S3).
+    #[cfg(all(feature = "usb-human-interface", feature = "esp32s3"))]
+    UsbComposite(alloc::boxed::Box<crate::human_interface::UsbCompositeRunner>),
 }
 
 /// A configured console port, before the console task takes it. Unlike the
@@ -515,6 +521,14 @@ pub enum ConsolePort {
         feature = "esp32s31",
     ))]
     UsbSerialJtag(esp_hal::usb::usb_serial_jtag::UsbSerialJtag<'static, Blocking>),
+    /// The CDC-ACM interface of the composite USB device that also carries the
+    /// human interface emulation (`usb-human-interface`, ESP32-S3). The ESP32-S3
+    /// has one USB PHY, shared by the USB Serial/JTAG and USB OTG controllers, so
+    /// with the human interface emulation on USB OTG, the console runs over
+    /// CDC-ACM on the same cable. The device runner itself stays in
+    /// [`crate::human_interface`], because its embassy-usb types are not `Send`.
+    #[cfg(all(feature = "usb-human-interface", feature = "esp32s3"))]
+    UsbComposite,
 }
 
 impl From<Uart<'static, Blocking>> for ConsolePort {
@@ -573,6 +587,11 @@ impl ConsoleRunner {
             ConsolePort::UsbSerialJtag(controller) => {
                 Transport::UsbSerialJtag(controller.into_async())
             }
+            #[cfg(all(feature = "usb-human-interface", feature = "esp32s3"))]
+            ConsolePort::UsbComposite => Transport::UsbComposite(alloc::boxed::Box::new(
+                crate::human_interface::take_runner()
+                    .expect("the USB composite runner was already taken"),
+            )),
         })
     }
 
@@ -603,6 +622,8 @@ impl ConsoleRunner {
                 .await;
                 never
             }
+            #[cfg(all(feature = "usb-human-interface", feature = "esp32s3"))]
+            Transport::UsbComposite(runner) => (*runner).run().await,
         }
     }
 }

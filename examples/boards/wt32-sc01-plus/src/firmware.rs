@@ -1,9 +1,13 @@
 //! Wireless-Tag WT32-SC01 Plus: an ESP32-S3 on the WT32-S3-WROVER-N16R2
 //! module, with 16 MB of flash and 2 MB of quad SPI PSRAM.
 //!
-//! - Console: the USB-C port is wired to the chip's USB Serial/JTAG controller
-//!   (303a:1001), with no USB to UART bridge, so the console, the logger and
-//!   panic messages use that controller.
+//! - Console: the USB-C port is wired to the chip's USB pins (GPIO 19 and 20),
+//!   with no USB to UART bridge. By default the console, the logger and panic
+//!   messages use the USB Serial/JTAG controller (303a:1001). With the
+//!   `usb-human-interface` feature, the chip's single USB PHY is given to the USB
+//!   OTG controller instead, and the console runs over the CDC-ACM interface of a
+//!   composite USB device that also carries the human interface emulation; see
+//!   the board README.
 //! - Clocks: the CPU runs at 240 MHz, and the flash, in quad I/O mode, and
 //!   the PSRAM at 80 MHz. Enable the `boot-benchmark` feature to log their
 //!   speed once at boot.
@@ -94,7 +98,22 @@ fn main() -> ! {
     let system_timer = SystemTimer::new(peripherals.SYSTIMER);
     drivers_espressif::time::initialize(system_timer.alarm0);
 
-    let console = UsbSerialJtag::new(peripherals.USB_DEVICE);
+    // The console: the USB Serial/JTAG controller by default, or, with the
+    // `usb-human-interface` feature, the CDC-ACM interface of the composite USB
+    // device on the USB OTG controller. The ESP32-S3 has one USB PHY, shared by
+    // both controllers, so only one of them can use the port.
+    #[cfg(not(feature = "usb-human-interface"))]
+    let console = UsbSerialJtag::new(peripherals.USB_DEVICE).into();
+    #[cfg(feature = "usb-human-interface")]
+    let usb_human_interface = drivers_espressif::human_interface::UsbHumanInterface::new(
+        peripherals.USB_FS,
+        peripherals.GPIO20,
+        peripherals.GPIO19,
+        drivers_espressif::human_interface::UsbHumanInterfaceConfig::default(),
+    )
+    .expect("The USB human interface device was already initialized");
+    #[cfg(feature = "usb-human-interface")]
+    let console = usb_human_interface.console;
 
     let display = screen::start(screen::Pins {
         lcd_cam: peripherals.LCD_CAM,
@@ -121,7 +140,7 @@ fn main() -> ! {
 
     let board = Board {
         name: "WT32-SC01 Plus",
-        console: console.into(),
+        console,
         flash_storage: FlashStorage::new(peripherals.FLASH),
         storage: STORAGE,
         random_device: RandomDevice::new(peripherals.RNG, peripherals.ADC1),
@@ -145,6 +164,8 @@ fn main() -> ! {
             peripherals.GPIO41,
         )),
         gpio: Some(gpio::controller()),
+        #[cfg(feature = "usb-human-interface")]
+        human_interface: Some(usb_human_interface.controller),
         sessions: if display.is_some() {
             &[session::CONSOLE, session::GRAPHICAL]
         } else {
@@ -193,7 +214,9 @@ fn check_memory(report: &MemoryReport) {
 }
 
 /// Writes the panic message to the console. esp-println writes to UART0,
-/// which this board does not expose.
+/// which this board does not expose. With the `usb-human-interface` feature the
+/// USB OTG controller owns the chip's single USB PHY, so this write through the
+/// USB Serial/JTAG controller reaches no host.
 #[panic_handler]
 fn panic(information: &PanicInfo<'_>) -> ! {
     // SAFETY: the firmware has stopped; nothing else uses the controller again.

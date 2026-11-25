@@ -40,6 +40,15 @@ boot-benchmark = []
 # Enables debug-level serial logging, including periodic display flush,
 # frame-rate and invalidation summaries.
 debug-log = ["firmware/debug-log"]
+# Runs the console and the human interface emulation (USB keyboard, media
+# remote, mouse and system control toward the connected computer) over one
+# composite USB device on the USB OTG controller, instead of the USB
+# Serial/JTAG controller. See the README: flashing then needs the BOOT button
+# held at reset, and the device uses the pid.codes test identifiers 1209:0001.
+usb-human-interface = [
+  "drivers_espressif/usb-human-interface",
+  "firmware/usb-human-interface",
+]
 
 [[bin]]
 name = "wt32_sc01_plus"

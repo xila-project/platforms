@@ -6,6 +6,108 @@ networks. The Settings Wi-Fi panel can turn the radio on and off, scan, connect
 and disconnect when the graphical firmware includes Settings. Core owns
 Ethernet frame processing, IP addressing and DNS.
 
+## USB console and human interface emulation
+
+The USB-C port is wired to the chip's USB pins (D- on GPIO 19, D+ on GPIO 20),
+with no USB to UART bridge. The ESP32-S3 has one USB PHY, shared by the USB
+Serial/JTAG controller and the USB OTG controller, so the firmware uses one of
+them:
+
+- Default build: the console, the logger and panic messages use the USB
+  Serial/JTAG controller, which the host sees as `303a:1001`. espflash can
+  reset the board into download mode over this controller.
+- With the `usb-human-interface` feature: the PHY is given to the USB OTG
+  controller, and one composite USB device carries both the console (CDC-ACM)
+  and the human interface emulation (HID). The device then acts as a USB
+  keyboard, media remote, mouse and system control toward the computer it is
+  plugged into, and applications drive it through
+  `/devices/human_interface/emulation`.
+
+Build as usual, with the feature:
+
+```sh
+mise trust
+mise run build:wt32-sc01-plus -- --features usb-human-interface
+```
+
+Or build the firmware ELF only (as CI does):
+
+```sh
+mise run check:wt32-sc01-plus-usb-human-interface
+```
+
+Flashing a firmware built with the feature needs the BOOT button: hold BOOT,
+press and release RESET, then release BOOT. espflash enters download mode over
+the USB Serial/JTAG controller, and that controller no longer answers while
+this firmware runs, so the automatic reset-into-download-mode does not work.
+Then flash the ELF with the board's partition table, like any other WT32-SC01
+Plus firmware (see [the board README](../README.md)); the ELF writes the boot
+loader, the partition table and the application, never the `storage` partition,
+so the accounts and files survive the update:
+
+```sh
+export FLASH_PORT=/dev/ttyACM0   # the port the board's USB-C shows as, in download mode
+mise run run:espflash -- flash --chip esp32s3 --port "$FLASH_PORT" \
+  --flash-size 16mb --flash-mode qio --flash-freq 80mhz \
+  --partition-table examples/boards/wt32-sc01-plus/partitions.csv --partition-table-offset 0x8000 \
+  --monitor target/espressif-emulator/wt32-sc01-plus.elf
+```
+
+Do not flash the merged `wt32-sc01-plus-flash.bin` at offset zero on a board
+that already has data: it spans the whole flash and replaces the `storage`
+partition. To go back to the default firmware, flash it the same way (BOOT held
+at reset); the USB Serial/JTAG controller answers again and espflash's
+auto-reset works, and the host sees `303a:1001` again.
+
+The USB identifiers of the composite device are the test pair of pid.codes
+(`1209:0001`), the same as the Nordic USB console, with manufacturer `Xila`
+and product `Xila USB console and human interface`.
+
+Limits of the emulation:
+
+- The HID descriptor does not declare the boot protocol, so the keyboard does
+  not work in a BIOS, UEFI or a bootloader, only in a running operating system.
+- Remote wake-up is not supported: the device cannot wake a suspended computer.
+- The console transmits only while the host asserts DTR on the CDC-ACM port,
+  that is, while a terminal program has the port open. Output queued before that
+  is sent when the port opens.
+- Panic messages are not visible while the feature is on: the panic handler
+  writes to the USB Serial/JTAG controller, whose PHY the OTG controller owns.
+
+Check the enumeration:
+
+- Linux: `lsusb -d 1209:0001` lists the composite device, and
+  `lsusb -d 1209:0001 -v` shows the CDC-ACM and HID interfaces. The console
+  appears as `/dev/ttyACM0`. HID input events appear on an `event` node of
+  `/dev/input/by-id/`: list them with `evtest`, then press a key of a shortcut
+  to see the events. `ls /devices/human_interface` on the board lists
+  `emulation`. ModemManager may probe the test identifier and claim the
+  CDC-ACM port; stop it with a udev rule, for example
+  `/etc/udev/rules.d/99-xila-test-usb.rules` containing
+  `ATTRS{idVendor}=="1209", ATTRS{idProduct}=="0001", ENV{ID_MM_DEVICE_IGNORE}="1"`,
+  then `udevadm control --reload-rules`.
+- Windows: Device Manager shows a USB composite device with a USB serial
+  device (COM port) and a HID keyboard, mouse and consumer control. The
+  console opens on the COM port with any terminal program at 115200 baud.
+- macOS: System Information, USB, shows the composite device. The console
+  appears as `/dev/tty.usbmodem*`; open it with `screen /dev/tty.usbmodem* 115200`.
+
+Drive the emulation from the board's shell by writing 8-byte messages to
+`/devices/human_interface/emulation` (kind 1 keyboard, 2 consumer control,
+3 mouse, 4 system control; see Core's `devices/src/human_interface.rs`). For
+example, a consumer play/pause message is the 8 bytes `02 cd 00 00 00 00 00 00`,
+followed by the release `02 00 00 00 00 00 00 00`. A keyboard message holds the
+full pressed state, so send the release `01 00 00 00 00 00 00 00` after a key
+press; for example left shift + A is `01 02 00 04 00 00 00 00` and its release
+is the all-zero keyboard message. The `GET_STATUS` control command of kind
+`b'h'` returns whether a computer is connected and the keyboard LED state. On
+the computer, the keyboard LED state (num lock, caps lock, scroll lock) comes
+back through `indicators()`.
+
+Hardware validation of the HID reports is open: write 8-byte messages to
+`/devices/human_interface/emulation` from the shell and check the key presses,
+media keys and mouse moves on the computer with `evtest` on Linux.
+
 ## Station profile
 
 A successful connection requested by Settings or another client saves

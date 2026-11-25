@@ -206,14 +206,22 @@ jobs:
             name: ESP32-P4-Function-EV-Board
             xtensa: false
             graphics: false
+            task: build:esp32-p4-function-ev-board
           - board: wt32-sc01
             name: WT32-SC01
             xtensa: true
             graphics: true
+            task: build:wt32-sc01
           - board: wt32-sc01-plus
             name: WT32-SC01 Plus
             xtensa: true
             graphics: true
+            task: build:wt32-sc01-plus
+          - board: wt32-sc01-plus
+            name: WT32-SC01 Plus (USB human interface)
+            xtensa: true
+            graphics: true
+            task: check:wt32-sc01-plus-usb-human-interface
     steps:
       - name: "Setup | Checkout sources"
         uses: actions/checkout@v7
@@ -230,8 +238,8 @@ jobs:
         # Xila's graphics converts its fonts with the locked `lv_font_conv`.
         if: matrix.graphics
         run: mise run ci:deps-npm
-      - name: "Build | Flash image"
-        run: mise run build:${{ matrix.board }}
+      - name: "Build | ${{ startsWith(matrix.task, 'check:') && 'Firmware ELF only (check)' || 'Flash image' }}"
+        run: mise run ${{ matrix.task }}
   required:
     if: always()
     needs: [quality, native, nano-33-ble, browser]
