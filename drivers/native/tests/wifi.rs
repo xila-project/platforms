@@ -71,7 +71,7 @@ fn controls_schedule_work_and_cancel_without_runner_threads() {
         Err(IoErrorKind::AlreadyInProgress)
     );
     control(&controller, SET_WIFI_RADIO_STATE, &WifiRadioState::OFF).unwrap();
-    assert!(!control(&controller, IS_LINK_UP, &()).unwrap());
+    assert!(!bool::try_from(control(&controller, IS_LINK_UP, &()).unwrap()).unwrap());
     assert_eq!(
         control(&controller, GET_WIFI_SCAN_STATE, &())
             .unwrap()
@@ -145,10 +145,10 @@ async fn vfs_scan_associate_fail_disconnect_and_cancel() {
     .await
     .unwrap();
     assert_eq!(
-        file.control(GET_KIND, &()).await.unwrap(),
+        InterfaceKind::try_from(file.control(GET_KIND, &()).await.unwrap()).unwrap(),
         InterfaceKind::WiFi
     );
-    assert!(!file.control(IS_LINK_UP, &()).await.unwrap());
+    assert!(!bool::try_from(file.control(IS_LINK_UP, &()).await.unwrap()).unwrap());
     file.control(START_WIFI_SCAN, &WifiScanConfiguration::default())
         .await
         .unwrap();
@@ -200,7 +200,7 @@ async fn vfs_scan_associate_fail_disconnect_and_cancel() {
             .unwrap(),
         WifiConnectionErrorKind::AUTHENTICATION
     );
-    assert!(!file.control(IS_LINK_UP, &()).await.unwrap());
+    assert!(!bool::try_from(file.control(IS_LINK_UP, &()).await.unwrap()).unwrap());
     assert!(file.control(GET_WIFI_CONNECTION_INFO, &()).await.is_err());
     let good = WifiClientConfiguration::new(
         b"Xila demo",
@@ -210,7 +210,7 @@ async fn vfs_scan_associate_fail_disconnect_and_cancel() {
     .unwrap();
     file.control(CONNECT_WIFI_CLIENT, &good).await.unwrap();
     task::sleep(Duration::from_millis(60)).await;
-    assert!(file.control(IS_LINK_UP, &()).await.unwrap());
+    assert!(bool::try_from(file.control(IS_LINK_UP, &()).await.unwrap()).unwrap());
     assert_eq!(
         file.control(GET_WIFI_CONNECTION_INFO, &()).await.unwrap(),
         ap
@@ -239,14 +239,14 @@ async fn vfs_scan_associate_fail_disconnect_and_cancel() {
     );
     file.control(DISCONNECT_WIFI_CLIENT, &()).await.unwrap();
     task::sleep(Duration::from_millis(60)).await;
-    assert!(!file.control(IS_LINK_UP, &()).await.unwrap());
+    assert!(!bool::try_from(file.control(IS_LINK_UP, &()).await.unwrap()).unwrap());
     // Turning radio off while association waits cannot produce a stale link-up.
     file.control(CONNECT_WIFI_CLIENT, &good).await.unwrap();
     file.control(SET_WIFI_RADIO_STATE, &WifiRadioState::OFF)
         .await
         .unwrap();
     task::sleep(Duration::from_millis(60)).await;
-    assert!(!file.control(IS_LINK_UP, &()).await.unwrap());
+    assert!(!bool::try_from(file.control(IS_LINK_UP, &()).await.unwrap()).unwrap());
     assert_eq!(
         file.control(GET_WIFI_CONNECTION_STATE, &()).await.unwrap(),
         WifiConnectionState::DISCONNECTED
@@ -257,7 +257,7 @@ async fn vfs_scan_associate_fail_disconnect_and_cancel() {
     file.control(CONNECT_WIFI_CLIENT, &good).await.unwrap();
     task::sleep(Duration::from_millis(60)).await;
     controller.simulate_disconnect(WifiConnectionErrorKind::ASSOCIATION);
-    assert!(!file.control(IS_LINK_UP, &()).await.unwrap());
+    assert!(!bool::try_from(file.control(IS_LINK_UP, &()).await.unwrap()).unwrap());
     file.close(context.virtual_file_system).await.unwrap();
 }
 

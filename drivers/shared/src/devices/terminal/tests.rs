@@ -664,9 +664,9 @@ fn device_control_forwarding() {
             output: &mut AnyByLayout,
         ) -> Poll<Result<()>> {
             if command == file_system::character_device::IS_A_TERMINAL::IDENTIFIER {
-                let out: &mut bool =
+                let out: &mut u8 =
                     file_system::character_device::IS_A_TERMINAL::cast_output(output).unwrap();
-                *out = true;
+                *out = 1;
                 Poll::Ready(Ok(()))
             } else {
                 Poll::Ready(Err(IoErrorKind::Unsupported))

@@ -432,15 +432,24 @@ async fn main(task_manager: &'static xila::task::Manager) {
         .expect("Failed to open network interface file.");
 
         for ip_cidr in drivers_std::tuntap::IP_ADDRESSES {
-            file.control(ADD_IP_ADDRESS, ip_cidr).await.ok();
+            file.control(ADD_IP_ADDRESS, &network::IpCidrAbi::from(ip_cidr.clone()))
+                .await
+                .ok();
         }
 
         for route in drivers_std::tuntap::ROUTES {
-            file.control(ADD_ROUTE, route).await.ok();
+            file.control(ADD_ROUTE, &network::RouteAbi::from(route.clone()))
+                .await
+                .ok();
         }
 
         for dns_server in drivers_std::tuntap::DEFAULT_DNS_SERVERS {
-            file.control(ADD_DNS_SERVER, dns_server).await.ok();
+            file.control(
+                ADD_DNS_SERVER,
+                &network::IpAddressAbi::from(dns_server.clone()),
+            )
+            .await
+            .ok();
         }
 
         file.close(virtual_file_system).await.unwrap();

@@ -103,9 +103,9 @@ impl BaseOperations for HashDevice {
                     Ok(())
                 }
                 hash::SET_ALGORITHM::IDENTIFIER => {
-                    let algorithm = SET_ALGORITHM::cast_input(input)?;
+                    let algorithm = HashAlgorithm::try_from(*SET_ALGORITHM::cast_input(input)?)?;
 
-                    *hash_context = HashDeviceContext::new(*algorithm)?;
+                    *hash_context = HashDeviceContext::new(algorithm)?;
                     Ok(())
                 }
                 _ => Err(file_system::IoErrorKind::Unsupported),

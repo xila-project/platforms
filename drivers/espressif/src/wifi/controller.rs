@@ -103,8 +103,8 @@ impl StationControl {
         output: &mut AnyByLayout,
     ) -> Result<()> {
         match command {
-            GET_KIND::IDENTIFIER => *GET_KIND::cast_output(output)? = InterfaceKind::WiFi,
-            IS_LINK_UP::IDENTIFIER => *IS_LINK_UP::cast_output(output)? = Self::link_up(),
+            GET_KIND::IDENTIFIER => *GET_KIND::cast_output(output)? = InterfaceKind::WiFi as u8,
+            IS_LINK_UP::IDENTIFIER => *IS_LINK_UP::cast_output(output)? = Self::link_up() as u8,
             GET_WIFI_CAPABILITIES::IDENTIFIER => {
                 *GET_WIFI_CAPABILITIES::cast_output(output)? = WifiCapabilities {
                     station: 1,

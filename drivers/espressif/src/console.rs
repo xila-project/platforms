@@ -101,7 +101,7 @@ fn terminal_control(
 ) -> Poll<Result<()>> {
     match command {
         IS_A_TERMINAL::IDENTIFIER => {
-            *IS_A_TERMINAL::cast_output(output)? = true;
+            *IS_A_TERMINAL::cast_output(output)? = 1;
             Poll::Ready(Ok(()))
         }
         _ => Poll::Ready(Err(IoErrorKind::Unsupported)),

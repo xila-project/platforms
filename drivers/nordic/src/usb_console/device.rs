@@ -164,8 +164,8 @@ impl DirectBaseOperations for StandardInDevice {
     ) -> Poll<Result<()>> {
         match command {
             IS_A_TERMINAL::IDENTIFIER => {
-                let output: &mut bool = IS_A_TERMINAL::cast_output(output)?;
-                *output = true;
+                let output: &mut u8 = IS_A_TERMINAL::cast_output(output)?;
+                *output = 1;
                 Poll::Ready(Ok(()))
             }
             _ => Poll::Ready(Err(IoErrorKind::Unsupported)),
@@ -255,8 +255,8 @@ impl DirectBaseOperations for StandardOutDevice {
     ) -> Poll<Result<()>> {
         match command {
             IS_A_TERMINAL::IDENTIFIER => {
-                let output: &mut bool = IS_A_TERMINAL::cast_output(output)?;
-                *output = true;
+                let output: &mut u8 = IS_A_TERMINAL::cast_output(output)?;
+                *output = 1;
                 Poll::Ready(Ok(()))
             }
             _ => Poll::Ready(Err(IoErrorKind::Unsupported)),

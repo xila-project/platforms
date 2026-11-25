@@ -176,7 +176,7 @@ async fn https_device_with_real_tls_server() {
     interface
         .control(
             network::ADD_IP_ADDRESS,
-            &network::IpCidr::new_ipv4([127, 0, 0, 1], 8),
+            &network::IpCidrAbi::from(network::IpCidr::new_ipv4([127, 0, 0, 1], 8)),
         )
         .await
         .unwrap();
