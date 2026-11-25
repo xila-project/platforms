@@ -7243,7 +7243,7 @@ dependencies = [
 [[package]]
 name = "xila-package-writer"
 version = "0.4.0"
-source = "git+https://github.com/xila-project/package_manager?branch=main#bc283ccf8fb94a4032f742ab896bada49f74155c"
+source = "git+https://github.com/xila-project/package_manager?branch=main#ba5aa0a319d7ee1a4eeca9d2775528dfe1c8f98e"
 dependencies = [
  "tar",
  "xila-package-bundle",
