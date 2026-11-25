@@ -1,6 +1,6 @@
 use super::*;
 use file_system::{
-    XILA_DISK_SIGNATURE,
+    Attributes, XILA_DISK_SIGNATURE,
     mbr::{Mbr, PartitionKind},
 };
 
@@ -222,7 +222,7 @@ async fn new_placeholder_imports_a_seed_and_reopens_without_a_download() {
         little_fs::Options::new(256),
     )
     .unwrap();
-    fs.create_file(Path::from_str("/seed-proof")).unwrap();
+    fs.create_file(Path::from_str("/seed-proof"), &Attributes::new()).unwrap();
     let mut context = Context::new_empty();
     fs.lookup_file(
         &mut context,

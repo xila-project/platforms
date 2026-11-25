@@ -63,13 +63,13 @@ fn seed(path: &Path, configuration: &str) {
             .set_permissions(Permissions::from_octal(permissions).unwrap())
     };
     for directory in ["/configuration", "/configuration/system"] {
-        file_system.create_directory(directory.as_ref()).unwrap();
+        file_system.create_directory(directory.as_ref(), &Attributes::new()).unwrap();
         file_system
             .set_attributes(directory.as_ref(), &attributes(Kind::Directory, 0o755))
             .unwrap();
     }
     let path = startup_application::CONFIGURATION_PATH;
-    file_system.create_file(path.as_ref()).unwrap();
+    file_system.create_file(path.as_ref(), &Attributes::new()).unwrap();
     let mut context = Context::new_empty();
     file_system
         .lookup_file(&mut context, path.as_ref(), AccessFlags::Write.into())
