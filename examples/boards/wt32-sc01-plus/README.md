@@ -147,6 +147,33 @@ five-line profile for the desired network and reboot. The firmware reads the
 profile's address settings at startup. Returning to the network through
 Settings continues to use DHCP.
 
+## Time synchronization
+
+When Wi-Fi is enabled, the firmware sets the UTC clock from the network with
+SNTP (UDP port 123) once an interface has an address, then resynchronizes
+every hour. Until the first success, the clock starts from the build date, and
+answers before the build date are rejected. Native and browser builds keep
+taking UTC from the host.
+
+The servers come from `/configuration/system/sntp.json`, a JSON object written
+by root only (root ownership, and neither the group nor others may write it),
+for example:
+
+```json
+{
+  "servers": ["time.example.com", "192.0.2.1"],
+  "resync_interval_seconds": 3600
+}
+```
+
+`servers` is a list of at most 3 host names or addresses, each at most 253
+bytes. `resync_interval_seconds` is clamped to 60 s up to 7 days. Without the
+file, the firmware queries `pool.ntp.org` every hour: that name is a
+placeholder only, because the NTP Pool asks vendors not to ship the standard
+`pool.ntp.org` names as a default configuration; a vendor zone such as
+`xila.pool.ntp.org` must be requested from the NTP Pool before release. An
+absent or invalid file falls back to the defaults with one warning in the log.
+
 ## Hardware smoke test
 
 1. Boot without a profile. Check for `Wi-Fi: wlan0 registered`,

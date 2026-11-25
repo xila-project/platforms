@@ -73,6 +73,12 @@ const CACHE_SIZE: usize = 256;
 /// When the firmware was built, in seconds since the Unix epoch.
 const BUILD_EPOCH: u64 = parse_decimal(env!("XILA_BUILD_EPOCH"));
 
+/// The build date as a UTC timestamp: the initial clock value at boot and the
+/// floor for answers from the network.
+fn build_date() -> time::Timestamp {
+    time::Timestamp::from(Duration::from_secs(BUILD_EPOCH))
+}
+
 /// The command-line shell, which every board mounts.
 pub const SHELL_PATH: &str = "/system/executables/command_line_shell";
 
@@ -233,7 +239,7 @@ async fn start(task_manager: &'static task::Manager) {
         Box::leak(Box::new(time::Manager::unsynchronized()));
     time_manager
         .set_realtime(time::RealtimeSample {
-            timestamp: time::Timestamp::from(Duration::from_secs(BUILD_EPOCH)),
+            timestamp: build_date(),
             source: time::ClockSource::Manual,
             resolution: Duration::from_secs(1),
             accuracy: None,
@@ -529,6 +535,22 @@ async fn start(task_manager: &'static task::Manager) {
         )
         .await
         .expect("Failed to mount HTTP client devices");
+
+        // Set UTC from the network once Wi-Fi is up. The build date stays the
+        // initial value until the first successful synchronization, and is
+        // also the floor: answers before it are rejected.
+        if let Err(error) = xila::network::sntp::Service::new(
+            task_manager,
+            manager,
+            time_manager,
+            virtual_file_system,
+            build_date(),
+        )
+        .start(task)
+        .await
+        {
+            log::warning!("Xila: cannot start the SNTP service ({error:?})");
+        }
     }
 
     // - Executables.
