@@ -44,6 +44,9 @@ wasm = { package = "xila-wasm", git = "https://github.com/xila-project/applicati
   "memory_32",
   "lazy_translation",
 ], optional = true }
+# Package installer: packages contain WebAssembly applications, so it is
+# mounted with the WebAssembly runtime.
+package = { workspace = true, optional = true }
 
 [features]
 # Minimal LVGL display and pointer support.
@@ -66,9 +69,10 @@ graphics = [
   "wasm?/graphics",
   "xila/bootsplash",
 ]
-# WebAssembly runtime mounted at `/applications/executables/wasm`. Combined
+# WebAssembly runtime mounted at `/applications/executables/wasm`, with the
+# package installer at `/applications/executables/package`. Combined
 # with `graphics`, guests also receive the LVGL graphics host import.
-wasm = ["dep:wasm"]
+wasm = ["dep:wasm", "dep:package"]
 neural-network = ["drivers_shared/neural-network-classifier"]
 wifi = [
   "drivers_espressif/wifi",
