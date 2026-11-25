@@ -418,6 +418,10 @@ async fn main(task_manager: &'static xila::task::Manager) {
         &[
             (&"/applications/executables/wasm", wasm::WasmExecutable),
             (
+                &"/applications/executables/package",
+                package::PackageExecutable
+            ),
+            (
                 &"/applications/executables/graphical_shell",
                 graphical_shell::ShellExecutable
             ),

@@ -134,6 +134,14 @@ The OS canvas still uses the existing localized LVGL Montserrat Regular subsets 
   `dns_resolve` are unavailable. Plain `http` only works from an `http` page.
   The body is read from the browser one chunk at a time, so large responses do
   not accumulate in WebAssembly memory.
+- The `package` installer is mounted at `/applications/executables/package` and
+  runs from Xila's terminal. Installing a package from a local `.xpk` file
+  needs no network and works, and so do the registry lookups behind
+  `package search` and `package info`: `registry.xila.dev` answers with
+  `access-control-allow-origin: *`. Downloading a package archive from a
+  GitHub release does not work: GitHub answers the redirect to the download
+  without any `access-control-allow-origin` header, so the browser blocks the
+  response.
 - Runtime limitations still apply, including the supported graphics subset,
   clock-only WASI polling, unsupported suspension in WebAssembly start sections,
   and the currently unused stack-size option.

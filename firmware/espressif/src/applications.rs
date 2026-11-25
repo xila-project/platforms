@@ -1,5 +1,6 @@
-//! The native applications (`graphics` feature) and WebAssembly runtime
-//! (`wasm` feature) mounted under `/applications/executables/`.
+//! The native applications (`graphics` feature), the WebAssembly runtime and
+//! the package installer (`wasm` feature) mounted under
+//! `/applications/executables/`.
 //!
 //! They are mounted at `/applications/executables/<name>`, where the seed
 //! image's shortcuts (`tools/fs_image/shortcuts`) and application bundles
@@ -71,14 +72,24 @@ pub(crate) async fn mount(
         .await;
     }
     #[cfg(feature = "wasm")]
-    mount_one(
-        context,
-        virtual_file_system,
-        task,
-        crate::WASM_PATH,
-        wasm::WasmExecutable,
-    )
-    .await;
+    {
+        mount_one(
+            context,
+            virtual_file_system,
+            task,
+            crate::WASM_PATH,
+            wasm::WasmExecutable,
+        )
+        .await;
+        mount_one(
+            context,
+            virtual_file_system,
+            task,
+            "/applications/executables/package",
+            package::PackageExecutable,
+        )
+        .await;
+    }
 }
 
 async fn mount_one(
