@@ -189,6 +189,8 @@ async fn start(task_manager: &'static task::Manager) {
         sd_card,
         display,
         gpio,
+        #[cfg(feature = "usb-human-interface")]
+        human_interface,
         sessions,
     } = board;
 
@@ -372,6 +374,21 @@ async fn start(task_manager: &'static task::Manager) {
         drivers_espressif::shared::mount_pin_devices(virtual_file_system, task, gpio)
             .await
             .expect("Failed to mount the GPIO devices");
+    }
+
+    // - Human interface emulation, on boards that provide a controller (the
+    // composite USB device of the `usb-human-interface` feature).
+    #[cfg(feature = "usb-human-interface")]
+    if let Some(controller) = human_interface {
+        drivers_peripherals::human_interface::mount_human_interface(
+            virtual_file_system,
+            task,
+            "emulation",
+            controller,
+        )
+        .await
+        .expect("Failed to mount the human interface emulation device");
+        log::information!("Xila: human interface emulation mounted");
     }
 
     // The ESP32-S3 smoke test checks that the device returns changing values.

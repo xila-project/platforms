@@ -42,6 +42,11 @@ pub struct Board {
     /// line it exposes. The board decides which lines it exposes: it withholds
     /// every pin that its own drivers use. `None` mounts no GPIO device.
     pub gpio: Option<&'static Gpio>,
+    /// The USB human interface emulation controller, mounted at
+    /// `/devices/human_interface/emulation` through the upper half
+    /// (`usb-human-interface` feature). `None` mounts no such device.
+    #[cfg(feature = "usb-human-interface")]
+    pub human_interface: Option<drivers_espressif::human_interface::UsbHumanInterfaceController>,
     /// The sessions to start, each on its own terminal.
     pub sessions: &'static [Session],
 }

@@ -87,6 +87,13 @@ native-dev = ["xila/native-dev", "drivers_espressif/executable-memory"]
 # Enables debug-level logging on the serial console, including periodic display
 # flush, frame-rate and invalidation summaries.
 debug-log = ["drivers_espressif/debug-log"]
+# Human interface emulation over USB: the board provides a composite USB device
+# (CDC-ACM console plus HID keyboard, media remote, mouse and system control) on
+# the USB OTG controller, mounted at `/devices/human_interface/emulation`.
+usb-human-interface = [
+  "drivers_espressif/usb-human-interface",
+  "drivers_peripherals/human-interface",
+]
 
 [lib]
 name = "firmware_espressif"

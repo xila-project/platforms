@@ -6,7 +6,9 @@
 //!
 //! The optional `console`, `executor`, `power`, `random` and `time` features
 //! provide the shell's runtime drivers. The `sd-card` feature adds a microSD
-//! card on the ESP32-S3. Initialize the time driver before
+//! card on the ESP32-S3, and `usb-human-interface` a composite USB device (the
+//! CDC-ACM console plus a HID keyboard, media remote, mouse and system control)
+//! on the USB OTG controller. Initialize the time driver before
 //! starting the executor. Run the executor, console and timer on the same core.
 //!
 //! The optional `executable-memory` feature provides executable memory for the
@@ -57,7 +59,7 @@
     )
 ))]
 
-#[cfg(feature = "sd-card")]
+#[cfg(any(feature = "sd-card", feature = "usb-human-interface"))]
 extern crate alloc;
 
 const SELECTED_CHIPS: u8 = cfg!(feature = "esp32") as u8
@@ -75,6 +77,11 @@ const SELECTED_CHIPS: u8 = cfg!(feature = "esp32") as u8
 const _: () = assert!(
     SELECTED_CHIPS <= 1,
     "several Espressif chip features are enabled; enable exactly one"
+);
+
+const _: () = assert!(
+    !(cfg!(feature = "usb-human-interface") && !cfg!(feature = "esp32s3")),
+    "the usb-human-interface feature requires the esp32s3 chip feature: only the ESP32-S3 has the USB OTG controller this driver uses"
 );
 
 #[cfg(feature = "esp32")]
@@ -95,6 +102,8 @@ pub mod console;
 pub mod executable_memory;
 #[cfg(feature = "executor")]
 pub mod executor;
+#[cfg(all(feature = "usb-human-interface", feature = "esp32s3"))]
+pub mod human_interface;
 #[cfg(all(feature = "lcd-i8080", feature = "esp32s3"))]
 pub mod lcd;
 pub mod memory;

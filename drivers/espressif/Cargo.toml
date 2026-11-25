@@ -15,6 +15,10 @@ drivers_shared = { package = "xila-drivers-shared", path = "../shared", default-
 embassy-executor = { workspace = true, optional = true }
 embassy-futures = { workspace = true, optional = true }
 embassy-net-driver = { version = "0.2", optional = true }
+embassy-usb = { version = "0.6.0", default-features = false, features = [
+  "max-handler-count-2",
+  "max-interface-count-3",
+], optional = true }
 embassy-sync = { workspace = true, optional = true }
 embassy-time = { workspace = true, optional = true }
 embassy-time-driver = { workspace = true, features = [
@@ -57,6 +61,9 @@ virtual_file_system = { workspace = true, optional = true }
 [dev-dependencies]
 file_system = { workspace = true }
 network = { workspace = true }
+# The transport-independent logic of the USB human interface lower half is
+# host-tested in tests/human_interface.rs.
+peripherals = { workspace = true, features = ["human-interface"] }
 
 [features]
 default = ["gpio", "i2c", "spi", "uart"]
@@ -91,6 +98,16 @@ lcd-i8080 = ["dep:drivers_shared", "drivers_shared/display-mipidsi"]
 spi-display = ["dep:drivers_shared", "drivers_shared/display-mipidsi"]
 # Enable debug-level logging on the serial console (including display timings).
 debug-log = []
+# USB human interface emulation over the USB OTG controller, as a composite device
+# with the CDC-ACM console: the device acts as a USB keyboard, media remote, mouse
+# and system control toward the connected computer (ESP32-S3 only). The console
+# then runs over the CDC-ACM interface, not the USB Serial/JTAG controller.
+usb-human-interface = [
+  "console",
+  "dep:embassy-usb",
+  "dep:peripherals",
+  "peripherals/human-interface",
+]
 # Executable memory for the native loader, on the chips listed in
 # `executable_memory`; elsewhere the feature adds nothing.
 executable-memory = ["dep:native_loader"]
