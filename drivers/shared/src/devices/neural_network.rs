@@ -276,6 +276,7 @@ pub async fn mount_backend_information(
 fn quantization(quant: nanoglia::Quantization<'_>, index: usize) -> Result<QuantizationEntry> {
     Ok(QuantizationEntry {
         scale: quant.scale.get(index).ok_or(IoErrorKind::InvalidArgument)?,
+        reserved: 0,
         zero_point: quant
             .zero_point
             .get(index)

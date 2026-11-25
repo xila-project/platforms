@@ -171,7 +171,9 @@ pub(super) async fn switch_to_dhcp(
                 break;
             }
         }
-        if !bool::try_from(interface.control(GET_DHCP_STATE, &()).await?).unwrap_or(false) {
+        let dhcp_state = interface.control(GET_DHCP_STATE, &()).await?;
+        // An unknown flag byte is invalid, as in the shell commands.
+        if !bool::try_from(dhcp_state).map_err(|_| IoErrorKind::InvalidArgument)? {
             apply_address(None, &mut interface).await?;
         }
         Ok(())

@@ -677,7 +677,7 @@ fn device_control_forwarding() {
     impl DirectCharacterDevice for MockTerminalDevice {}
 
     let terminal = TerminalInputDevice::new(MockTerminalDevice, MockTerminalDevice);
-    let mut is_terminal = false;
+    let mut is_terminal = 0u8;
     let out = AnyByLayout::from_mutable(&mut is_terminal);
     let input = ();
     let in_layout = AnyByLayout::from(&input);
@@ -691,7 +691,7 @@ fn device_control_forwarding() {
         out,
     );
     assert_eq!(res, Poll::Ready(Ok(())));
-    assert!(is_terminal);
+    assert_eq!(is_terminal, 1);
 }
 
 // -----------------------------------------------------------------------------
