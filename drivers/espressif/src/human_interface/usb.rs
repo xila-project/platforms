@@ -23,33 +23,35 @@ use embassy_usb::class::hid::{
     ReadError, ReportId, RequestHandler, State as HidState,
 };
 use embassy_usb::control::OutResponse;
-use embassy_usb::{Builder, UsbDevice};
+use embassy_usb::{Builder, Handler, UsbDevice};
 use esp_hal::peripherals::USB_FS;
 use esp_hal::usb::otg::embassy_usb_device::{Config as OtgConfig, Driver as OtgDriver};
 use esp_hal::usb::otg::{Usb, UsbFsDm, UsbFsDp};
 use file_system::IoErrorKind;
 use peripherals::human_interface::{
-    Error, HumanInterfaceController, REPORT_DESCRIPTOR, REPORT_IDENTIFIER_KEYBOARD,
+    Error, HumanInterfaceController, REPORT_DESCRIPTOR, REPORT_IDENTIFIER_CONSUMER,
+    REPORT_IDENTIFIER_KEYBOARD, REPORT_IDENTIFIER_MOUSE, REPORT_IDENTIFIER_SYSTEM,
 };
 
 use super::logic::{
-    REPORT_QUEUE_CAPACITY, ReportQueue, frame_report, led_indicators_from_control_payload,
-    led_indicators_from_output_report,
+    BusEvent, CONTROL_BUFFER_SIZE, ConnectionState, ENDPOINT_MAX_PACKET_SIZE,
+    ENDPOINT_OUT_BUFFER_SIZE, HID_POLL_MILLISECONDS, REPORT_QUEUE_CAPACITY, ReportQueue,
+    frame_report, led_indicators_from_control_payload, led_indicators_from_output_report,
+    release_report, report_length,
 };
 use crate::console::ConsolePort;
 
 /// The USB OTG full-speed driver type this module builds the device on.
 type Otg = OtgDriver<'static>;
 
-/// Poll interval of the HID endpoints, in milliseconds.
-const HID_POLL_MILLISECONDS: u8 = 1;
-/// Max packet size of the HID and CDC endpoints, in bytes (full speed).
-const ENDPOINT_MAX_PACKET_SIZE: usize = 64;
-/// Buffer for received OUT packets: every OUT endpoint's max packet size (CDC bulk
-/// OUT and HID interrupt OUT).
-const ENDPOINT_OUT_BUFFER_SIZE: usize = 2 * ENDPOINT_MAX_PACKET_SIZE;
-/// Largest control request of the composite device: the HID report descriptor read.
-const CONTROL_BUFFER_SIZE: usize = 256;
+/// The four report identifiers of [`REPORT_DESCRIPTOR`], to send the release
+/// reports when the host comes back.
+const REPORT_IDENTIFIERS: [u8; 4] = [
+    REPORT_IDENTIFIER_KEYBOARD,
+    REPORT_IDENTIFIER_CONSUMER,
+    REPORT_IDENTIFIER_MOUSE,
+    REPORT_IDENTIFIER_SYSTEM,
+];
 
 /// USB identifiers and strings of the composite device.
 #[derive(Debug, Clone, Copy)]
@@ -79,24 +81,77 @@ struct ReportState {
     runner_waker: WakerRegistration,
 }
 
+static CONNECTION: Mutex<RefCell<ConnectionState>> =
+    Mutex::new(RefCell::new(ConnectionState::new()));
 static REPORT_QUEUE: Mutex<RefCell<ReportState>> = Mutex::new(RefCell::new(ReportState {
     queue: ReportQueue::new(),
     runner_waker: WakerRegistration::new(),
 }));
-/// Whether the host configured the device, tracked through the HID IN endpoint:
-/// the endpoint is enabled by SET_CONFIGURATION and disabled again on a bus reset
-/// or suspend.
-static CONFIGURED: AtomicBool = AtomicBool::new(false);
 /// Keyboard LED bitmask last reported by the host.
 static INDICATORS: AtomicU8 = AtomicU8::new(0);
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
+/// Runs `function` with the connection state and the report queue, under one
+/// critical section. Every access takes the two in this order.
+fn with_usb_state<T>(function: impl FnOnce(&mut ConnectionState, &mut ReportState) -> T) -> T {
+    critical_section::with(|section| {
+        let mut connection = CONNECTION.borrow(section).borrow_mut();
+        let mut state = REPORT_QUEUE.borrow(section).borrow_mut();
+        function(&mut connection, &mut state)
+    })
+}
+
+/// Applies a USB bus event to the connection state and the report queue: on an
+/// event that disconnects, the queued reports are dropped and the LED state is
+/// cleared; when the host comes back, one all-zero release report per identifier
+/// is queued, so that no key stays held.
+fn apply_bus_event(event: BusEvent) {
+    with_usb_state(|connection, state| {
+        let outcome = connection.apply(event);
+        if outcome.invalidate {
+            state.queue.clear();
+            INDICATORS.store(0, Ordering::Relaxed);
+        }
+        if outcome.host_returned {
+            for identifier in REPORT_IDENTIFIERS {
+                if let Some((bytes, length)) = release_report(identifier) {
+                    // Best effort: a full queue keeps the older reports.
+                    let _ = state.queue.push(identifier, &bytes[..length]);
+                }
+            }
+        }
+        state.runner_waker.wake();
+    });
+}
+
 /// Answers the HID control requests that carry an output report: SET_REPORT with
-/// the keyboard report identifier updates the LED bitmask. The boot protocol stays
-/// rejected, as [`REPORT_DESCRIPTOR`] does not declare it.
+/// the keyboard report identifier updates the LED bitmask, and GET_REPORT reads
+/// the LED state back or answers an all-zero input report. The boot protocol
+/// stays rejected, as [`REPORT_DESCRIPTOR`] does not declare it.
 struct HidRequestHandler;
 
 impl RequestHandler for HidRequestHandler {
+    fn get_report(&mut self, identifier: ReportId, buffer: &mut [u8]) -> Option<usize> {
+        match identifier {
+            ReportId::Out(REPORT_IDENTIFIER_KEYBOARD) => {
+                if buffer.is_empty() {
+                    return None;
+                }
+                buffer[0] = INDICATORS.load(Ordering::Relaxed);
+                Some(1)
+            }
+            ReportId::In(identifier) => {
+                let length = report_length(identifier)?;
+                if buffer.len() < length {
+                    return None;
+                }
+                buffer[..length].fill(0);
+                Some(length)
+            }
+            _ => None,
+        }
+    }
+
     fn set_report(&mut self, identifier: ReportId, payload: &[u8]) -> OutResponse {
         match identifier {
             ReportId::Out(REPORT_IDENTIFIER_KEYBOARD) => {
@@ -112,6 +167,40 @@ impl RequestHandler for HidRequestHandler {
     }
 }
 
+/// Follows the USB bus events: bus reset, configuration, suspend and power. esp-hal
+/// forces VBUSVALID, so an unplugged cable shows up as a suspend, not as a power
+/// removal, and embassy-usb does not disable the endpoints on suspend, so the
+/// connection state has to be tracked here.
+struct BusEventHandler;
+
+impl Handler for BusEventHandler {
+    fn enabled(&mut self, enabled: bool) {
+        if !enabled {
+            apply_bus_event(BusEvent::PowerRemoved);
+        }
+    }
+
+    fn reset(&mut self) {
+        apply_bus_event(BusEvent::Reset);
+    }
+
+    fn configured(&mut self, configured: bool) {
+        apply_bus_event(if configured {
+            BusEvent::Configured
+        } else {
+            BusEvent::Unconfigured
+        });
+    }
+
+    fn suspended(&mut self, suspended: bool) {
+        apply_bus_event(if suspended {
+            BusEvent::Suspended
+        } else {
+            BusEvent::Resumed
+        });
+    }
+}
+
 struct UsbBuffers {
     config_descriptor: [u8; 256],
     bos_descriptor: [u8; 16],
@@ -121,6 +210,7 @@ struct UsbBuffers {
     cdc_state: CdcAcmState<'static>,
     hid_state: HidState<'static>,
     hid_request_handler: HidRequestHandler,
+    bus_event_handler: BusEventHandler,
 }
 
 static mut USB_BUFFERS: UsbBuffers = UsbBuffers {
@@ -132,6 +222,7 @@ static mut USB_BUFFERS: UsbBuffers = UsbBuffers {
     cdc_state: CdcAcmState::new(),
     hid_state: HidState::new(),
     hid_request_handler: HidRequestHandler,
+    bus_event_handler: BusEventHandler,
 };
 
 /// The runner of the composite device, stored by [`UsbHumanInterface::new`] and
@@ -144,17 +235,19 @@ static mut USB_RUNNER: Option<UsbCompositeRunner> = None;
 /// already taken.
 pub(crate) fn take_runner() -> Option<UsbCompositeRunner> {
     // SAFETY: `UsbHumanInterface::new` writes the slot once (guarded by
-    // INITIALIZED) and the console task reads it once, both before the executor
-    // runs them apart; no reference to the slot is created.
-    unsafe { core::ptr::addr_of_mut!(USB_RUNNER).read() }
+    // INITIALIZED). `take` moves the runner out and leaves `None` in the slot, so a
+    // second call returns `None` instead of copying the value, and no reference to
+    // the slot is created.
+    unsafe { (*core::ptr::addr_of_mut!(USB_RUNNER)).take() }
 }
 
 /// The human interface emulation controller of the composite USB device.
 ///
-/// It only touches the shared report queue and flags: the USB runner task owns the
-/// endpoints. `send_report` queues the report and wakes the runner; it fails with
-/// [`Error::Busy`] when the queue is full, so no report is dropped silently, and
-/// with [`Error::NotConnected`] while the host has not configured the device.
+/// It only touches the shared connection state and report queue: the USB runner
+/// task owns the endpoints. `send_report` queues the report and wakes the runner;
+/// it fails with [`Error::Busy`] when the queue is full, so no report is dropped
+/// silently, and with [`Error::NotConnected`] while no computer is connected and
+/// listening.
 pub struct UsbHumanInterfaceController;
 
 impl UsbHumanInterfaceController {
@@ -165,11 +258,11 @@ impl UsbHumanInterfaceController {
 
 impl HumanInterfaceController for UsbHumanInterfaceController {
     fn send_report(&mut self, identifier: u8, report: &[u8]) -> Result<(), Error> {
-        if !CONFIGURED.load(Ordering::Acquire) {
-            return Err(Error::NotConnected);
-        }
-        critical_section::with(|section| {
-            let mut state = REPORT_QUEUE.borrow(section).borrow_mut();
+        with_usb_state(|connection, state| {
+            if !connection.is_connected() {
+                return Err(Error::NotConnected);
+            }
+            // Busy when the queue is full: the report is not dropped silently.
             state.queue.push(identifier, report)?;
             state.runner_waker.wake();
             Ok(())
@@ -177,7 +270,7 @@ impl HumanInterfaceController for UsbHumanInterfaceController {
     }
 
     fn is_connected(&self) -> bool {
-        CONFIGURED.load(Ordering::Acquire)
+        with_usb_state(|connection, _| connection.is_connected())
     }
 
     fn indicators(&self) -> u8 {
@@ -250,6 +343,7 @@ impl UsbHumanInterface {
                 hid_boot_protocol: HidBootProtocol::None,
             },
         );
+        builder.handler(&mut buffers.bus_event_handler);
         let usb_device = builder.build();
 
         let (cdc_sender, cdc_receiver, cdc_control) = cdc_class.split_with_control();
@@ -371,36 +465,38 @@ async fn pump_hid(
     mut reader: HidReader<'static, Otg, 64>,
     mut writer: HidWriter<'static, Otg, 64>,
 ) {
-    // The IN endpoint is enabled once the host configures the device.
-    writer.ready().await;
-    CONFIGURED.store(true, Ordering::Release);
-
     let write_future = async {
         loop {
-            let (identifier, bytes, length) = poll_fn(|context| {
-                critical_section::with(|section| {
-                    let mut state = REPORT_QUEUE.borrow(section).borrow_mut();
-                    match state.queue.pop() {
-                        Some(entry) => Poll::Ready(entry),
-                        None => {
-                            state.runner_waker.register(context.waker());
-                            Poll::Pending
-                        }
+            // Pop one report and capture the connection generation with it, so that
+            // a report popped before a bus event is not delivered after it.
+            let (generation, identifier, bytes, length) = poll_fn(|context| {
+                with_usb_state(|connection, state| match state.queue.pop() {
+                    Some((identifier, bytes, length)) => {
+                        Poll::Ready((connection.generation(), identifier, bytes, length))
+                    }
+                    None => {
+                        state.runner_waker.register(context.waker());
+                        Poll::Pending
                     }
                 })
             })
             .await;
+            // A bus event happened between the pop and now: drop the report.
+            let still_current =
+                with_usb_state(|connection, _| connection.generation() == generation);
+            if !still_current {
+                continue;
+            }
             // The descriptor declares report identifiers, so the frame on the wire
             // starts with the identifier byte.
             let Some((frame, frame_length)) = frame_report(identifier, &bytes[..length]) else {
                 continue;
             };
             if writer.write(&frame[..frame_length]).await.is_err() {
-                // The endpoint was disabled (bus reset or suspend): report the
-                // device as not connected until the host configures it again.
-                CONFIGURED.store(false, Ordering::Release);
+                // Second defence: the endpoint was disabled (bus reset or
+                // unconfiguration). The report is dropped, not retried; wait for
+                // the endpoint to be enabled again by a new configuration.
                 writer.ready().await;
-                CONFIGURED.store(true, Ordering::Release);
             }
         }
     };

@@ -204,6 +204,29 @@ read from a cold cache, so the figures compare between builds. The benchmark
 adds the buffer's 256 KiB to the application, and it is absent from the default
 build.
 
+The `usb-human-interface` feature moves the console and adds a USB human
+interface emulation device on the same cable: the ESP32-S3's single USB PHY goes
+to the USB OTG controller, and one composite device carries the CDC-ACM console
+and a HID keyboard, media remote, mouse and system control. Build it with the
+feature and flash the ELF as above:
+
+```sh
+mise run build:wt32-sc01-plus -- --features usb-human-interface
+# Hold BOOT, press and release RESET, release BOOT (download mode: the USB
+# Serial/JTAG controller no longer answers while this firmware runs), then:
+mise run run:espflash -- flash --chip esp32s3 --port "$FLASH_PORT" \
+  --flash-size 16mb --flash-mode qio --flash-freq 80mhz \
+  --partition-table examples/boards/wt32-sc01-plus/partitions.csv --partition-table-offset 0x8000 \
+  --monitor target/espressif-emulator/wt32-sc01-plus.elf
+```
+
+The host then sees the pid.codes test pair `1209:0001`: a composite device with
+a CDC-ACM serial port (the console, `/dev/ttyACM0` on Linux) and HID interfaces.
+See the [WT32-SC01 Plus README](wt32-sc01-plus/README.md#usb-console-and-human-interface-emulation)
+for the details, the limits and how to check the device on Linux, Windows and
+macOS. Flashing the default firmware back the same way restores the USB
+Serial/JTAG console (`303a:1001`) and espflash's auto-reset.
+
 The first boot formats the LittleFS partition, which has 3056 blocks of 4096 bytes. Look for the PSRAM
 size, `Xila: PSRAM self-test passed`, `Xila: LittleFS mounted`, the graphics
 and touch controller lines, the heap report and the `User name:` prompt.

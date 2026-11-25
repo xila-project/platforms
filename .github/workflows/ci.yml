@@ -238,7 +238,7 @@ jobs:
         # Xila's graphics converts its fonts with the locked `lv_font_conv`.
         if: matrix.graphics
         run: mise run ci:deps-npm
-      - name: "Build | Flash image"
+      - name: "Build | ${{ startsWith(matrix.task, 'check:') && 'Firmware ELF only (check)' || 'Flash image' }}"
         run: mise run ${{ matrix.task }}
   required:
     if: always()

@@ -16,7 +16,7 @@ embassy-executor = { workspace = true, optional = true }
 embassy-futures = { workspace = true, optional = true }
 embassy-net-driver = { version = "0.2", optional = true }
 embassy-usb = { version = "0.6.0", default-features = false, features = [
-  "max-handler-count-2",
+  "max-handler-count-3",
   "max-interface-count-3",
 ], optional = true }
 embassy-sync = { workspace = true, optional = true }
@@ -62,8 +62,16 @@ virtual_file_system = { workspace = true, optional = true }
 file_system = { workspace = true }
 network = { workspace = true }
 # The transport-independent logic of the USB human interface lower half is
-# host-tested in tests/human_interface.rs.
+# host-tested in tests/human_interface.rs, which also builds the composite device
+# on a fake OTG instance to check the endpoint allocation.
 peripherals = { workspace = true, features = ["human-interface"] }
+critical-section = { workspace = true, features = ["std"] }
+embassy-usb = { version = "0.6.0", default-features = false, features = [
+  "max-handler-count-3",
+  "max-interface-count-3",
+] }
+# The version esp-hal 1.2.2 pins, for the fake OTG instance of the test.
+embassy-usb-synopsys-otg = "=0.4.0"
 
 [features]
 default = ["gpio", "i2c", "spi", "uart"]

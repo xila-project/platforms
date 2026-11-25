@@ -1,7 +1,8 @@
 //! Transport-independent logic of the USB human interface lower half: the bounded
 //! report queue between `HumanInterfaceController::send_report` and the USB runner
-//! task, the report framing (the identifier byte in front of the report bytes) and
-//! the parsing of the keyboard LED output report.
+//! task, the report framing (the identifier byte in front of the report bytes), the
+//! parsing of the keyboard LED output report, the connection state machine driven by
+//! the USB bus events, and the endpoint buffer sizes.
 //!
 //! Host-tested by `tests/human_interface.rs`.
 
@@ -17,6 +18,17 @@ pub const REPORT_QUEUE_CAPACITY: usize = 16;
 /// lock and scroll lock, in the order of the LED usages of `REPORT_DESCRIPTOR`.
 pub const LED_INDICATOR_MASK: u8 = 0x07;
 
+/// Poll interval of the HID endpoints, in milliseconds.
+pub const HID_POLL_MILLISECONDS: u8 = 1;
+/// Max packet size of the HID and CDC endpoints, in bytes (full speed).
+pub const ENDPOINT_MAX_PACKET_SIZE: usize = 64;
+/// Buffer for received OUT packets. Every OUT endpoint takes its max packet size
+/// from it, including the control endpoint 0 OUT that `Driver::start` allocates:
+/// EP0 control OUT, CDC bulk OUT and HID interrupt OUT, so three times 64 bytes.
+pub const ENDPOINT_OUT_BUFFER_SIZE: usize = 3 * ENDPOINT_MAX_PACKET_SIZE;
+/// Largest control request of the composite device: the HID report descriptor read.
+pub const CONTROL_BUFFER_SIZE: usize = 256;
+
 /// Whether `identifier` is one of the `REPORT_IDENTIFIER_*` constants.
 pub const fn is_known_identifier(identifier: u8) -> bool {
     matches!(
@@ -26,6 +38,30 @@ pub const fn is_known_identifier(identifier: u8) -> bool {
             | REPORT_IDENTIFIER_MOUSE
             | REPORT_IDENTIFIER_SYSTEM
     )
+}
+
+/// Length of the input report of `identifier` in bytes, as
+/// [`peripherals::human_interface::REPORT_DESCRIPTOR`] declares it: the keyboard
+/// report is 8 bytes, the consumer report 2, the mouse report 5 and the system
+/// report 1. `None` for an unknown identifier.
+pub const fn report_length(identifier: u8) -> Option<usize> {
+    match identifier {
+        REPORT_IDENTIFIER_KEYBOARD => Some(8),
+        REPORT_IDENTIFIER_CONSUMER => Some(2),
+        REPORT_IDENTIFIER_MOUSE => Some(5),
+        REPORT_IDENTIFIER_SYSTEM => Some(1),
+        _ => None,
+    }
+}
+
+/// The all-zero report of `identifier`, which releases every key, button and
+/// control of that function. Sent when the host comes back, so that no key stays
+/// held after a re-enumeration.
+pub const fn release_report(identifier: u8) -> Option<([u8; REPORT_MAX_BYTES], usize)> {
+    match report_length(identifier) {
+        Some(length) => Some(([0; REPORT_MAX_BYTES], length)),
+        None => None,
+    }
 }
 
 /// Copies `report` into a zero-padded array of [`REPORT_MAX_BYTES`] bytes.
@@ -102,6 +138,12 @@ impl<const N: usize> ReportQueue<N> {
         self.count -= 1;
         Some((slot.identifier, slot.bytes, slot.length))
     }
+
+    /// Drop every queued report, on a bus event that invalidates them.
+    pub fn clear(&mut self) {
+        self.head = 0;
+        self.count = 0;
+    }
 }
 
 /// Frames one report for the interrupt IN endpoint: the report identifier byte
@@ -130,13 +172,139 @@ pub fn led_indicators_from_output_report(report: &[u8]) -> Option<u8> {
 }
 
 /// Keyboard LED bitmask from the payload of a SET_REPORT control request, where the
-/// report identifier travels in the request value, not in the payload. `None` for
-/// any other report identifier.
+/// report identifier travels in the request value. Hosts send both layouts: with
+/// report identifiers in the descriptor, some send the identifier as the first data
+/// byte (a two-byte payload starting with the keyboard identifier), others send the
+/// report itself (a one-byte payload). `None` for any other report identifier or
+/// payload length.
 pub fn led_indicators_from_control_payload(report_identifier: u8, payload: &[u8]) -> Option<u8> {
-    if report_identifier == REPORT_IDENTIFIER_KEYBOARD && !payload.is_empty() {
-        Some(payload[0] & LED_INDICATOR_MASK)
-    } else {
-        None
+    if report_identifier != REPORT_IDENTIFIER_KEYBOARD {
+        return None;
+    }
+    match payload {
+        [REPORT_IDENTIFIER_KEYBOARD, leds] => Some(*leds & LED_INDICATOR_MASK),
+        [leds] => Some(*leds & LED_INDICATOR_MASK),
+        _ => None,
+    }
+}
+
+/// A USB bus event, as the `embassy_usb::Handler` callbacks report them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BusEvent {
+    /// Bus reset: the device is back in the Default state.
+    Reset,
+    /// The host set a configuration (SET_CONFIGURATION with a value).
+    Configured,
+    /// The host cleared the configuration (SET_CONFIGURATION with zero).
+    Unconfigured,
+    /// The bus entered the suspend state, which also covers an unplugged cable.
+    Suspended,
+    /// The bus left the suspend state.
+    Resumed,
+    /// The power was removed from the bus.
+    PowerRemoved,
+}
+
+/// What a bus event means for the emulation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EventOutcome {
+    /// Whether a computer is connected and listening now.
+    pub connected: bool,
+    /// Queued and in-flight reports are stale: drop them and clear the LED state.
+    pub invalidate: bool,
+    /// The host came back: send the release reports, so no key stays held.
+    pub host_returned: bool,
+}
+
+/// Connection state of the USB device, driven by the bus events. `is_connected` is
+/// the configured state without suspend: a host that configured the device and is
+/// not suspending the bus is connected and listening.
+pub struct ConnectionState {
+    configured: bool,
+    suspended: bool,
+    /// Bumped on every bus event, so that a report popped before the event is not
+    /// delivered after it.
+    generation: u32,
+}
+
+impl ConnectionState {
+    /// The state after power-up: not configured, not suspended.
+    pub const fn new() -> Self {
+        Self {
+            configured: false,
+            suspended: false,
+            generation: 0,
+        }
+    }
+
+    /// Whether a computer is connected and listening: configured and not suspended.
+    pub const fn is_connected(&self) -> bool {
+        self.configured && !self.suspended
+    }
+
+    /// The current generation, to compare against the one captured before an
+    /// asynchronous operation.
+    pub const fn generation(&self) -> u32 {
+        self.generation
+    }
+
+    /// Apply a bus event and return what it means for the emulation. Every event
+    /// bumps the generation.
+    pub fn apply(&mut self, event: BusEvent) -> EventOutcome {
+        self.generation = self.generation.wrapping_add(1);
+        match event {
+            BusEvent::Reset => {
+                self.configured = false;
+                self.suspended = false;
+                EventOutcome {
+                    connected: false,
+                    invalidate: true,
+                    host_returned: false,
+                }
+            }
+            BusEvent::Configured => {
+                self.configured = true;
+                self.suspended = false;
+                EventOutcome {
+                    connected: true,
+                    invalidate: true,
+                    host_returned: true,
+                }
+            }
+            BusEvent::Unconfigured => {
+                self.configured = false;
+                EventOutcome {
+                    connected: false,
+                    invalidate: true,
+                    host_returned: false,
+                }
+            }
+            BusEvent::Suspended => {
+                self.suspended = true;
+                EventOutcome {
+                    connected: false,
+                    invalidate: true,
+                    host_returned: false,
+                }
+            }
+            BusEvent::Resumed => {
+                self.suspended = false;
+                EventOutcome {
+                    connected: self.configured,
+                    invalidate: true,
+                    host_returned: self.configured,
+                }
+            }
+            BusEvent::PowerRemoved => {
+                self.configured = false;
+                self.suspended = false;
+                EventOutcome {
+                    connected: false,
+                    invalidate: true,
+                    host_returned: false,
+                }
+            }
+        }
     }
 }
 
@@ -177,6 +345,18 @@ mod tests {
             }
             assert_eq!(queue.pop(), None);
         }
+    }
+
+    #[test]
+    fn queue_clear_drops_every_queued_report() {
+        let mut queue = ReportQueue::<4>::new();
+        queue.push(REPORT_IDENTIFIER_MOUSE, &[1]).unwrap();
+        queue.push(REPORT_IDENTIFIER_MOUSE, &[2]).unwrap();
+        queue.clear();
+        assert_eq!(queue.pop(), None);
+        // The queue is usable again after a clear.
+        queue.push(REPORT_IDENTIFIER_MOUSE, &[3]).unwrap();
+        assert_eq!(queue.pop().unwrap().2, 1);
     }
 
     #[test]
@@ -279,21 +459,50 @@ mod tests {
     }
 
     #[test]
-    fn led_control_payload_carries_no_identifier_byte() {
+    fn led_control_payload_accepts_both_set_report_layouts() {
+        // The identifier echoed as the first data byte, then the LED byte.
         assert_eq!(
-            led_indicators_from_control_payload(REPORT_IDENTIFIER_KEYBOARD, &[0b010]),
+            led_indicators_from_control_payload(
+                REPORT_IDENTIFIER_KEYBOARD,
+                &[REPORT_IDENTIFIER_KEYBOARD, 0b010]
+            ),
             Some(0b010)
+        );
+        assert_eq!(
+            led_indicators_from_control_payload(
+                REPORT_IDENTIFIER_KEYBOARD,
+                &[REPORT_IDENTIFIER_KEYBOARD, 0xFF]
+            ),
+            Some(LED_INDICATOR_MASK)
+        );
+        // The report itself, without the identifier byte.
+        assert_eq!(
+            led_indicators_from_control_payload(REPORT_IDENTIFIER_KEYBOARD, &[0b101]),
+            Some(0b101)
         );
         assert_eq!(
             led_indicators_from_control_payload(REPORT_IDENTIFIER_KEYBOARD, &[0xFF]),
             Some(LED_INDICATOR_MASK)
         );
+        // Another report identifier, or another payload length, carries no LED state.
         assert_eq!(
             led_indicators_from_control_payload(REPORT_IDENTIFIER_SYSTEM, &[0xFF]),
             None
         );
         assert_eq!(
+            led_indicators_from_control_payload(REPORT_IDENTIFIER_MOUSE, &[1, 0xFF]),
+            None
+        );
+        assert_eq!(
             led_indicators_from_control_payload(REPORT_IDENTIFIER_KEYBOARD, &[]),
+            None
+        );
+        assert_eq!(
+            led_indicators_from_control_payload(REPORT_IDENTIFIER_KEYBOARD, &[1, 2, 3]),
+            None
+        );
+        assert_eq!(
+            led_indicators_from_control_payload(REPORT_IDENTIFIER_KEYBOARD, &[2, 0xFF]),
             None
         );
     }
@@ -311,5 +520,155 @@ mod tests {
         for identifier in [0u8, 5, 42, u8::MAX] {
             assert!(!is_known_identifier(identifier));
         }
+    }
+
+    #[test]
+    fn report_lengths_match_the_descriptor() {
+        assert_eq!(report_length(REPORT_IDENTIFIER_KEYBOARD), Some(8));
+        assert_eq!(report_length(REPORT_IDENTIFIER_CONSUMER), Some(2));
+        assert_eq!(report_length(REPORT_IDENTIFIER_MOUSE), Some(5));
+        assert_eq!(report_length(REPORT_IDENTIFIER_SYSTEM), Some(1));
+        assert_eq!(report_length(0), None);
+        assert_eq!(report_length(9), None);
+    }
+
+    #[test]
+    fn release_reports_are_all_zero_of_the_identifier_length() {
+        for identifier in [
+            REPORT_IDENTIFIER_KEYBOARD,
+            REPORT_IDENTIFIER_CONSUMER,
+            REPORT_IDENTIFIER_MOUSE,
+            REPORT_IDENTIFIER_SYSTEM,
+        ] {
+            let (bytes, length) = release_report(identifier).unwrap();
+            assert_eq!(length, report_length(identifier).unwrap());
+            assert!(bytes[..length].iter().all(|&byte| byte == 0));
+        }
+        assert!(release_report(0).is_none());
+    }
+
+    #[test]
+    fn connection_starts_disconnected() {
+        let state = ConnectionState::new();
+        assert!(!state.is_connected());
+        assert_eq!(state.generation(), 0);
+    }
+
+    #[test]
+    fn configuration_connects_and_returns_the_host() {
+        let mut state = ConnectionState::new();
+        let outcome = state.apply(BusEvent::Configured);
+        assert_eq!(
+            outcome,
+            EventOutcome {
+                connected: true,
+                invalidate: true,
+                host_returned: true
+            }
+        );
+        assert!(state.is_connected());
+        assert_eq!(state.generation(), 1);
+    }
+
+    #[test]
+    fn suspend_disconnects_and_resume_reconnects_when_configured() {
+        let mut state = ConnectionState::new();
+        state.apply(BusEvent::Configured);
+        let outcome = state.apply(BusEvent::Suspended);
+        assert_eq!(
+            outcome,
+            EventOutcome {
+                connected: false,
+                invalidate: true,
+                host_returned: false
+            }
+        );
+        assert!(!state.is_connected());
+        let outcome = state.apply(BusEvent::Resumed);
+        assert_eq!(
+            outcome,
+            EventOutcome {
+                connected: true,
+                invalidate: true,
+                host_returned: true
+            }
+        );
+        assert!(state.is_connected());
+    }
+
+    #[test]
+    fn resume_without_configuration_stays_disconnected() {
+        let mut state = ConnectionState::new();
+        let outcome = state.apply(BusEvent::Resumed);
+        assert_eq!(
+            outcome,
+            EventOutcome {
+                connected: false,
+                invalidate: true,
+                host_returned: false
+            }
+        );
+        assert!(!state.is_connected());
+    }
+
+    #[test]
+    fn reset_and_unconfigure_and_power_removal_disconnect_and_invalidate() {
+        for event in [
+            BusEvent::Reset,
+            BusEvent::Unconfigured,
+            BusEvent::PowerRemoved,
+        ] {
+            let mut state = ConnectionState::new();
+            state.apply(BusEvent::Configured);
+            let generation_before = state.generation();
+            let outcome = state.apply(event);
+            assert_eq!(
+                outcome,
+                EventOutcome {
+                    connected: false,
+                    invalidate: true,
+                    host_returned: false
+                }
+            );
+            assert!(!state.is_connected());
+            assert!(state.generation() > generation_before);
+        }
+    }
+
+    #[test]
+    fn every_event_bumps_the_generation() {
+        let mut state = ConnectionState::new();
+        for event in [
+            BusEvent::Reset,
+            BusEvent::Configured,
+            BusEvent::Unconfigured,
+            BusEvent::Suspended,
+            BusEvent::Resumed,
+            BusEvent::PowerRemoved,
+        ] {
+            let before = state.generation();
+            state.apply(event);
+            assert_eq!(state.generation(), before.wrapping_add(1));
+        }
+    }
+
+    #[test]
+    fn a_reset_after_configuration_needs_a_new_configuration() {
+        let mut state = ConnectionState::new();
+        state.apply(BusEvent::Configured);
+        state.apply(BusEvent::Reset);
+        assert!(!state.is_connected());
+        // After a bus reset the host configures the device again.
+        let outcome = state.apply(BusEvent::Configured);
+        assert!(outcome.host_returned);
+        assert!(state.is_connected());
+    }
+
+    #[test]
+    fn the_out_buffer_holds_the_control_endpoint_too() {
+        // EP0 control OUT, CDC bulk OUT and HID interrupt OUT each take one max
+        // packet size from the OUT buffer.
+        assert_eq!(ENDPOINT_OUT_BUFFER_SIZE, 3 * ENDPOINT_MAX_PACKET_SIZE);
+        assert_eq!(ENDPOINT_MAX_PACKET_SIZE, 64);
     }
 }
