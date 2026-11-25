@@ -189,10 +189,7 @@ async fn problems_are_reported_instead_of_starting_something_else() {
     system
         .configure(r#"{"shortcut": "xila.clock", "user": "nobody"}"#)
         .await;
-    assert!(matches!(
-        system.load().await,
-        Err(Error::UnknownUser(user)) if user == "nobody"
-    ));
+    assert!(matches!(system.load().await, Err(Error::UnknownUser)));
 
     system
         .configure(r#"{"command": "/applications/executables/missing", "user": "kiosk"}"#)
@@ -233,7 +230,7 @@ async fn the_user_must_be_allowed_to_run_the_command() {
         .await;
     assert!(matches!(
         system.load().await,
-        Err(Error::NotExecutable { .. })
+        Err(Error::NotExecutable { command, user }) if command == RUNTIME && user == KIOSK
     ));
     // Root may run it, but only when the configuration says so.
     system

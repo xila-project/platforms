@@ -39,19 +39,26 @@ Other keys, such as `$schema`, are ignored.
 ## Behaviour
 
 - The application replaces the graphical session. It runs without a login, on
-  the screen, with no terminal (`/devices/standard_io/null`). Its session task
-  takes the user's identity before the application starts, as the shells do
-  after a login: the user's home (created if needed) in `HOME`, the user name
-  in `User`, the user and its primary group.
+  the screen when the board has one, with no terminal
+  (`/devices/standard_io/null`). Its session task takes the user's identity
+  before the application starts, as the shells do after a login: the user's
+  home (created if needed) in `HOME`, the user name in `User`, the user and
+  its primary group.
+- On the Espressif firmware, a board without a graphical session still
+  launches the configured application when `startup.json` exists and is valid,
+  on the null terminal (`/devices/standard_io/null`), with no shell fallback
+  if it cannot start.
 - When the application ends, it starts again: at once after a run of 10
   seconds or more, otherwise after 1, 2, 4 ... seconds, up to a minute, so an
   application that fails at start does not keep the processor busy.
 - The other sessions keep running: on the Espressif boards, the serial console
   stays available for maintenance.
-- Problems are logged at boot and the device starts its graphical shell
-  instead, so it stays usable: invalid JSON, an unknown shortcut or user, a
-  missing program or bundle file, or a user that may not run the program. The
-  graphical shell also starts if the application cannot be executed at all.
+- Problems are logged at boot and the graphical session starts instead, so the
+  device stays usable: invalid JSON, an unknown shortcut or user, a missing
+  program or bundle file, or a user that may not run the program. The
+  graphical session also starts if the application cannot be executed at all.
+  On a board without a graphical session, no shell takes the application's
+  place: only the board's usual sessions start.
 - Only root may write the file: it must belong to root, others may not write
   it, and its group may only if that group is root's. Otherwise it is ignored
   (with an error in the log), since it chooses the account the device runs as
