@@ -9,7 +9,7 @@ use device::screen::{BRIGHTNESS_FULL, GET_BRIGHTNESS, SET_BRIGHTNESS};
 use embedded_hal::pwm::SetDutyCycle;
 use file_system::{
     ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice,
-    IoErrorKind, MountOperations, Result, Size,
+    IoErrorKind, MountOperations, Operation, Position, Result, Size,
 };
 use shared::AnyByLayout;
 
@@ -97,6 +97,54 @@ impl<Backlight: SetDutyCycle + Send> DirectBaseOperations for BacklightScreenDev
             }
             _ => self.screen.control(context, command, input, output),
         }
+    }
+
+    fn read_until(
+        &self,
+        context: &mut Context<'_>,
+        buffer: &mut [u8],
+        absolute_position: Size,
+        delimiter: &[u8],
+    ) -> Poll<Result<usize>> {
+        self.screen
+            .read_until(context, buffer, absolute_position, delimiter)
+    }
+
+    fn write_pattern(
+        &self,
+        context: &mut Context<'_>,
+        pattern: &[u8],
+        count: usize,
+        absolute_position: Size,
+    ) -> Poll<Result<usize>> {
+        self.screen
+            .write_pattern(context, pattern, count, absolute_position)
+    }
+
+    fn write_vectored(
+        &self,
+        context: &mut Context<'_>,
+        buffers: &[&[u8]],
+        absolute_position: Size,
+    ) -> Poll<Result<usize>> {
+        self.screen
+            .write_vectored(context, buffers, absolute_position)
+    }
+
+    fn cancel_operation(&self, operation: Operation) {
+        self.screen.cancel_operation(operation)
+    }
+
+    fn open(&self) -> Result<()> {
+        self.screen.open()
+    }
+
+    fn close(&self) -> Result<()> {
+        self.screen.close()
+    }
+
+    fn set_position(&self, current: Size, position: &Position) -> Result<Size> {
+        self.screen.set_position(current, position)
     }
 }
 
