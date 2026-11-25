@@ -3,13 +3,17 @@ extern crate std;
 use std::{boxed::Box, rc::Rc, vec, vec::Vec};
 
 use core::cell::RefCell;
+use core::task::{Context, Poll, Waker};
 
 use device::screen::{
     Area, BRIGHTNESS_FULL, BRIGHTNESS_OFF, GET_BRIGHTNESS, GET_RESOLUTION, Point, SET_BRIGHTNESS,
     SET_DRAWING_AREA,
 };
 use embedded_hal::delay::DelayNs;
-use file_system::{ControlCommand, DirectBaseOperations, DirectCharacterDevice, IoErrorKind};
+use file_system::{
+    ControlCommand, DirectBaseOperations, DirectCharacterDevice, IoErrorKind, MountOperations,
+    Operation, Position, Size,
+};
 use mipidsi::{
     Builder, NoResetPin,
     interface::Interface,
@@ -811,4 +815,144 @@ fn backlight_follows_the_brightness_level_and_starts_fully_on() {
         )
         .unwrap();
     assert_eq!(screen.write_sync(&[0; 4], 0), Ok(4));
+}
+
+/// The operations a wrapped screen received, recorded by [`MockScreen`].
+#[derive(Default)]
+struct RecordedScreenCalls {
+    opens: usize,
+    closes: usize,
+    cancellations: Vec<Operation>,
+    positions: Vec<(Size, Position)>,
+    read_untils: Vec<(usize, Size, Vec<u8>)>,
+    patterns: Vec<(Vec<u8>, usize, Size)>,
+    vectored: Vec<(Vec<Vec<u8>>, Size)>,
+}
+
+/// A screen device that only records the calls it gets.
+struct MockScreen {
+    calls: Rc<RefCell<RecordedScreenCalls>>,
+}
+
+// SAFETY: the tests drive the mock on one thread.
+unsafe impl Send for MockScreen {}
+unsafe impl Sync for MockScreen {}
+
+impl DirectBaseOperations for MockScreen {
+    fn read(&self, _: &mut Context<'_>, _: &mut [u8], _: Size) -> Poll<file_system::Result<usize>> {
+        Poll::Ready(Ok(0))
+    }
+
+    fn write(
+        &self,
+        _: &mut Context<'_>,
+        buffer: &[u8],
+        _: Size,
+    ) -> Poll<file_system::Result<usize>> {
+        Poll::Ready(Ok(buffer.len()))
+    }
+
+    fn read_until(
+        &self,
+        _: &mut Context<'_>,
+        buffer: &mut [u8],
+        absolute_position: Size,
+        delimiter: &[u8],
+    ) -> Poll<file_system::Result<usize>> {
+        self.calls.borrow_mut().read_untils.push((
+            buffer.len(),
+            absolute_position,
+            delimiter.to_vec(),
+        ));
+        Poll::Ready(Ok(0))
+    }
+
+    fn write_pattern(
+        &self,
+        _: &mut Context<'_>,
+        pattern: &[u8],
+        count: usize,
+        absolute_position: Size,
+    ) -> Poll<file_system::Result<usize>> {
+        self.calls
+            .borrow_mut()
+            .patterns
+            .push((pattern.to_vec(), count, absolute_position));
+        Poll::Ready(Ok(pattern.len() * count))
+    }
+
+    fn write_vectored(
+        &self,
+        _: &mut Context<'_>,
+        buffers: &[&[u8]],
+        absolute_position: Size,
+    ) -> Poll<file_system::Result<usize>> {
+        self.calls.borrow_mut().vectored.push((
+            buffers.iter().map(|buffer| buffer.to_vec()).collect(),
+            absolute_position,
+        ));
+        Poll::Ready(Ok(buffers.iter().map(|buffer| buffer.len()).sum()))
+    }
+
+    fn cancel_operation(&self, operation: Operation) {
+        self.calls.borrow_mut().cancellations.push(operation);
+    }
+
+    fn open(&self) -> file_system::Result<()> {
+        self.calls.borrow_mut().opens += 1;
+        Ok(())
+    }
+
+    fn close(&self) -> file_system::Result<()> {
+        self.calls.borrow_mut().closes += 1;
+        Ok(())
+    }
+
+    fn set_position(&self, current: Size, position: &Position) -> file_system::Result<Size> {
+        self.calls.borrow_mut().positions.push((current, *position));
+        // A value the trait default would not compute.
+        Ok(42)
+    }
+}
+
+impl MountOperations for MockScreen {}
+
+impl DirectCharacterDevice for MockScreen {}
+
+#[test]
+fn backlight_forwards_every_other_operation_to_the_wrapped_screen() {
+    let calls = Rc::new(RefCell::new(RecordedScreenCalls::default()));
+    let inner: &'static dyn DirectCharacterDevice = Box::leak(Box::new(MockScreen {
+        calls: calls.clone(),
+    }));
+    let screen = BacklightScreenDevice::new(inner, RecordingPwm::default()).unwrap();
+
+    let mut context = Context::from_waker(Waker::noop());
+    screen.open().unwrap();
+    assert_eq!(screen.set_position(7, &Position::Start(3)), Ok(42));
+    screen.cancel_operation(Operation::Write);
+    let mut buffer = [0; 4];
+    assert_eq!(
+        screen.read_until(&mut context, &mut buffer, 9, b"\n"),
+        Poll::Ready(Ok(0))
+    );
+    assert_eq!(
+        screen.write_pattern(&mut context, &[0xAB], 3, 5),
+        Poll::Ready(Ok(3))
+    );
+    let buffers: [&[u8]; 2] = [&[1, 2], &[3]];
+    assert_eq!(
+        screen.write_vectored(&mut context, &buffers, 11),
+        Poll::Ready(Ok(3))
+    );
+    screen.close().unwrap();
+
+    let recorded = calls.borrow();
+    assert_eq!(recorded.opens, 1);
+    assert_eq!(recorded.closes, 1);
+    assert_eq!(recorded.cancellations, [Operation::Write]);
+    assert_eq!(recorded.positions, [(7, Position::Start(3))]);
+    assert_eq!(recorded.read_untils, [(4, 9, b"\n".to_vec())]);
+    assert_eq!(recorded.patterns, [(vec![0xAB], 3, 5)]);
+    assert_eq!(recorded.vectored, [(vec![vec![1, 2], vec![3]], 11)]);
 }
