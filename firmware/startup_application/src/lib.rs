@@ -21,8 +21,9 @@
 //! before. [`load`] checks everything it can before the sessions start: an
 //! invalid file, a file that someone other than root could have written, an
 //! unknown account, or a missing or non-executable program is an [`Error`],
-//! and the caller then starts the graphical shell, so the device stays usable.
-//! There is no fallback to root: `"user": "root"` must be written explicitly.
+//! and the caller then starts the board's usual sessions, so the device stays
+//! usable. There is no fallback to root: `"user": "root"` must be written
+//! explicitly.
 
 #![no_std]
 
@@ -85,8 +86,9 @@ pub enum Error {
     Configuration(ConfigurationError),
     ShortcutNotFound(String),
     /// The configuration names an account that does not exist. The message
-    /// names no account: an unknown account has no identifier, and the log
-    /// identifies accounts by their identifier only.
+    /// names the file and its `user` field, but no account: an unknown account
+    /// has no identifier, and the log identifies accounts by their identifier
+    /// only.
     UnknownUser,
     /// The command does not exist.
     MissingCommand(String),
@@ -120,7 +122,10 @@ impl fmt::Display for Error {
                 formatter,
                 "no shortcut \"{identifier}\" in {BUNDLES_PATH}/{identifier}/ or {SHORTCUTS_PATH}/"
             ),
-            Self::UnknownUser => write!(formatter, "no user account"),
+            Self::UnknownUser => write!(
+                formatter,
+                "{CONFIGURATION_PATH}: the \"user\" field names no account"
+            ),
             Self::MissingCommand(command) => write!(formatter, "no program {command}"),
             Self::NotExecutable { command, user } => {
                 write!(formatter, "user {} may not run {command}", user.as_u16())
@@ -496,7 +501,10 @@ mod tests {
             error.to_string(),
             "user 1001 may not run /applications/executables/runtime"
         );
-        assert_eq!(Error::UnknownUser.to_string(), "no user account");
+        assert_eq!(
+            Error::UnknownUser.to_string(),
+            format!("{CONFIGURATION_PATH}: the \"user\" field names no account")
+        );
     }
 
     fn statistics(user: u16, group: u16, permissions: u16) -> Statistics {
