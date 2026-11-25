@@ -322,10 +322,9 @@ async fn run(task_manager: &'static task::Manager) {
         .await
         .expect("Failed to set the environment");
 
-    // - - Time zone: the stored setting becomes `TZ` in this task and in the
-    // services already started, so every task started from here inherits it.
-    // A missing or invalid setting gives UTC with one warning.
-    xila::local_time::initialize(task_manager, virtual_file_system, task).await;
+    // No time zone: nothing on this board reads `TZ` (no Settings and no
+    // `time_zone` command), and the 4,960 bytes that loading it costs are kept
+    // for the 448 KiB flash region.
 
     // Root and the administrator group may use the power device, and
     // therefore request a restart through the lifecycle subsystem.

@@ -34,10 +34,13 @@ xila = { git = "https://github.com/xila-project/core", branch = "main", default-
 ] }
 
 [features]
-# IANA zone names of the Settings time zone selector, passed to the
-# firmware. The default is all zones (about 9.5 KB of flash); build with
-# `--no-default-features` and a region feature to link fewer.
-default = ["time-zone-names-all"]
+# Time zone features of Settings and the shell, passed to the firmware. The
+# default is all zone names and the UTC offset form; the `time_zone` shell
+# command is off because Settings covers it. See examples/boards/README.md for
+# the flash cost of each.
+default = ["time-zone-names-all", "time-zone-offset-form"]
+time-zone-command = ["firmware/time-zone-command"]
+time-zone-offset-form = ["firmware/time-zone-offset-form"]
 time-zone-names-africa = ["firmware/time-zone-names-africa"]
 time-zone-names-america = ["firmware/time-zone-names-america"]
 time-zone-names-antarctica = ["firmware/time-zone-names-antarctica"]
