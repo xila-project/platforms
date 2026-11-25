@@ -449,7 +449,8 @@ impl DirectBaseOperations for DriveDevice {
             match command {
                 GET_BLOCK_SIZE::IDENTIFIER => *GET_BLOCK_SIZE::cast_output(output)? = BLOCK_SIZE,
                 GET_BLOCK_COUNT::IDENTIFIER => {
-                    *GET_BLOCK_COUNT::cast_output(output)? = inner.data.length() / BLOCK_SIZE;
+                    *GET_BLOCK_COUNT::cast_output(output)? =
+                        (inner.data.length() / BLOCK_SIZE) as Size;
                 }
                 _ => return Err(IoErrorKind::Unsupported),
             }
