@@ -67,9 +67,9 @@ impl<'a> DirectBaseOperations for ScreenDevice<'a> {
                     *resolution = task::block_on(self.0.get_resolution()).unwrap();
                 }
                 WAS_RESIZED::IDENTIFIER => {
-                    let was_resized: &mut bool = WAS_RESIZED::cast_output(output)?;
+                    let was_resized: &mut u8 = WAS_RESIZED::cast_output(output)?;
 
-                    *was_resized = task::block_on(self.0.was_resized()).unwrap();
+                    *was_resized = task::block_on(self.0.was_resized()).unwrap() as u8;
                 }
                 WRITE_SCREENSHOT_TO_PATH::IDENTIFIER => {
                     let request = WRITE_SCREENSHOT_TO_PATH::cast_input(input)?;

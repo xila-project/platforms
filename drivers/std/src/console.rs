@@ -250,8 +250,8 @@ fn control(
 ) -> file_system::Result<()> {
     match command {
         IS_A_TERMINAL::IDENTIFIER => {
-            let output: &mut bool = IS_A_TERMINAL::cast_output(output)?;
-            *output = true;
+            let output: &mut u8 = IS_A_TERMINAL::cast_output(output)?;
+            *output = 1;
 
             Ok(())
         }

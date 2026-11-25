@@ -2,8 +2,8 @@ use file_system::{AccessFlags, CreateFlags, Flags, IoErrorKind, Kind, Permission
 use network::{
     ADD_DNS_SERVER, ADD_IP_ADDRESS, ADD_ROUTE, GET_DHCP_STATE, GET_DNS_SERVER,
     GET_DNS_SERVER_COUNT, GET_IP_ADDRESS, GET_IP_ADDRESS_COUNT, GET_ROUTE, GET_ROUTE_COUNT,
-    IpAddress, IpCidr, REMOVE_DNS_SERVER, REMOVE_IP_ADDRESS, REMOVE_ROUTE, Route, SET_DHCP_STATE,
-    WifiClientConfiguration,
+    IpAddress, IpAddressAbi, IpCidr, IpCidrAbi, REMOVE_DNS_SERVER, REMOVE_IP_ADDRESS, REMOVE_ROUTE,
+    Route, RouteAbi, SET_DHCP_STATE, WifiClientConfiguration,
 };
 use task::TaskIdentifier;
 use virtual_file_system::{File, VirtualFileSystem};
@@ -97,24 +97,24 @@ pub(super) async fn apply_address(
         interface
             .control(
                 ADD_IP_ADDRESS,
-                &IpCidr::new_ipv4(address.address.octets(), address.prefix),
+                &IpCidrAbi::from(IpCidr::new_ipv4(address.address.octets(), address.prefix)),
             )
             .await?;
         interface
             .control(
                 ADD_ROUTE,
-                &Route::new_default_ipv4(address.gateway.octets()),
+                &RouteAbi::from(Route::new_default_ipv4(address.gateway.octets())),
             )
             .await?;
         interface
             .control(
                 ADD_DNS_SERVER,
-                &IpAddress::new_ipv4(address.name_server.octets()),
+                &IpAddressAbi::from(IpAddress::new_ipv4(address.name_server.octets())),
             )
             .await?;
         Ok(())
     } else {
-        interface.control(SET_DHCP_STATE, &true).await
+        interface.control(SET_DHCP_STATE, &1u8).await
     }
 }
 
@@ -125,7 +125,7 @@ pub(super) async fn restart_dhcp(
     let mut interface =
         File::open(file_system, task, INTERFACE_PATH, AccessFlags::Write.into()).await?;
     let result = async {
-        interface.control(SET_DHCP_STATE, &false).await?;
+        interface.control(SET_DHCP_STATE, &0u8).await?;
         apply_address(None, &mut interface).await
     }
     .await;
@@ -143,26 +143,37 @@ pub(super) async fn switch_to_dhcp(
     let result = async {
         let gateway = Route::new_default_ipv4(address.gateway.octets());
         for index in 0..interface.control(GET_ROUTE_COUNT, &()).await? {
-            if interface.control(GET_ROUTE, &index).await? == gateway {
+            let route = interface.control(GET_ROUTE, &index).await?;
+            if let Ok(route) = Route::try_from(route)
+                && route == gateway
+            {
                 interface.control(REMOVE_ROUTE, &index).await?;
                 break;
             }
         }
         let name_server = IpAddress::new_ipv4(address.name_server.octets());
         for index in 0..interface.control(GET_DNS_SERVER_COUNT, &()).await? {
-            if interface.control(GET_DNS_SERVER, &index).await? == name_server {
+            let server = interface.control(GET_DNS_SERVER, &index).await?;
+            if let Ok(server) = IpAddress::try_from(server)
+                && server == name_server
+            {
                 interface.control(REMOVE_DNS_SERVER, &index).await?;
                 break;
             }
         }
         let address = IpCidr::new_ipv4(address.address.octets(), address.prefix);
         for index in 0..interface.control(GET_IP_ADDRESS_COUNT, &()).await? {
-            if interface.control(GET_IP_ADDRESS, &index).await? == address {
+            let cidr = interface.control(GET_IP_ADDRESS, &index).await?;
+            if let Ok(cidr) = IpCidr::try_from(cidr)
+                && cidr == address
+            {
                 interface.control(REMOVE_IP_ADDRESS, &index).await?;
                 break;
             }
         }
-        if !interface.control(GET_DHCP_STATE, &()).await? {
+        let dhcp_state = interface.control(GET_DHCP_STATE, &()).await?;
+        // An unknown flag byte is invalid, as in the shell commands.
+        if !bool::try_from(dhcp_state).map_err(|_| IoErrorKind::InvalidArgument)? {
             apply_address(None, &mut interface).await?;
         }
         Ok(())

@@ -664,9 +664,9 @@ fn device_control_forwarding() {
             output: &mut AnyByLayout,
         ) -> Poll<Result<()>> {
             if command == file_system::character_device::IS_A_TERMINAL::IDENTIFIER {
-                let out: &mut bool =
+                let out: &mut u8 =
                     file_system::character_device::IS_A_TERMINAL::cast_output(output).unwrap();
-                *out = true;
+                *out = 1;
                 Poll::Ready(Ok(()))
             } else {
                 Poll::Ready(Err(IoErrorKind::Unsupported))
@@ -677,7 +677,7 @@ fn device_control_forwarding() {
     impl DirectCharacterDevice for MockTerminalDevice {}
 
     let terminal = TerminalInputDevice::new(MockTerminalDevice, MockTerminalDevice);
-    let mut is_terminal = false;
+    let mut is_terminal = 0u8;
     let out = AnyByLayout::from_mutable(&mut is_terminal);
     let input = ();
     let in_layout = AnyByLayout::from(&input);
@@ -691,7 +691,7 @@ fn device_control_forwarding() {
         out,
     );
     assert_eq!(res, Poll::Ready(Ok(())));
-    assert!(is_terminal);
+    assert_eq!(is_terminal, 1);
 }
 
 // -----------------------------------------------------------------------------

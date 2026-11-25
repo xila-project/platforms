@@ -115,7 +115,7 @@ async fn unchanged_resize_preserves_the_canvas_bitmap() {
         .unwrap();
     let pixel = context.get_image_data(0.0, 0.0, 1.0, 1.0).unwrap().data();
     assert_eq!(&pixel.0[..3], &[255, 0, 0]);
-    let mut resized = false;
+    let mut resized = 0u8;
     device
         .control_sync(
             WAS_RESIZED::IDENTIFIER,
@@ -123,7 +123,7 @@ async fn unchanged_resize_preserves_the_canvas_bitmap() {
             AnyByLayout::from_mutable(&mut resized),
         )
         .unwrap();
-    assert!(!resized);
+    assert_eq!(resized, 0);
     canvas.remove();
 }
 
@@ -232,7 +232,7 @@ async fn changed_viewport_updates_resolution_and_requests_redraw() {
         canvas.height(),
         window.inner_height().unwrap().as_f64().unwrap() as u32
     );
-    let mut resized = false;
+    let mut resized = 0u8;
     device
         .control_sync(
             WAS_RESIZED::IDENTIFIER,
@@ -240,7 +240,7 @@ async fn changed_viewport_updates_resolution_and_requests_redraw() {
             AnyByLayout::from_mutable(&mut resized),
         )
         .unwrap();
-    assert!(resized);
+    assert_eq!(resized, 1);
     device
         .control_sync(
             WAS_RESIZED::IDENTIFIER,
@@ -248,7 +248,7 @@ async fn changed_viewport_updates_resolution_and_requests_redraw() {
             AnyByLayout::from_mutable(&mut resized),
         )
         .unwrap();
-    assert!(!resized);
+    assert_eq!(resized, 0);
     canvas.remove();
 }
 

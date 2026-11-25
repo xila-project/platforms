@@ -189,7 +189,7 @@ where
                 Ok(())
             }
             WAS_RESIZED::IDENTIFIER => {
-                *WAS_RESIZED::cast_output(output)? = false;
+                *WAS_RESIZED::cast_output(output)? = 0;
                 Ok(())
             }
             _ => Err(IoErrorKind::Unsupported),
@@ -400,7 +400,7 @@ where
                 Ok(())
             }
             WAS_RESIZED::IDENTIFIER => {
-                *WAS_RESIZED::cast_output(output)? = false;
+                *WAS_RESIZED::cast_output(output)? = 0;
                 Ok(())
             }
             _ => Err(IoErrorKind::Unsupported),

@@ -275,7 +275,7 @@ impl DirectBaseOperations for CanvasScreenDevice {
                     let was_resized = WAS_RESIZED::cast_output(output)?;
 
                     let mut inner = block_on(self.0.write());
-                    *was_resized = inner.was_resized;
+                    *was_resized = inner.was_resized as u8;
                     inner.was_resized = false;
                 }
                 // Optional commands, such as brightness control, are
