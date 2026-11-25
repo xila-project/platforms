@@ -398,7 +398,8 @@ async fn cancelled_save_waiters_do_not_allow_an_old_snapshot_to_overwrite_new_da
 async fn littlefs_file_and_mbr_survive_reopening_the_opfs_disk() {
     use file_system::{
         AccessFlags, Attributes, BaseOperations, Context, FileSystemOperations, Flags,
-        XILA_DISK_SIGNATURE, mbr::{Mbr, PartitionKind},
+        XILA_DISK_SIGNATURE,
+        mbr::{Mbr, PartitionKind},
     };
     let name = name();
     // Match the example's static devices. Unmount releases the disk-sized
@@ -418,7 +419,9 @@ async fn littlefs_file_and_mbr_survive_reopening_the_opfs_disk() {
     ));
     let file_system =
         little_fs::FileSystem::get_or_format(partition, little_fs::Options::new(256)).unwrap();
-    file_system.create_file(Path::new("/saved.txt"), &Attributes::new()).unwrap();
+    file_system
+        .create_file(Path::new("/saved.txt"), &Attributes::new())
+        .unwrap();
     let mut context = Context::new_empty();
     file_system
         .lookup_file(

@@ -1350,7 +1350,9 @@ mod tests {
     fn hostfs_round_trips_file_io_and_enforces_read_only() {
         let root = temp_root();
         let filesystem = HostFileSystem::open(&root, HostFileSystemOptions::default()).unwrap();
-        filesystem.create_file(Path::new("/file"), &Attributes::new()).unwrap();
+        filesystem
+            .create_file(Path::new("/file"), &Attributes::new())
+            .unwrap();
         let mut context = Context::new_empty();
         filesystem
             .lookup_file(
@@ -1557,7 +1559,9 @@ mod tests {
     fn open_file_context_survives_unmount_like_a_linux_descriptor() {
         let root = temp_root();
         let filesystem = HostFileSystem::open(&root, HostFileSystemOptions::default()).unwrap();
-        filesystem.create_file(Path::new("/file"), &Attributes::new()).unwrap();
+        filesystem
+            .create_file(Path::new("/file"), &Attributes::new())
+            .unwrap();
         filesystem
             .create_directory(Path::new("/directory"), &Attributes::new())
             .unwrap();
@@ -1661,7 +1665,9 @@ mod tests {
         filesystem
             .lookup_directory_entry(&root_context, "directory", &mut directory)
             .unwrap();
-        filesystem.create_file_entry(&directory, "file", &Attributes::new()).unwrap();
+        filesystem
+            .create_file_entry(&directory, "file", &Attributes::new())
+            .unwrap();
         assert_eq!(
             filesystem.create_file_entry(&directory, "file", &Attributes::new()),
             Err(IoErrorKind::AlreadyExists)
@@ -1884,21 +1890,41 @@ mod tests {
         let root_context = open_root_entry(&filesystem);
 
         filesystem
-            .create_symlink_entry(Path::new("directory"), &root_context, "directory-link", &Attributes::new())
+            .create_symlink_entry(
+                Path::new("directory"),
+                &root_context,
+                "directory-link",
+                &Attributes::new(),
+            )
             .unwrap();
         filesystem
-            .create_symlink_entry(Path::new("file"), &root_context, "file-link", &Attributes::new())
+            .create_symlink_entry(
+                Path::new("file"),
+                &root_context,
+                "file-link",
+                &Attributes::new(),
+            )
             .unwrap();
         assert_eq!(
             fs::read_link(root.join("file-link")).unwrap(),
             PathBuf::from("file")
         );
         assert_eq!(
-            filesystem.create_symlink_entry(Path::new("/file"), &root_context, "absolute-link", &Attributes::new()),
+            filesystem.create_symlink_entry(
+                Path::new("/file"),
+                &root_context,
+                "absolute-link",
+                &Attributes::new()
+            ),
             Err(IoErrorKind::Unsupported)
         );
         assert_eq!(
-            filesystem.create_symlink_entry(Path::new("file"), &root_context, "file-link", &Attributes::new()),
+            filesystem.create_symlink_entry(
+                Path::new("file"),
+                &root_context,
+                "file-link",
+                &Attributes::new()
+            ),
             Err(IoErrorKind::AlreadyExists)
         );
 
@@ -2072,7 +2098,12 @@ mod tests {
                 Err(IoErrorKind::InvalidPath)
             );
             assert_eq!(
-                filesystem.create_symlink_entry(Path::new("target"), &root_context, name, &Attributes::new()),
+                filesystem.create_symlink_entry(
+                    Path::new("target"),
+                    &root_context,
+                    name,
+                    &Attributes::new()
+                ),
                 Err(IoErrorKind::InvalidPath)
             );
             assert_eq!(
@@ -2143,7 +2174,12 @@ mod tests {
             read_only
         );
         assert_eq!(
-            filesystem.create_symlink_entry(Path::new("file"), &root_context, "new", &Attributes::new()),
+            filesystem.create_symlink_entry(
+                Path::new("file"),
+                &root_context,
+                "new",
+                &Attributes::new()
+            ),
             read_only
         );
         assert_eq!(
@@ -2187,7 +2223,9 @@ mod tests {
             .unwrap();
         fs::rename(root.join("parent"), root.join("parent-moved")).unwrap();
         std::os::unix::fs::symlink(&outside, root.join("parent")).unwrap();
-        filesystem.create_file_entry(&parent, "pinned", &Attributes::new()).unwrap();
+        filesystem
+            .create_file_entry(&parent, "pinned", &Attributes::new())
+            .unwrap();
         filesystem
             .create_directory_entry(&parent, "directory", &Attributes::new())
             .unwrap();
@@ -2231,7 +2269,11 @@ mod tests {
                 .is_ok()
             {
                 let _ = filesystem.create_file_entry(&parent, "pwned", &Attributes::new());
-                let _ = filesystem.create_directory_entry(&parent, "pwned-directory", &Attributes::new());
+                let _ = filesystem.create_directory_entry(
+                    &parent,
+                    "pwned-directory",
+                    &Attributes::new(),
+                );
                 let _ = filesystem.remove_entry(&parent, "pwned");
                 let _ = filesystem.remove_entry(&parent, "pwned-directory");
                 DirectoryOperations::close(&filesystem, &mut parent).unwrap();
