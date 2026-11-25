@@ -113,18 +113,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             }
             let profile = profile(name, native_runtime.unwrap_or_else(NativeRuntime::host))?;
             let staging = tools_image::stage(&profile, &directory)?;
-            if let Some(configuration) = startup_configuration(name)? {
-                fs::write(
-                    staging
-                        .path()
-                        .join(&startup_application::CONFIGURATION_PATH[1..]),
-                    configuration,
-                )?;
-                println!(
-                    "Seeded the startup application in {}",
-                    startup_application::CONFIGURATION_PATH
-                );
-            }
+            seed_configuration(staging.path(), name)?;
             println!("Prepared {name} bundle: {}", profile.applications.join(","));
             tools_image::build_with(&output, size, Some(staging.path()), geometry)?
         }
@@ -253,6 +242,29 @@ fn profile(name: &str, native_runtime: NativeRuntime) -> Result<Profile, Box<dyn
             content: include_bytes!("../repositories/xila.json").to_vec(),
         }],
     })
+}
+
+/// Write the system configuration of a profile into its staging directory:
+/// the startup application, if the profile has one, and the time zone
+/// setting, UTC (`UTC0`), so that the first start-up finds a valid setting
+/// instead of logging that it uses UTC.
+fn seed_configuration(staging: &std::path::Path, name: &str) -> Result<(), Box<dyn Error>> {
+    if let Some(configuration) = startup_configuration(name)? {
+        fs::write(
+            staging.join(&startup_application::CONFIGURATION_PATH[1..]),
+            configuration,
+        )?;
+        println!(
+            "Seeded the startup application in {}",
+            startup_application::CONFIGURATION_PATH
+        );
+    }
+    fs::write(
+        staging.join(&local_time::CONFIGURATION_PATH[1..]),
+        local_time::Setting::utc().to_json(),
+    )?;
+    println!("Seeded UTC in {}", local_time::CONFIGURATION_PATH);
+    Ok(())
 }
 
 /// The startup configuration that a profile seeds at
@@ -578,13 +590,7 @@ mod tests {
         fs::write(bundle.join("shortcut.json"), b"{}").unwrap();
         fs::write(bundle.join("executables/clock.wasm"), b"\0asm").unwrap();
         let staging = tools_image::stage(&clock_profile, &root.join("bundles")).unwrap();
-        fs::write(
-            staging
-                .path()
-                .join(&startup_application::CONFIGURATION_PATH[1..]),
-            configuration,
-        )
-        .unwrap();
+        seed_configuration(staging.path(), "wt32-sc01-plus-clock").unwrap();
         let image_path = root.join("storage.img");
         tools_image::build_with(
             &image_path,
@@ -603,26 +609,39 @@ mod tests {
         let file_system =
             little_fs::FileSystem::new(drive, little_fs::Options::new(256).set_block_cycles(500))
                 .unwrap();
-        let path = startup_application::CONFIGURATION_PATH;
-        let mut context = Context::new_empty();
-        file_system
-            .lookup_file(&mut context, path.as_ref(), AccessFlags::Read.into())
-            .unwrap();
-        let mut content = vec![0; 1024];
-        let count = file_system
-            .read_sync(&mut context, &mut content, 0)
-            .unwrap();
-        file_system.close(&mut context).unwrap();
-        assert_eq!(&content[..count], configuration.as_bytes());
-        let mut attributes = Attributes::new().set_mask(AttributeFlags::all());
-        file_system
-            .get_attributes(path.as_ref(), &mut attributes)
-            .unwrap();
+        // Both files are root's and writable by root only, as the firmware
+        // requires.
+        let read = |path: &str| {
+            let mut context = Context::new_empty();
+            file_system
+                .lookup_file(&mut context, path.as_ref(), AccessFlags::Read.into())
+                .unwrap();
+            let mut content = vec![0; 1024];
+            let count = file_system
+                .read_sync(&mut context, &mut content, 0)
+                .unwrap();
+            file_system.close(&mut context).unwrap();
+            content.truncate(count);
+            let mut attributes = Attributes::new().set_mask(AttributeFlags::all());
+            file_system
+                .get_attributes(path.as_ref(), &mut attributes)
+                .unwrap();
+            assert_eq!(
+                attributes.get_permissions(),
+                Permissions::from_octal(0o644).as_ref()
+            );
+            assert_eq!(attributes.get_user(), Some(&users::UserIdentifier::ROOT));
+            content
+        };
         assert_eq!(
-            attributes.get_permissions(),
-            Permissions::from_octal(0o644).as_ref()
+            read(startup_application::CONFIGURATION_PATH),
+            configuration.as_bytes()
         );
-        assert_eq!(attributes.get_user(), Some(&users::UserIdentifier::ROOT));
+        let time_zone = read(local_time::CONFIGURATION_PATH);
+        assert_eq!(
+            local_time::Setting::from_json(core::str::from_utf8(&time_zone).unwrap()),
+            Some(local_time::Setting::utc())
+        );
 
         drop(file_system);
         drive.close();

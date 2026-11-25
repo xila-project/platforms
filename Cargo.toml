@@ -53,6 +53,7 @@ neural_network = { package = "xila-neural-network", git = "https://github.com/xi
 drivers_neural_network = { package = "xila-drivers-neural-network", git = "https://github.com/xila-project/core", branch = "main" }
 nanoglia = { version = "0.3", default-features = false }
 xila = { git = "https://github.com/xila-project/core", branch = "main" }
+local_time = { package = "xila-local-time", git = "https://github.com/xila-project/core", branch = "main" }
 xila_http = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
 verification = { package = "xila-package-verification", git = "https://github.com/xila-project/package_manager", branch = "main", default-features = false }
 # Image engine of the `xila` developer tools (`xila image build`).

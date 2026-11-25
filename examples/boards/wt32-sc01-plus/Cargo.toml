@@ -34,6 +34,23 @@ xila = { git = "https://github.com/xila-project/core", branch = "main", default-
 ] }
 
 [features]
+# IANA zone names of the Settings time zone selector, passed to the
+# firmware. The default is all zones (about 9.5 KB of flash); build with
+# `--no-default-features` and a region feature to link fewer.
+default = ["time-zone-names-all"]
+time-zone-names-africa = ["firmware/time-zone-names-africa"]
+time-zone-names-america = ["firmware/time-zone-names-america"]
+time-zone-names-antarctica = ["firmware/time-zone-names-antarctica"]
+time-zone-names-arctic = ["firmware/time-zone-names-arctic"]
+time-zone-names-asia = ["firmware/time-zone-names-asia"]
+time-zone-names-atlantic = ["firmware/time-zone-names-atlantic"]
+time-zone-names-australia = ["firmware/time-zone-names-australia"]
+time-zone-names-etc = ["firmware/time-zone-names-etc"]
+time-zone-names-europe = ["firmware/time-zone-names-europe"]
+time-zone-names-indian = ["firmware/time-zone-names-indian"]
+time-zone-names-pacific = ["firmware/time-zone-names-pacific"]
+time-zone-names-all = ["firmware/time-zone-names-all"]
+time-zone-names-legacy-aliases = ["firmware/time-zone-names-legacy-aliases"]
 # Logs CPU, flash and PSRAM timings once at boot, right after the PSRAM
 # self-test. Off by default so production boots stay fast and quiet.
 boot-benchmark = []

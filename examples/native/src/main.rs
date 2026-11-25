@@ -572,6 +572,11 @@ async fn main(task_manager: &'static xila::task::Manager) {
         .await
         .unwrap();
 
+    // - - Time zone: the stored setting becomes `TZ` in this task and in the
+    // services already started, so every task started from here inherits it.
+    // A missing or invalid setting gives UTC with one warning.
+    xila::local_time::initialize(task_manager, virtual_file_system, task).await;
+
     if let (Some(bootsplash), Some(graphics_manager)) = (bootsplash, graphics_manager) {
         // Wait briefly to show the bootsplash.
         task::Manager::sleep(Duration::from_secs(2)).await;

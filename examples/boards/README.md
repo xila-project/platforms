@@ -34,6 +34,31 @@ To compile and copy only the ELF, run
 from the Platforms root. Supply the version pins from `mise.toml`. The script
 uses the installed compiler and skips image packaging.
 
+## Time zone
+
+At start-up, the firmware loads the time zone setting
+(`/configuration/system/time_zone.json`, seeded as UTC in the images) with
+`xila::local_time::initialize`, before the shell or the startup application
+starts, and every task gets it as the POSIX `TZ` variable. A missing or
+invalid setting gives UTC and one warning.
+
+The boards with Settings (`wt32-sc01` and `wt32-sc01-plus`) pass the
+`time-zone-names-*` features to the firmware and Settings. They select the
+IANA zone names of the Settings zone selector, one feature per region
+(`time-zone-names-europe`, `time-zone-names-america` and the others), all of
+them (`time-zone-names-all`), and the legacy aliases
+(`time-zone-names-legacy-aliases`, for example `US/Eastern`).
+
+| Board | Default | Reason |
+|---|---|---|
+| `wt32-sc01-plus` | `time-zone-names-all` | 16 MB of flash: the 345 names cost about 9.5 KB. |
+| `wt32-sc01` | none | 4 MB of flash, shared with the file system: Settings offers the UTC offset form and the TZ string field. |
+
+Build with `--no-default-features` and region features to link fewer names,
+for example `--no-default-features --features time-zone-names-europe`. The
+other boards have no Settings; their shells set the time zone with the
+`time_zone` command and a POSIX TZ string.
+
 Default account creation requires a secure entropy source and a freshly
 formatted file system. If you keep the account-free file system from the old
 boot-only firmware, it will stay account-free after upgrading. Back up any
