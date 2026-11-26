@@ -57,7 +57,7 @@ fn main() -> ! {
             internal_sram_size: 512 * 1024,
             external: None,
         },
-        memory_check: None,
+        memory_check: Some(firmware::native::log_self_test),
         system_check: Some(display::render),
         display: None,
         sd_card: None,

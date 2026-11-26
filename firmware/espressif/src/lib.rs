@@ -18,7 +18,7 @@
 
 extern crate alloc;
 
-#[cfg(any(feature = "graphics", feature = "wasm"))]
+#[cfg(any(feature = "graphics", feature = "wasm", feature = "native-linked"))]
 mod applications;
 #[cfg(feature = "display")]
 pub mod backlight;
@@ -219,6 +219,14 @@ async fn start(task_manager: &'static task::Manager) {
 
     log::information!("Xila ESP32 startup");
     log::information!("Xila: board {name}");
+    #[cfg(any(feature = "native-dev", feature = "native-linked"))]
+    // SAFETY: called once at start-up before any stackful coroutine is active;
+    // `Cpu::current()` returns 0 (`ProCpu`) or 1 (`AppCpu`), both `< MAX_CORES`.
+    unsafe {
+        xila::executable::stackful::set_core_id_provider(|| {
+            esp_hal::system::Cpu::current() as usize
+        });
+    }
     #[cfg(feature = "native-dev")]
     native::initialize();
     if let Some(external) = memory.external {
@@ -644,7 +652,7 @@ async fn start(task_manager: &'static task::Manager) {
     if let Err(error) = mounted {
         log::error!("Xila: cannot mount the shells: {error}");
     }
-    #[cfg(any(feature = "graphics", feature = "wasm"))]
+    #[cfg(any(feature = "graphics", feature = "wasm", feature = "native-linked"))]
     applications::mount(executable_context, virtual_file_system, task).await;
 
     task_manager

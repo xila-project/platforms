@@ -19,6 +19,8 @@ esp-println = { version = "0.18", default-features = false, features = [
 esp-storage = { version = "0.10", features = ["esp32s3"] }
 # No Settings on this board: the `time_zone` shell command sets the time zone.
 firmware = { package = "xila-firmware-espressif", path = "../../../firmware/espressif", features = [
+  "native-dev",
+  "native-linked",
   "time-zone-command",
   "wifi",
 ] }

@@ -1,5 +1,5 @@
 # Name, Type, SubType, Offset, Size, Flags
-# 4 MB flash: a 2 MB application (Wi-Fi with the HTTP and HTTPS clients) and
-# the rest (1.9 MB) for LittleFS.
-factory, app, factory, 0x10000, 0x200000,
-storage, data, littlefs, 0x210000, 0x1F0000,
+# 4 MB flash: a 3.3125 MB application (Wi-Fi with HTTP/HTTPS, LVGL display test,
+# and native-dev / native-linked) and 640 KB for LittleFS.
+factory, app, factory, 0x10000, 0x350000,
+storage, data, littlefs, 0x360000, 0x0A0000,
