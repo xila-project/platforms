@@ -3,6 +3,8 @@
 //!
 //! esp-hal 1.2.2 cannot enable the ESP32-P4 entropy source
 //! (<https://github.com/esp-rs/esp-hal/issues/5982>), so the board has none.
+extern crate alloc;
+use alloc::boxed::Box;
 
 use core::panic::PanicInfo;
 
@@ -41,6 +43,13 @@ fn main() -> ! {
         .with_tx(peripherals.GPIO37)
         .with_rx(peripherals.GPIO38);
 
+    let real_time_clock = Box::leak(Box::new(
+        drivers_espressif::real_time_clock::InternalRealTimeClock::new(
+            esp_hal::rtc_cntl::Rtc::new(peripherals.RTC_TIMER),
+            i64::try_from(firmware::BUILD_EPOCH)
+                .expect("the build date fits in a signed timestamp"),
+        ),
+    ));
     firmware::run(Board {
         name: "ESP32-P4X-Function-EV-Board",
         console: serial.into(),
@@ -64,6 +73,7 @@ fn main() -> ! {
         display: None,
         sd_card: None,
         gpio: None,
+        real_time_clock: Some(real_time_clock),
         sessions: &[session::CONSOLE],
     })
 }

@@ -2,6 +2,7 @@
 //! the emulator's virtual RGB panel, which renders one test frame at boot.
 
 extern crate alloc;
+use alloc::boxed::Box;
 
 use core::panic::PanicInfo;
 
@@ -36,6 +37,13 @@ fn main() -> ! {
         .with_tx(peripherals.GPIO43)
         .with_rx(peripherals.GPIO44);
 
+    let real_time_clock = Box::leak(Box::new(
+        drivers_espressif::real_time_clock::InternalRealTimeClock::new(
+            esp_hal::rtc_cntl::Rtc::new(peripherals.RTC_TIMER),
+            i64::try_from(firmware::BUILD_EPOCH)
+                .expect("the build date fits in a signed timestamp"),
+        ),
+    ));
     let board = Board {
         name: "ESP32-S3 (Espressif QEMU)",
         console: serial.into(),
@@ -54,6 +62,7 @@ fn main() -> ! {
         display: None,
         sd_card: None,
         gpio: None,
+        real_time_clock: Some(real_time_clock),
         sessions: &[session::CONSOLE],
     };
     firmware::run_with_wifi(board, drivers_espressif::wifi::Hardware::Unavailable)

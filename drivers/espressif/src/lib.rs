@@ -111,6 +111,8 @@ pub mod memory;
 pub mod power;
 #[cfg(feature = "random")]
 pub mod random;
+#[cfg(feature = "real-time-clock")]
+pub mod real_time_clock;
 #[cfg(feature = "esp32")]
 pub mod rom_memory;
 #[cfg(all(feature = "sd-card", feature = "esp32s3"))]

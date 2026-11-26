@@ -148,13 +148,14 @@ async fn run(task_manager: &'static task::Manager) {
     // - Subsystems.
     let users_manager: &'static users::Manager = Box::leak(Box::new(users::Manager::new()));
     // No clock survives a power cycle, and the file system needs a date: start
-    // from the build date until something sets a better one.
+    // from the build date until something sets a better one. The build date is
+    // its own source, so it is never written back to a real-time clock.
     let time_manager: &'static time::Manager<'static> =
         Box::leak(Box::new(time::Manager::unsynchronized()));
     time_manager
         .set_realtime(time::RealtimeSample {
             timestamp: time::Timestamp::from(Duration::from_secs(BUILD_EPOCH)),
-            source: time::ClockSource::Manual,
+            source: time::ClockSource::BuildDate,
             resolution: Duration::from_secs(1),
             accuracy: None,
         })

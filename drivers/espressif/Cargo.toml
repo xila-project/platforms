@@ -123,6 +123,13 @@ usb-human-interface = [
 executable-memory = ["dep:native_loader"]
 executor = ["dep:embassy-executor", "dep:static_cell"]
 power = ["dep:peripherals", "peripherals/power"]
+# Internal real-time clock over esp-hal's `rtc_cntl::Rtc` (wall-clock UTC across
+# resets, lost on power-off).
+real-time-clock = [
+  "dep:esp-hal",
+  "dep:peripherals",
+  "peripherals/real-time-clock",
+]
 random = ["dep:file_system", "dep:static_cell"]
 # microSD card in native SD mode over the SDHOST controller (ESP32-S3), as a
 # sector storage for `drivers_shared::devices::SectorBlockDevice`.

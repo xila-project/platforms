@@ -1,4 +1,5 @@
 //! Wireless-Tag WT32-SC01 with the ESP32-WROVER-B module.
+use alloc::boxed::Box;
 
 mod gpio;
 mod screen;
@@ -117,6 +118,13 @@ fn main() -> ! {
     };
     critical_section::with(|section| SCREEN_REPORT.borrow(section).replace(Some(report)));
 
+    let real_time_clock = Box::leak(Box::new(
+        drivers_espressif::real_time_clock::InternalRealTimeClock::new(
+            esp_hal::rtc_cntl::Rtc::new(peripherals.RTC_TIMER),
+            i64::try_from(firmware::BUILD_EPOCH)
+                .expect("the build date fits in a signed timestamp"),
+        ),
+    ));
     firmware::run(Board {
         name: "WT32-SC01",
         console: serial.into(),
@@ -133,6 +141,7 @@ fn main() -> ! {
         system_check: Some(log_screen_report),
         sd_card: None,
         gpio: Some(gpio::controller()),
+        real_time_clock: Some(real_time_clock),
         sessions: if display.is_some() {
             &[session::CONSOLE, session::GRAPHICAL]
         } else {

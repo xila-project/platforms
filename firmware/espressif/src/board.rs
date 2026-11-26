@@ -2,6 +2,7 @@
 
 use drivers_espressif::{console::ConsolePort, random::RandomDevice, shared::Gpio};
 use esp_storage::FlashStorage;
+use peripherals::real_time_clock::RealTimeClockController;
 use xila::file_system::DirectCharacterDevice;
 
 use crate::{SdCardSlot, session::Session};
@@ -42,6 +43,14 @@ pub struct Board {
     /// line it exposes. The board decides which lines it exposes: it withholds
     /// every pin that its own drivers use. `None` mounts no GPIO device.
     pub gpio: Option<&'static Gpio>,
+    /// The real-time clock, mounted at `/devices/time/real_time_clock` through
+    /// the upper half and used to seed UTC at start-up and to write UTC back.
+    /// On the ESP32 family this is the internal RTC
+    /// (`drivers_espressif::real_time_clock::InternalRealTimeClock`); a board
+    /// with an external chip on an I2C bus passes
+    /// `drivers_peripherals::real_time_clock::ExternalRealTimeClock` instead.
+    /// `None` mounts no RTC device and keeps the build-date fallback.
+    pub real_time_clock: Option<&'static dyn RealTimeClockController>,
     /// The USB human interface emulation controller, mounted at
     /// `/devices/human_interface/emulation` through the upper half
     /// (`usb-human-interface` feature). `None` mounts no such device.
