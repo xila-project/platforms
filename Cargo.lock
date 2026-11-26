@@ -7470,7 +7470,7 @@ source = "git+https://github.com/xila-project/core?branch=main#372638839d646df4c
 [[package]]
 name = "xila-tools-image"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/tools?branch=main#be92bc75da7307e56168cb8ae1a4c9ef41e3029f"
+source = "git+https://github.com/xila-project/tools?branch=main#49ceb57e2f8a98f7575646e222b776dbafb6c52e"
 dependencies = [
  "critical-section",
  "embassy-executor",
