@@ -10,6 +10,7 @@ use std::{
 
 fn main() {
     println!("cargo:rerun-if-changed=memory.x");
+    println!("cargo:rerun-if-changed=memory-native.x");
     // The board has no clock that survives a power cycle: the firmware starts
     // from the date it was built. `SOURCE_DATE_EPOCH` keeps builds reproducible.
     println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
@@ -26,7 +27,14 @@ fn main() {
         return;
     }
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
-    fs::copy("memory.x", out.join("memory.x")).unwrap();
+    let memory_script = if env::var_os("CARGO_FEATURE_NATIVE_DEV").is_some()
+        || env::var_os("CARGO_FEATURE_NATIVE_LINKED").is_some()
+    {
+        "memory-native.x"
+    } else {
+        "memory.x"
+    };
+    fs::copy(memory_script, out.join("memory.x")).unwrap();
     println!("cargo:rustc-link-search={}", out.display());
     println!("cargo:rustc-link-arg-bins=-Tlink.x");
 }

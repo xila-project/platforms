@@ -55,9 +55,6 @@ def check_markers(log, chip):
         # The C6 machine lacks the RNG register and virtual RGB panel.
         if chip == "esp32c6" and marker in (RNG_MARKER, LVGL_MARKER):
             continue
-        # Only the C6 emulator build runs the native code self-test.
-        if chip != "esp32c6" and marker == NATIVE_MARKER:
-            continue
         try:
             position = next(i for i in range(position, len(lines)) if marker in lines[i]) + 1
         except StopIteration:
@@ -223,8 +220,8 @@ def run(chip, qemu, image, runs, expect_wifi_profile=False):
 
 
 WIFI_TEST_NAME = b"QEMU smoke fixture"
-ESP32_S3_STORAGE_OFFSET = 0x210000
-ESP32_S3_STORAGE_LENGTH = 0x1F0000
+ESP32_S3_STORAGE_OFFSET = 0x360000
+ESP32_S3_STORAGE_LENGTH = 0x0A0000
 
 
 def add_wifi_profile(image, destination):

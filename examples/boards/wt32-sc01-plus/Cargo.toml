@@ -61,6 +61,11 @@ boot-benchmark = []
 # Enables debug-level serial logging, including periodic display flush,
 # frame-rate and invalidation summaries.
 debug-log = ["firmware/debug-log"]
+# Developer-only handler that runs raw ELF files from the file system as native
+# executables. It does not sandbox them.
+native-dev = ["firmware/native-dev"]
+# Statically linked C demo executable mounted at `/applications/executables/c_demo`.
+native-linked = ["firmware/native-linked"]
 # Runs the console and the human interface emulation (USB keyboard, media
 # remote, mouse and system control toward the connected computer) over one
 # composite USB device on the USB OTG controller, instead of the USB

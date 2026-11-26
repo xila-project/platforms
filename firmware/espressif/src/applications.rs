@@ -1,6 +1,6 @@
 //! The native applications (`graphics` feature), the WebAssembly runtime and
-//! the package installer (`wasm` feature) mounted under
-//! `/applications/executables/`.
+//! the package installer (`wasm` feature), and statically linked C executables
+//! (`native-linked` feature) mounted under `/applications/executables/`.
 //!
 //! They are mounted at `/applications/executables/<name>`, where the seed
 //! image's shortcuts (`tools/fs_image/shortcuts`) and application bundles
@@ -90,6 +90,15 @@ pub(crate) async fn mount(
         )
         .await;
     }
+    #[cfg(feature = "native-linked")]
+    mount_one(
+        context,
+        virtual_file_system,
+        task,
+        "/applications/executables/c_demo",
+        c_demo::CDemoExecutable,
+    )
+    .await;
 }
 
 async fn mount_one(

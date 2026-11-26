@@ -313,8 +313,22 @@ async fn run(task_manager: &'static task::Manager) {
     .await
     .expect("Failed to mount the executables");
 
+    #[cfg(feature = "native-linked")]
+    mount_application_executable(
+        executable_context,
+        virtual_file_system,
+        task,
+        "/applications/executables/c_demo",
+        c_demo::CDemoExecutable,
+    )
+    .await;
+
+    #[cfg(any(feature = "native-dev", feature = "native-linked"))]
+    const PATHS: &str = "/system/executables:/applications/executables";
+    #[cfg(not(any(feature = "native-dev", feature = "native-linked")))]
+    const PATHS: &str = "/system/executables";
     task_manager
-        .set_environment_variable(task, "Paths", "/system/executables")
+        .set_environment_variable(task, "Paths", PATHS)
         .await
         .expect("Failed to set the environment");
     task_manager
@@ -385,5 +399,54 @@ async fn run(task_manager: &'static task::Manager) {
     };
     if let Err(error) = supervisor.run(&xila::lifecycle::SYSTEM, &mut ()).await {
         log::error!("Shutdown failed: {error}; resources are retained");
+    }
+}
+
+#[cfg(feature = "native-linked")]
+async fn mount_application_executable(
+    context: &'static executable::ExecutableContext,
+    virtual_file_system: &'static virtual_file_system::VirtualFileSystem,
+    task: task::TaskIdentifier,
+    path: &'static str,
+    executable: impl executable::ExecutableTrait + 'static,
+) {
+    use xila::file_system::{IoErrorKind, Kind, Permissions};
+
+    match virtual_file_system
+        .get_statistics_for_task(task, &path)
+        .await
+    {
+        Ok(statistics) if statistics.kind == Kind::CharacterDevice => {
+            if let Err(error) = virtual_file_system.remove(task, path).await {
+                log::warning!("Xila: {path} is not mounted: cannot replace the old entry: {error}");
+                return;
+            }
+        }
+        Ok(statistics) => {
+            log::warning!(
+                "Xila: {path} is not mounted: it holds a {:?}, which is kept",
+                statistics.kind
+            );
+            return;
+        }
+        Err(IoErrorKind::NotFound) => {}
+        Err(error) => {
+            log::warning!("Xila: {path} is not mounted: {error}");
+            return;
+        }
+    }
+    let wrapper = executable::ExecutableWrapper::new(executable, context);
+    if let Err(error) = virtual_file_system
+        .mount_character_device(task, path, wrapper)
+        .await
+    {
+        log::warning!("Xila: {path} is not mounted: {error}");
+        return;
+    }
+    if let Err(error) = virtual_file_system
+        .set_permissions(task, path, Permissions::EXECUTABLE)
+        .await
+    {
+        log::warning!("Xila: {path} cannot be made executable: {error}");
     }
 }

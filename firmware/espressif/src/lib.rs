@@ -18,7 +18,7 @@
 
 extern crate alloc;
 
-#[cfg(any(feature = "graphics", feature = "wasm"))]
+#[cfg(any(feature = "graphics", feature = "wasm", feature = "native-linked"))]
 mod applications;
 #[cfg(feature = "display")]
 pub mod backlight;
@@ -151,6 +151,29 @@ pub fn heap() -> &'static MemoryManager {
     &__DRIVERS_ESPRESSIF_MEMORY_ALLOCATOR
 }
 
+#[cfg(any(feature = "native-dev", feature = "native-linked"))]
+unsafe fn allocate_stack(layout: core::alloc::Layout) -> *mut u8 {
+    use xila::memory::ManagerTrait as _;
+
+    // SAFETY: `heap()` is initialized before `run()`. Requesting
+    // `CapabilityFlags::AlwaysAccessible` guarantees internal SRAM (never
+    // PSRAM), keeping coroutine stacks valid and accessible across flash
+    // operations and interrupts.
+    unsafe { heap().allocate(xila::memory::CapabilityFlags::AlwaysAccessible, layout) }
+        .map_or(core::ptr::null_mut(), core::ptr::NonNull::as_ptr)
+}
+
+#[cfg(any(feature = "native-dev", feature = "native-linked"))]
+unsafe fn deallocate_stack(ptr: *mut u8, layout: core::alloc::Layout) {
+    use xila::memory::ManagerTrait as _;
+
+    if let Some(ptr) = core::ptr::NonNull::new(ptr) {
+        // SAFETY: `ptr` was allocated by `allocate_stack` from `heap()` with
+        // the exact matching `layout`.
+        unsafe { heap().deallocate(ptr, layout) };
+    }
+}
+
 #[cfg(feature = "wifi")]
 static WIFI: Mutex<RefCell<Option<drivers_espressif::wifi::Hardware>>> =
     Mutex::new(RefCell::new(None));
@@ -219,6 +242,26 @@ async fn start(task_manager: &'static task::Manager) {
 
     log::information!("Xila ESP32 startup");
     log::information!("Xila: board {name}");
+    #[cfg(any(feature = "native-dev", feature = "native-linked"))]
+    {
+        // SAFETY: called once at start-up before any stackful coroutine is active;
+        // `Cpu::current()` returns 0 (`ProCpu`) or 1 (`AppCpu`), both `< MAX_CORES`.
+        unsafe {
+            xila::executable::stackful::set_core_id_provider(|| {
+                esp_hal::system::Cpu::current() as usize
+            });
+        }
+        // SAFETY: called once at start-up before any stackful coroutine is active;
+        // `heap()` is initialized before `run()`, `allocate_stack` allocates
+        // exclusive `CapabilityFlags::AlwaysAccessible` internal SRAM (never PSRAM,
+        // safe across flash operations and interrupts), and `deallocate_stack`
+        // releases blocks back to `heap()` with the exact matching layout.
+        unsafe {
+            xila::executable::stackful::set_stack_allocator(
+                xila::executable::stackful::StackAllocator::new(allocate_stack, deallocate_stack),
+            );
+        }
+    }
     #[cfg(feature = "native-dev")]
     native::initialize();
     if let Some(external) = memory.external {
@@ -644,7 +687,7 @@ async fn start(task_manager: &'static task::Manager) {
     if let Err(error) = mounted {
         log::error!("Xila: cannot mount the shells: {error}");
     }
-    #[cfg(any(feature = "graphics", feature = "wasm"))]
+    #[cfg(any(feature = "graphics", feature = "wasm", feature = "native-linked"))]
     applications::mount(executable_context, virtual_file_system, task).await;
 
     task_manager

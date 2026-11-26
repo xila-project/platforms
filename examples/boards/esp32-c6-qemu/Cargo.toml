@@ -20,6 +20,7 @@ esp-storage = { version = "0.10", features = ["esp32c6"] }
 # No Settings on this board: the `time_zone` shell command sets the time zone.
 firmware = { package = "xila-firmware-espressif", path = "../../../firmware/espressif", features = [
   "native-dev",
+  "native-linked",
   "time-zone-command",
 ] }
 xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }

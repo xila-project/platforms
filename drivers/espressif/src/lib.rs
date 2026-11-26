@@ -12,8 +12,8 @@
 //! starting the executor. Run the executor, console and timer on the same core.
 //!
 //! The optional `executable-memory` feature provides executable memory for the
-//! native loader on the ESP32-C5, C6, C61, H2 and P4. The other chips cannot run
-//! native images: the `executable_memory` module documents why.
+//! native loader on the ESP32-C5, C6, C61, H2, P4, S2 and S3. The other chips
+//! cannot run native images: the `executable_memory` module documents why.
 //!
 //! # Firmware requirements
 //!
@@ -32,13 +32,18 @@
 //!   `portable-atomic/critical-section` (which `portable-atomic` rejects when
 //!   combined with `unsafe-assume-single-core`).
 #![no_std]
-// The console, the executor and the ESP32 atomic operations use Xtensa inline
-// assembly, which is still unstable; the `esp` toolchain allows it, as for
-// esp-hal and esp-sync.
+// The console, the executor, the executable memory barrier and the ESP32
+// atomic operations use Xtensa inline assembly, which is still unstable; the
+// `esp` toolchain allows it, as for esp-hal and esp-sync.
 #![cfg_attr(
     all(
         target_arch = "xtensa",
-        any(feature = "console", feature = "executor", feature = "esp32")
+        any(
+            feature = "console",
+            feature = "executor",
+            feature = "esp32",
+            feature = "executable-memory"
+        )
     ),
     feature(asm_experimental_arch)
 )]
@@ -97,6 +102,8 @@ pub mod console;
         feature = "esp32c61",
         feature = "esp32h2",
         feature = "esp32p4",
+        feature = "esp32s2",
+        feature = "esp32s3",
     )
 ))]
 pub mod executable_memory;
