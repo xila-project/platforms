@@ -323,9 +323,9 @@ async fn run(task_manager: &'static task::Manager) {
     )
     .await;
 
-    #[cfg(feature = "native-linked")]
+    #[cfg(any(feature = "native-dev", feature = "native-linked"))]
     const PATHS: &str = "/system/executables:/applications/executables";
-    #[cfg(not(feature = "native-linked"))]
+    #[cfg(not(any(feature = "native-dev", feature = "native-linked")))]
     const PATHS: &str = "/system/executables";
     task_manager
         .set_environment_variable(task, "Paths", PATHS)

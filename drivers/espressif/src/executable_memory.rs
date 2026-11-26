@@ -318,25 +318,37 @@ fn allocation_layout(layout: Layout) -> Result<Layout, Error> {
 /// Espressif's QEMU models `dram` and `iram` as distinct backing memory regions,
 /// so mirroring differing 32-bit words into IRAM makes loaded code visible to
 /// instruction fetch under emulation as well.
+///
+/// # Safety
+///
+/// - `dram_base` and `iram_base` must be 4-byte aligned pointers to the DRAM
+///   allocation and its matching IRAM execution alias for a live allocation
+///   whose rounded byte size `rounded_size` is a multiple of 4.
+/// - `offset <= end` and `end <= rounded_size` (so `end.next_multiple_of(4)`
+///   does not overflow and `word_start..word_end` lies wholly within
+///   `0..rounded_size` in both DRAM and IRAM).
+/// - Every byte in `dram_base[word_start..word_end]` must be initialized
+///   (guaranteed by zeroing the full rounded allocation in
+///   [`ExecutableMemory::allocate`]).
 #[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
 unsafe fn mirror_executable_region_to_iram(
     dram_base: NonNull<u8>,
     iram_base: NonNull<u8>,
     offset: usize,
-    size: usize,
+    end: usize,
 ) {
     // Order prior DRAM writes before reading back through the IRAM alias.
     // SAFETY: `memw` has no memory-safety preconditions.
     unsafe { core::arch::asm!("memw", options(nostack)) };
 
     let word_start = offset & !3;
-    let word_end = (offset + size + 3) & !3;
+    let word_end = end.next_multiple_of(4);
     let mut current = word_start;
     while current < word_end {
-        // SAFETY: `allocation_layout` guarantees 4-byte alignment and 4-byte
-        // size rounding for the allocation, and `offset + size <= layout.size()`,
-        // so `current..current + 4` is in bounds and 4-byte aligned in both
-        // DRAM and IRAM.
+        // SAFETY: by the function's safety contract, `dram_base` and `iram_base`
+        // are 4-byte aligned, `current..current + 4` is 4-byte aligned and in
+        // bounds of the rounded allocation in both DRAM and IRAM, and all bytes
+        // in `dram_base[word_start..word_end]` are initialized.
         unsafe {
             let word = dram_base.as_ptr().add(current).cast::<u32>().read();
             let iram_word = iram_base.as_ptr().add(current).cast::<u32>();
@@ -359,10 +371,24 @@ unsafe impl native_loader::ExecutableMemory for ExecutableMemory {
             return Err(Error::AllocationFailed);
         }
         #[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
-        let layout = allocation_layout(layout)?;
-        // SAFETY: the block is released through `free` with the same layout.
-        unsafe { self.arena.allocate(CapabilityFlags::Executable, layout) }
-            .ok_or(Error::AllocationFailed)
+        {
+            let rounded = allocation_layout(layout)?;
+            // SAFETY: the block is released through `free` with the same rounded layout.
+            let ptr = unsafe { self.arena.allocate(CapabilityFlags::Executable, rounded) }
+                .ok_or(Error::AllocationFailed)?;
+            // SAFETY: `ptr` points to an exclusive writable allocation of `rounded.size()`
+            // bytes. Zeroing the full rounded allocation ensures
+            // `mirror_executable_region_to_iram` never reads uninitialized padding or tail
+            // bytes as `u32`, even for non-4-byte-aligned image sizes or unaligned offsets.
+            unsafe { ptr.as_ptr().write_bytes(0, rounded.size()) };
+            Ok(ptr)
+        }
+        #[cfg(not(any(feature = "esp32s2", feature = "esp32s3")))]
+        {
+            // SAFETY: the block is released through `free` with the same layout.
+            unsafe { self.arena.allocate(CapabilityFlags::Executable, layout) }
+                .ok_or(Error::AllocationFailed)
+        }
     }
 
     #[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
@@ -394,15 +420,12 @@ unsafe impl native_loader::ExecutableMemory for ExecutableMemory {
             }
             #[cfg(any(feature = "esp32s2", feature = "esp32s3"))]
             if region.executable && region.size > 0 {
-                // SAFETY: `region` lies within `layout`, which `allocate`
-                // rounded to 4-byte alignment and size.
+                // SAFETY: `allocate` rounded `layout` to 4-byte alignment and
+                // size and zero-initialized the entire rounded block,
+                // `iram_base` is its matching IRAM alias, and
+                // `region.offset <= end <= layout.size() <= rounded.size()`.
                 unsafe {
-                    mirror_executable_region_to_iram(
-                        allocation,
-                        iram_base,
-                        region.offset,
-                        region.size,
-                    );
+                    mirror_executable_region_to_iram(allocation, iram_base, region.offset, end);
                 }
             }
         }
