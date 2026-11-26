@@ -648,7 +648,11 @@ async fn start(task_manager: &'static task::Manager) {
     applications::mount(executable_context, virtual_file_system, task).await;
 
     task_manager
-        .set_environment_variable(task, "Paths", "/system/executables:/")
+        .set_environment_variable(
+            task,
+            "Paths",
+            "/system/executables:/applications/executables",
+        )
         .await
         .expect("Failed to set the environment");
     task_manager

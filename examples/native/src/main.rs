@@ -563,7 +563,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
 
     // - - Set the environment variables
     task_manager
-        .set_environment_variable(task, "Paths", "/")
+        .set_environment_variable(task, "Paths", "/applications/executables")
         .await
         .unwrap();
 
