@@ -34,6 +34,27 @@ xila = { git = "https://github.com/xila-project/core", branch = "main", default-
 ] }
 
 [features]
+# Time zone features of Settings and the shell, passed to the firmware. The
+# default is all zone names: the board ships the whole IANA table and the raw
+# TZ string editor, so the UTC offset form stays opt-in through its own
+# feature. The `time_zone` shell command is off because Settings covers it.
+# See examples/boards/README.md for the flash cost of each.
+default = ["time-zone-names-all"]
+time-zone-command = ["firmware/time-zone-command"]
+time-zone-offset-form = ["firmware/time-zone-offset-form"]
+time-zone-names-africa = ["firmware/time-zone-names-africa"]
+time-zone-names-america = ["firmware/time-zone-names-america"]
+time-zone-names-antarctica = ["firmware/time-zone-names-antarctica"]
+time-zone-names-arctic = ["firmware/time-zone-names-arctic"]
+time-zone-names-asia = ["firmware/time-zone-names-asia"]
+time-zone-names-atlantic = ["firmware/time-zone-names-atlantic"]
+time-zone-names-australia = ["firmware/time-zone-names-australia"]
+time-zone-names-etc = ["firmware/time-zone-names-etc"]
+time-zone-names-europe = ["firmware/time-zone-names-europe"]
+time-zone-names-indian = ["firmware/time-zone-names-indian"]
+time-zone-names-pacific = ["firmware/time-zone-names-pacific"]
+time-zone-names-all = ["firmware/time-zone-names-all"]
+time-zone-names-legacy-aliases = ["firmware/time-zone-names-legacy-aliases"]
 # Logs CPU, flash and PSRAM timings once at boot, right after the PSRAM
 # self-test. Off by default so production boots stay fast and quiet.
 boot-benchmark = []

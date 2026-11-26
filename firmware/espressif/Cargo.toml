@@ -36,12 +36,13 @@ esp-storage = { version = "0.10", features = ["embedded-storage"] }
 startup_application = { package = "xila-startup-application", path = "../startup_application" }
 xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false, features = [
   "time_services",
+  "time_zone",
 ] }
 graphical_shell = { package = "xila-graphical-shell", git = "https://github.com/xila-project/applications", branch = "main", optional = true }
 # Native applications for boards with a screen.
 activity = { package = "xila-activity", git = "https://github.com/xila-project/applications", branch = "main", optional = true }
 file_manager = { package = "xila-file-manager", git = "https://github.com/xila-project/applications", branch = "main", optional = true }
-settings = { package = "xila-settings", git = "https://github.com/xila-project/applications", branch = "main", optional = true }
+settings = { package = "xila-settings", git = "https://github.com/xila-project/applications", branch = "main", default-features = false, optional = true }
 terminal = { package = "xila-terminal", git = "https://github.com/xila-project/applications", branch = "main", optional = true }
 # WebAssembly host runtime. Lazy translation is the default on microcontrollers
 # so function bodies are translated at their first call rather than all at once
@@ -101,6 +102,29 @@ usb-human-interface = [
   "drivers_espressif/usb-human-interface",
   "drivers_peripherals/human-interface",
 ]
+
+# The `time_zone` shell command (show and set the time zone with a TZ string).
+time-zone-command = ["command_line_shell/time-zone-command"]
+# The UTC offset form of the Settings time zone section. It applies only with
+# `graphics`, which links Settings.
+time-zone-offset-form = ["settings?/time-zone-offset-form"]
+# IANA zone names of the Settings time zone selector, one feature per region
+# (see the xila-time-zone README for the flash cost of each). Without one,
+# Settings offers the UTC offset form and the TZ string field only. They
+# apply only with `graphics`, which links Settings.
+time-zone-names-africa = ["settings?/time-zone-names-africa"]
+time-zone-names-america = ["settings?/time-zone-names-america"]
+time-zone-names-antarctica = ["settings?/time-zone-names-antarctica"]
+time-zone-names-arctic = ["settings?/time-zone-names-arctic"]
+time-zone-names-asia = ["settings?/time-zone-names-asia"]
+time-zone-names-atlantic = ["settings?/time-zone-names-atlantic"]
+time-zone-names-australia = ["settings?/time-zone-names-australia"]
+time-zone-names-etc = ["settings?/time-zone-names-etc"]
+time-zone-names-europe = ["settings?/time-zone-names-europe"]
+time-zone-names-indian = ["settings?/time-zone-names-indian"]
+time-zone-names-pacific = ["settings?/time-zone-names-pacific"]
+time-zone-names-all = ["settings?/time-zone-names-all"]
+time-zone-names-legacy-aliases = ["settings?/time-zone-names-legacy-aliases"]
 
 [lib]
 name = "firmware_espressif"

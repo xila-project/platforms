@@ -19,6 +19,7 @@ web-sys = { version = "0.3.64", features = [
   "Window",
 ] }
 xila = { workspace = true, features = [
+  "time_zone",
   "bootsplash",
   "graphics",
   "graphics_rendering_xrgb8888",
@@ -29,7 +30,8 @@ graphical_shell = { workspace = true }
 wasm = { workspace = true, features = ["host", "graphics"] }
 package = { workspace = true }
 terminal = { workspace = true }
-settings = { workspace = true }
+# All IANA zone names: the host has the room.
+settings = { workspace = true, features = ["time-zone-names-all"] }
 activity = { workspace = true }
 console_error_panic_hook = "0.1"
 drivers_wasm = { workspace = true, features = ["audio"] }

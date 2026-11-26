@@ -8,6 +8,9 @@ rust-version.workspace = true
 # The startup configuration path and parser of the firmware, so that a profile
 # seeds a configuration that the firmware accepts.
 startup_application = { package = "xila-startup-application", path = "../../firmware/startup_application" }
+# The time zone setting path and serializer of Core, so that images seed a
+# setting that the firmware accepts.
+local_time = { workspace = true }
 tools_image = { workspace = true }
 
 [dev-dependencies]

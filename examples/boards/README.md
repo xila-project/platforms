@@ -34,6 +34,56 @@ To compile and copy only the ELF, run
 from the Platforms root. Supply the version pins from `mise.toml`. The script
 uses the installed compiler and skips image packaging.
 
+## Time zone
+
+At start-up, the firmware loads the time zone setting
+(`/configuration/system/time_zone.json`, seeded as UTC in the images) with
+`xila::local_time::initialize`, before the shell or the startup application
+starts, and every task gets it as the POSIX `TZ` variable. A missing or
+invalid setting gives UTC and one warning.
+
+The board crates pass these features to the firmware:
+
+| Feature | What it links |
+|---|---|
+| `time-zone-command` | the `time_zone` shell command (show and set the time zone with a TZ string) |
+| `time-zone-offset-form` | the UTC offset form of the Settings time zone section |
+| `time-zone-names-<region>`, `time-zone-names-all` | the IANA zone names of the Settings zone selector, one feature per region |
+| `time-zone-names-legacy-aliases` | the legacy aliases, for example `US/Eastern` |
+
+| Board | Default | Flash used (partition) |
+|---|---|---|
+| `wt32-sc01-plus` | `time-zone-names-all` | 3,801,496 bytes (4 MiB, 9.4 % free) |
+| `wt32-sc01` | `time-zone-offset-form` | 1,740,783 bytes (2.25 MiB, 26.2 % free) |
+| `esp32-s3-qemu` | `time-zone-command` | 1,834,352 bytes (2 MiB, 12.5 % free) |
+| `esp32-c6-qemu` | `time-zone-command` | 827,006 bytes (1.5 MiB, 47.4 % free) |
+| `esp32-p4-function-ev-board` | `time-zone-command` | 698,828 bytes (3 MiB, 77.8 % free) |
+
+The boards with Settings leave the shell command out, because Settings sets
+the time zone; the boards without Settings use the command. The WT32-SC01 Plus
+defaults to the zone names only: it ships the whole IANA table and the raw TZ
+string editor, so the UTC offset form is opt-in through `time-zone-offset-form`
+(the WT32-SC01, with no IANA table, keeps it as its default). Cost on the
+WT32-SC01 Plus, measured on the firmware ELF as the bytes stored in flash
+(code, read-only data and initial RAM contents), against the same firmware
+built with `--no-default-features` (3,788,352 bytes):
+
+| Features | Flash | Added |
+|---|---:|---:|
+| none of the above (Settings TZ string field only) | 3,788,352 | — |
+| `time-zone-offset-form` (slim form) | 3,791,952 | 3,600 bytes |
+| `time-zone-names-all` (default) | 3,801,496 | 13,144 bytes |
+| `time-zone-offset-form`, `time-zone-names-all` | 3,803,508 | 15,156 bytes |
+
+With the previous full offset form (custom DST rules, shift picker and
+abbreviation fields), the same builds measured 3,795,172 bytes (form only,
++6,820) and 3,807,044 bytes (names and form, the old default, +18,692): the
+slim form saves 3,220 bytes of form code (-47 %), 3,536 bytes on the
+names-plus-form build, and the new default saves 5,548 bytes.
+
+Build with `--no-default-features` and the features you need, for example
+`--no-default-features --features time-zone-offset-form,time-zone-names-europe`.
+
 Default account creation requires a secure entropy source and a freshly
 formatted file system. If you keep the account-free file system from the old
 boot-only firmware, it will stay account-free after upgrading. Back up any
