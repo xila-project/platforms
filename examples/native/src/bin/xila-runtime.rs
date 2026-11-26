@@ -502,7 +502,7 @@ async fn run_runtime(
     wasm::clear_shutdown_request();
 
     task_manager
-        .set_environment_variable(task, "Paths", "/")
+        .set_environment_variable(task, "Paths", "/applications/executables")
         .await
         .map_err(|error| format!("cannot set Xila environment: {error:?}"))?;
     task_manager

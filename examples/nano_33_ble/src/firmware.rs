@@ -314,7 +314,7 @@ async fn run(task_manager: &'static task::Manager) {
     .expect("Failed to mount the executables");
 
     task_manager
-        .set_environment_variable(task, "Paths", "/system/executables:/")
+        .set_environment_variable(task, "Paths", "/system/executables")
         .await
         .expect("Failed to set the environment");
     task_manager
