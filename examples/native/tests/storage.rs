@@ -153,7 +153,10 @@ fn imports_once_and_preserves_existing_disk_without_seed() {
     let filesystem =
         xila::little_fs::mount_disk(drive, xila::little_fs::Options::new(256)).unwrap();
     filesystem
-        .create_file(xila::file_system::Path::from_str("/user-kept-file"))
+        .create_file(
+            xila::file_system::Path::from_str("/user-kept-file"),
+            &xila::file_system::Attributes::new(),
+        )
         .unwrap();
     drop(filesystem);
     drive.flush_sync().unwrap();
