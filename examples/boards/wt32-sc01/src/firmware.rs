@@ -81,14 +81,32 @@ fn main() -> ! {
     // - internal SRAM for what hardware reads or what is used while the flash
     //   is written: DMA buffers (the display bus checks the address), the
     //   flash transfer buffer (on the stack) and the stacks themselves.
-    let external = (esp_hal::efuse::chip_revision().major != 0).then(|| {
-        let psram = Psram::new(
+    let psram = (esp_hal::efuse::chip_revision().major != 0).then(|| {
+        Psram::new(
             peripherals.PSRAM,
             PsramConfig {
                 cache_speed: PsramCacheSpeed::PsramCacheF40mS40m,
+                // Each core can access all of PSRAM, but each cache owns
+                // a different half. Normal mode gives two incoherent copies.
+                #[cfg(feature = "dual-core")]
+                psram_vaddr_mode: esp_hal::psram::PsramVaddrMode::LowHigh,
+                // Size detection probes the mapping while core 1's cache
+                // is still off. This module has 8 MiB and maps the first 4.
+                #[cfg(feature = "dual-core")]
+                size: esp_hal::psram::PsramSize::Size(4 * 1024 * 1024),
                 ..PsramConfig::default()
             },
-        );
+        )
+    });
+
+    #[cfg(feature = "dual-core")]
+    firmware::start_application_executor(
+        peripherals.CPU_CTRL,
+        peripherals.FROM_CPU_INTR1,
+        peripherals.FROM_CPU_INTR2,
+    );
+
+    let external = psram.map(|psram| {
         let (start, size) = psram.raw_parts();
         // SAFETY: the heap is the only owner of this PSRAM mapping.
         let registered = unsafe { heap.init_psram_from_hal(&psram) };
@@ -125,10 +143,14 @@ fn main() -> ! {
                 .expect("the build date fits in a signed timestamp"),
         ),
     ));
+    let flash_storage = FlashStorage::new(peripherals.FLASH);
+    #[cfg(feature = "dual-core")]
+    let flash_storage = flash_storage.multicore_auto_park();
+
     firmware::run(Board {
         name: "WT32-SC01",
         console: serial.into(),
-        flash_storage: FlashStorage::new(peripherals.FLASH),
+        flash_storage,
         storage: STORAGE,
         random_device: RandomDevice::new(peripherals.RNG, peripherals.ADC1),
         has_entropy_source: true,

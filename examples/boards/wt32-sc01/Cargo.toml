@@ -48,6 +48,8 @@ time-zone-names-indian = ["firmware/time-zone-names-indian"]
 time-zone-names-pacific = ["firmware/time-zone-names-pacific"]
 time-zone-names-all = ["firmware/time-zone-names-all"]
 time-zone-names-legacy-aliases = ["firmware/time-zone-names-legacy-aliases"]
+# Opt in to a second executor for on-target validation.
+dual-core = ["firmware/dual-core"]
 # Enables debug-level serial logging, including periodic display flush,
 # frame-rate and invalidation summaries.
 debug-log = ["firmware/debug-log"]

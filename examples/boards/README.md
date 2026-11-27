@@ -34,6 +34,37 @@ To compile and copy only the ELF, run
 from the Platforms root. Supply the version pins from `mise.toml`. The script
 uses the installed compiler and skips image packaging.
 
+## Test the second executor on the WT32-SC01
+
+The `dual-core` feature starts a second executor on core 1. The firmware
+checks dispatch to that executor, a timer wake from core 0 and a join back on
+core 0. It then prints `Xila: application executor ready on core 1`. The
+display, LVGL and native applications run on core 0.
+
+Build with frame-rate telemetry:
+
+```sh
+mise run build:wt32-sc01 -- --features dual-core,debug-log
+```
+
+Omit `dual-core` for a single-core build. Use `build:wt32-sc01-elf` to
+produce only the firmware ELF.
+
+Both executors use dedicated stacks in internal RAM. The task manager can
+run up to 64 tasks in this mode. Its static task slots hold the Embassy run
+and timer queue links in internal RAM. Each core has its own run queue. One
+timer queue serves both cores under the esp-hal critical section. The two
+software interrupts wake the destination core when a task becomes ready.
+
+On the classic WT32-SC01, the PSRAM configuration assigns each half of the
+mapping to one core's cache so both cores see the same data. The atomic
+workaround uses the internal critical-section lock to protect plain reads
+and writes in PSRAM. Flash storage parks the other core during cache-off
+operations.
+
+See [Platforms #201](https://github.com/xila-project/platforms/issues/201) for
+the remaining work on static placement.
+
 ## Time zone
 
 At start-up, the firmware loads the time zone setting

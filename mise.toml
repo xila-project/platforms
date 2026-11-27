@@ -273,6 +273,10 @@ description = "Build the WT32-SC01 firmware and merge it into a 4 MiB flash imag
 depends = ["setup:espflash"]
 run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' wt32-sc01"
 
+[tasks."build:wt32-sc01-elf"]
+description = "Build the WT32-SC01 firmware ELF"
+run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' wt32-sc01 elf"
+
 [tasks."build:wt32-sc01-plus"]
 description = "Build the WT32-SC01 Plus firmware (examples/boards/wt32-sc01-plus) and merge it into a 16 MiB flash image"
 depends = ["setup:espflash"]

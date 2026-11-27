@@ -100,7 +100,41 @@ const BOOT_REPORT_DRAIN_INTERVAL: Duration = Duration::from_millis(40);
 /// How often the startup task checks for a lifecycle request.
 const LIFECYCLE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
+#[cfg(not(feature = "dual-core"))]
 static TASK_MANAGER: task::Manager = task::Manager::new();
+
+// Task headers contain the run and timer queue links. Keep them in internal
+// RAM even when the heap uses PSRAM for the boxed futures and other data.
+#[cfg(feature = "dual-core")]
+static TASK_SLOTS: [task::TaskSlot; 64] = [const { task::TaskSlot::new() }; 64];
+#[cfg(feature = "dual-core")]
+static TASK_MANAGER: task::Manager = task::Manager::with_static_slots(&TASK_SLOTS);
+
+#[cfg(feature = "dual-core")]
+static APPLICATION_EXECUTOR: embassy_sync::signal::Signal<
+    embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
+    task::SpawnerIdentifier,
+> = embassy_sync::signal::Signal::new();
+
+/// Starts the secondary executor. Call once, before running the firmware.
+#[cfg(feature = "dual-core")]
+pub fn start_application_executor(
+    cpu_control: esp_hal::peripherals::CPU_CTRL<'static>,
+    primary_interrupt: esp_hal::peripherals::FROM_CPU_INTR1<'static>,
+    secondary_interrupt: esp_hal::peripherals::FROM_CPU_INTR2<'static>,
+) {
+    drivers_espressif::executor::dual_core::start(
+        cpu_control,
+        primary_interrupt,
+        secondary_interrupt,
+        |spawner| {
+            let identifier = TASK_MANAGER
+                .register_spawner(spawner)
+                .expect("Failed to register the application executor");
+            APPLICATION_EXECUTOR.signal(identifier);
+        },
+    );
+}
 
 #[cfg(not(feature = "wifi"))]
 drivers_espressif::instantiate_global_allocator!();
@@ -242,6 +276,28 @@ async fn start(task_manager: &'static task::Manager) {
 
     log::information!("Xila ESP32 startup");
     log::information!("Xila: board {name}");
+    #[cfg(feature = "dual-core")]
+    {
+        let executor = APPLICATION_EXECUTOR.wait().await;
+        let (probe, _) = task_manager
+            .spawn_on_executor(task, "Application executor check", executor, |_| async {
+                // Check initial dispatch and a timer wake from core 0.
+                assert_eq!(
+                    esp_hal::system::Cpu::current(),
+                    esp_hal::system::Cpu::AppCpu
+                );
+                task::sleep(Duration::from_millis(1)).await;
+                assert_eq!(
+                    esp_hal::system::Cpu::current(),
+                    esp_hal::system::Cpu::AppCpu
+                );
+            })
+            .await
+            .expect("Failed to dispatch to the application executor");
+        probe.join().await;
+        log::information!("Xila: application executor ready on core 1");
+    }
+
     #[cfg(any(feature = "native-dev", feature = "native-linked"))]
     {
         // SAFETY: called once at start-up before any stackful coroutine is active;
