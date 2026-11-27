@@ -33,12 +33,13 @@ use core::panic::PanicInfo;
 
 use drivers_espressif::{random::RandomDevice, sd_card::SdCard};
 use drivers_shared::devices::SectorBlockDevice;
+#[cfg(not(feature = "usb-human-interface"))]
+use esp_hal::usb::usb_serial_jtag::UsbSerialJtag;
 use esp_hal::{
     clock::CpuClock,
     peripherals::{GPIO38, GPIO39, GPIO40, GPIO41, SDHOST},
     psram::{FlashFreq, Psram, PsramConfig, PsramMode, SpiRamFreq},
     timer::systimer::SystemTimer,
-    usb::usb_serial_jtag::UsbSerialJtag,
 };
 use esp_storage::FlashStorage;
 use firmware::{
