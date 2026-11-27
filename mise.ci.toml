@@ -219,6 +219,11 @@ extends = "ci:rust"
 tools."github:nextest-rs/nextest" = "cargo-nextest-{{ vars.nextest_version }}"
 run = "cargo nextest run --locked -p xila-drivers-std --lib --features profiling,heaptrack"
 
+[tasks."ci:native-crash-tests"]
+description = "Capture a native panic and signal before importing the report into LittleFS"
+extends = "ci:rust"
+run = "ulimit -c 0 && cargo test --locked -p xila-drivers-std --features crash --test crash"
+
 [tasks."ci:profiling-native-tests"]
 extends = "ci:rust"
 tools."github:nextest-rs/nextest" = "cargo-nextest-{{ vars.nextest_version }}"

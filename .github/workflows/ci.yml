@@ -66,6 +66,8 @@ jobs:
         run: mise run ci:profiling
       - name: "Test | Runtime profiling"
         run: mise run ci:profiling-runtime-tests
+      - name: "Test | Import native crash reports"
+        run: mise run ci:native-crash-tests
       - name: "Test | Native profiling"
         run: mise run ci:profiling-native-tests
       - name: "Test | Heaptrack allocation probe"
@@ -183,6 +185,9 @@ jobs:
         run: mise run ci:deps-npm
       - name: "Test | Boot in QEMU"
         run: mise run ${{ matrix.task }}
+      - name: "Test | Retain crash report across reset"
+        if: matrix.chip == 'esp32s3'
+        run: mise run test:esp32-s3-qemu-crash
       - name: "Report | Upload emulator logs and screenshot"
         if: always()
         uses: actions/upload-artifact@v7
@@ -192,6 +197,7 @@ jobs:
             target/espressif-emulator/runs/${{ matrix.chip }}.*/uart.log
             target/espressif-emulator/runs/${{ matrix.chip }}.*/qemu.log
             target/espressif-emulator/runs/${{ matrix.chip }}.*/screen.png
+            target/espressif-emulator/runs/${{ matrix.chip }}.*/*-kernel.xcr
   espressif-boards:
     # Advisory builds of the hardware boards; their boot is checked on the
     # boards themselves.

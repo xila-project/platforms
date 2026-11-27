@@ -1,14 +1,16 @@
 """Boot a merged ESP32 flash image in Espressif's QEMU and check the boot log.
 
-    espressif_smoke.py [--chip esp32s3|esp32c6] QEMU FLASH_IMAGE RUNS_DIRECTORY
+    espressif_smoke.py [--chip esp32s3|esp32c6] [--crash-elf ELF] QEMU FLASH_IMAGE RUNS_DIRECTORY
 
 Each run gets its own directory under RUNS_DIRECTORY holding a private copy of the
 image (the firmware formats its LittleFS partition), `uart.log` and `qemu.log`.
 The S3 run also keeps the LVGL frame in `screen.ppm` and `screen.png`.
+The crash test checks and keeps the report imported after the software reset.
 """
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -162,7 +164,7 @@ def stop(emulator, failed):
         print(f"QEMU (process {emulator.pid}) did not exit after being killed", file=sys.stderr)
 
 
-def run(chip, qemu, image, runs, expect_wifi_profile=False):
+def run(chip, qemu, image, runs, expect_wifi_profile=False, crash_elf=None):
     # Espressif QEMU exposes the virtual RGB panel on the S3 machine.
     check_display = chip == "esp32s3"
     runs.mkdir(parents=True, exist_ok=True)
@@ -174,11 +176,13 @@ def run(chip, qemu, image, runs, expect_wifi_profile=False):
     os.chdir(directory)
     command = [
         qemu, "-M", chip, "-display", "none", "-monitor", "none", "-nic", "none",
-        "-no-reboot", "-serial", f"file:{uart}",
+        "-serial", f"file:{uart}",
         # The flash copy is thrown away after the run, so QEMU never has to flush
         # it: an exit then does not wait on the disk when the machine is busy.
         "-drive", f"file={flash},if=mtd,format=raw,cache=unsafe",
     ]
+    if crash_elf is None:
+        command += ["-no-reboot"]
     if check_display:
         command += ["-qmp", "unix:qmp.sock,server=on,wait=off"]
     deadline = time.monotonic() + TIMEOUT
@@ -195,9 +199,15 @@ def run(chip, qemu, image, runs, expect_wifi_profile=False):
                     raise SmokeError(f"no {SHELL_PROMPT_MARKER!r} shell prompt after {TIMEOUT} s")
                 time.sleep(0.2)
                 log = uart.read_text(errors="replace") if uart.exists() else ""
-                if "Xila panic:" in log:
+                if crash_elf is None and "Xila panic:" in log:
                     raise SmokeError("the firmware panicked")
             check_markers(log, chip)
+            if crash_elf is not None:
+                panic_position = log.find("Xila panic: report captured")
+                import_position = log.find("Imported crash report 1-kernel.xcr: SoftwareReset")
+                login_position = log.find(SHELL_PROMPT_MARKER)
+                if log.count("Xila panic:") != 1 or not 0 <= panic_position < import_position < login_position:
+                    raise SmokeError("the panic report was not imported after a software reset")
             if expect_wifi_profile:
                 profile_position = log.find("Wi-Fi: station profile loaded")
                 failure_position = log.find("Wi-Fi: startup failed")
@@ -216,12 +226,50 @@ def run(chip, qemu, image, runs, expect_wifi_profile=False):
         finally:
             stop(emulator, failed)
     sys.stdout.write(uart.read_text(errors="replace"))
+    if crash_elf is not None:
+        check_crash_report(flash, crash_elf)
     return flash
 
 
 WIFI_TEST_NAME = b"QEMU smoke fixture"
 ESP32_S3_STORAGE_OFFSET = 0x360000
 ESP32_S3_STORAGE_LENGTH = 0x0A0000
+
+
+def check_crash_report(flash, crash_elf):
+    from littlefs import LittleFS, UserContext
+
+    data = flash.read_bytes()[ESP32_S3_STORAGE_OFFSET:]
+    filesystem = LittleFS(
+        context=UserContext(buffer=bytearray(data)),
+        block_size=4096, block_count=ESP32_S3_STORAGE_LENGTH // 4096,
+        read_size=256, prog_size=256, cache_size=256, lookahead_size=16,
+        mount=False,
+    )
+    filesystem.mount()
+    with filesystem.open("/system/crashes/1-kernel.xcr", "rb") as stream:
+        record = stream.read()
+    if len(record) < 256 or record[:4] != b"XCR1":
+        raise SmokeError("the imported crash header is missing")
+    checksum, version, header_size, size = struct.unpack_from("<IHHI", record, 4)
+    if version != 1 or header_size != 256 or size != len(record) or zlib.crc32(record[8:]) != checksum:
+        raise SmokeError("the imported crash record failed validation")
+    if record[16:19] != bytes([1, 2, 1]):
+        raise SmokeError("the report does not describe an ESP32-S3 panic and software reset")
+    with crash_elf.open("rb") as stream:
+        identifier = hashlib.file_digest(stream, "sha256").digest()
+    if record[19] != 1 or record[104:136] != identifier:
+        raise SmokeError("the imported crash report does not match the firmware ELF")
+    frames = record[219]
+    message_size, stack_size, log_size = struct.unpack_from("<HHH", record, 220)
+    if 256 + frames * 8 + message_size + stack_size + log_size != size:
+        raise SmokeError("the crash payload has an invalid size")
+    message = record[256 + frames * 8:256 + frames * 8 + message_size]
+    if b"Crash report smoke test" not in message:
+        raise SmokeError("the crash message was not retained")
+    if frames == 0 or stack_size == 0:
+        raise SmokeError("the crash did not capture a backtrace and stack window")
+    flash.with_name("1-kernel.xcr").write_bytes(record)
 
 
 def add_wifi_profile(image, destination):
@@ -251,6 +299,7 @@ def add_wifi_profile(image, destination):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--crash-elf", type=Path)
     parser.add_argument("--chip", choices=("esp32s3", "esp32c6"), default="esp32s3")
     parser.add_argument("qemu", type=Path)
     parser.add_argument("image", type=Path)
@@ -259,8 +308,11 @@ if __name__ == "__main__":
     try:
         qemu = str(args.qemu.resolve())
         runs = args.runs.resolve()
-        flash = run(args.chip, qemu, args.image.resolve(), runs)
-        if args.chip == "esp32s3":
+        crash_elf = args.crash_elf.resolve() if args.crash_elf is not None else None
+        if crash_elf is not None and args.chip != "esp32s3":
+            parser.error("--crash-elf requires the esp32s3 board")
+        flash = run(args.chip, qemu, args.image.resolve(), runs, crash_elf=crash_elf)
+        if args.chip == "esp32s3" and crash_elf is None:
             provisioned = add_wifi_profile(flash, flash.with_name("flash-with-wifi-profile.bin"))
             run(args.chip, qemu, provisioned, runs, expect_wifi_profile=True)
     except SmokeError as error:

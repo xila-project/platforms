@@ -148,6 +148,8 @@ pub async fn new_thread_executor(task_manager: &'static task::Manager) -> Spawne
         Box::leak(Box::new(Signal::new()));
 
     std::thread::spawn(move || {
+        #[cfg(all(feature = "crash", unix))]
+        let _crash_stack = crate::crash::install_executor_stack();
         // Use Box::leak to create a 'static reference for this thread's executor
         let executor = Box::leak(Box::new(Executor::new()));
 

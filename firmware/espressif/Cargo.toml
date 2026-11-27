@@ -59,6 +59,11 @@ package = { workspace = true, optional = true }
 c_demo = { workspace = true, optional = true }
 
 [features]
+crash = [
+  "xila/crash",
+  "drivers_espressif/crash",
+  "command_line_shell/crash-command",
+]
 # Minimal LVGL display and pointer support.
 display = [
   "dep:embedded-hal",

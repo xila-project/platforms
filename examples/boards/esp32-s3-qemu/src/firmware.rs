@@ -18,6 +18,14 @@ mod display;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
+fn crash_metadata() -> firmware::crash::Metadata {
+    firmware::crash::Metadata {
+        target: "esp32-s3-qemu",
+        firmware_version: env!("CARGO_PKG_VERSION"),
+        image_identifier: ESP_APP_DESC.app_elf_sha256(),
+    }
+}
+
 /// The `storage` partition of `partitions.csv`.
 const STORAGE: StoragePartition = StoragePartition {
     offset: parse_decimal(env!("XILA_STORAGE_OFFSET")) as u32,
@@ -28,9 +36,17 @@ const STORAGE: StoragePartition = StoragePartition {
 fn main() -> ! {
     let peripherals = esp_hal::init(esp_hal::Config::default());
     firmware::initialize_heap();
+    let pending_crash = firmware::crash::early_boot(crash_metadata());
 
     let system_timer = SystemTimer::new(peripherals.SYSTIMER);
     drivers_espressif::time::initialize(system_timer.alarm0);
+    #[cfg(feature = "crash-smoke-test")]
+    if matches!(
+        esp_hal::system::reset_reason(),
+        Some(esp_hal::rtc_cntl::SocResetReason::ChipPowerOn)
+    ) {
+        panic!("Crash report smoke test");
+    }
 
     let serial = Uart::new(peripherals.UART0, UartConfiguration::default())
         .expect("Failed to configure UART0")
@@ -45,6 +61,7 @@ fn main() -> ! {
         ),
     ));
     let board = Board {
+        pending_crash,
         name: "ESP32-S3 (Espressif QEMU)",
         console: serial.into(),
         flash_storage: FlashStorage::new(peripherals.FLASH),
@@ -70,8 +87,7 @@ fn main() -> ! {
 
 #[panic_handler]
 fn panic(information: &PanicInfo<'_>) -> ! {
-    esp_println::println!("Xila panic: {information}");
-    loop {
-        core::hint::spin_loop();
-    }
+    firmware::crash::panic(information, crash_metadata(), || {
+        esp_println::println!("Xila panic: report captured");
+    })
 }

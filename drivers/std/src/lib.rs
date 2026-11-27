@@ -1,6 +1,8 @@
 #![cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 
 pub mod console;
+#[cfg(feature = "crash")]
+pub mod crash;
 pub mod devices;
 pub mod drive_file;
 #[cfg(unix)]

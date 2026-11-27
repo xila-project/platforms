@@ -12,6 +12,9 @@ use crate::{SdCardSlot, session::Session};
 pub struct Board {
     /// The board's name, logged at boot.
     pub name: &'static str,
+    /// Report copied from retention before other devices start.
+    #[cfg(feature = "crash")]
+    pub pending_crash: Option<alloc::boxed::Box<[u8]>>,
     /// The console: a UART or the USB Serial/JTAG controller.
     pub console: ConsolePort,
     /// The flash chip that holds the storage partition.

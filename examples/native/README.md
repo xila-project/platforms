@@ -364,3 +364,14 @@ synced), the process stays alive with every resource retained and reports the
 error; another SIGINT/SIGTERM then forces the exit, losing only data LittleFS
 had not committed. Runtime services (graphics, network, Debug) are not joined
 and end with the process.
+
+## Crash reports
+
+A panic saves a pending report beside the disk image. The default name is the
+disk path followed by `.crash.pending`. Use `--crash-file PATH` to select
+a different file. The next start imports the report after it mounts the disk
+and loads the accounts. Use `crash list` or `crash show latest` in the shell.
+
+Unix also records fatal signals. Linux captures the GNU build identifier
+when present, the executable load offset, and a bounded stack window for
+signals on registered executor threads.

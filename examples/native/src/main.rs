@@ -74,6 +74,26 @@ async fn main(task_manager: &'static xila::task::Manager) {
         std::process::exit(2);
     }
 
+    let pending_crash = drivers_std::crash::pending_path(
+        std::path::Path::new(&config.disk_path),
+        config.crash_file.as_deref().map(std::path::Path::new),
+    );
+    let paths_match = |path: &str| {
+        let path = std::path::Path::new(path);
+        match (pending_crash.canonicalize(), path.canonicalize()) {
+            (Ok(pending), Ok(path)) => pending == path,
+            _ => std::path::absolute(&pending_crash).ok() == std::path::absolute(path).ok(),
+        }
+    };
+    if paths_match(&config.disk_path) || paths_match(&config.seed_image) {
+        eprintln!("The crash file must differ from the disk and seed image paths.");
+        std::process::exit(2);
+    }
+    let _crash_registration = drivers_std::crash::install(&pending_crash).unwrap_or_else(|error| {
+        eprintln!("Failed to install crash reporting: {error}");
+        None
+    });
+
     // - Initialize the system
     log::initialize(&drivers_std::log::Logger).unwrap();
 
@@ -178,6 +198,18 @@ async fn main(task_manager: &'static xila::task::Manager) {
     ));
     let file_system = little_fs::mount_disk(drive, little_fs::Options::new(256))
         .expect("Failed to mount existing disk; it was not reformatted");
+    use xila::file_system::mbr::{Mbr, PartitionKind};
+    let storage_capacity = Mbr::read_from_device(drive)
+        .ok()
+        .and_then(|table| {
+            table
+                .partitions
+                .into_iter()
+                .find(|entry| entry.is_valid() && entry.kind == PartitionKind::Xila)
+        })
+        .map_or(config.disk_size, |entry| {
+            u64::from(entry.block_count) * Mbr::SIZE as u64
+        });
 
     // Initialize the virtual file system
     let virtual_file_system: &'static virtual_file_system::VirtualFileSystem = Box::leak(Box::new(
@@ -540,6 +572,12 @@ async fn main(task_manager: &'static xila::task::Manager) {
     authentication::initialize_seeded(&authentication_context)
         .await
         .expect("Failed to initialize saved accounts");
+    if let Err(error) =
+        drivers_std::crash::import_pending(virtual_file_system, &pending_crash, storage_capacity)
+            .await
+    {
+        log::warning!("Failed to import the pending crash report: {error}");
+    }
 
     // Root and the provisioned administrator group may use the power device,
     // and therefore request a shutdown through the lifecycle subsystem.

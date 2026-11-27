@@ -23,6 +23,8 @@ mod applications;
 #[cfg(feature = "display")]
 pub mod backlight;
 mod board;
+#[cfg(feature = "crash")]
+pub mod crash;
 mod flash;
 #[cfg(feature = "display")]
 pub mod graphics;
@@ -210,6 +212,8 @@ async fn start(task_manager: &'static task::Manager) {
         .expect("The board was already taken");
     let Board {
         name,
+        #[cfg(feature = "crash")]
+        pending_crash,
         console: console_port,
         flash_storage,
         storage,
@@ -541,6 +545,13 @@ async fn start(task_manager: &'static task::Manager) {
         authentication::load_all_users_and_groups(&authentication_context).await
     }
     .expect("Failed to load the accounts");
+    #[cfg(feature = "crash")]
+    if let Some(report) = pending_crash
+        && let Err(error) =
+            xila::crash::import(virtual_file_system, &report, u64::from(storage.length)).await
+    {
+        log::warning!("Failed to import the retained crash report: {error}");
+    }
 
     // - Graphics, on boards with a screen.
     #[cfg(feature = "graphics")]
@@ -841,7 +852,13 @@ async fn start(task_manager: &'static task::Manager) {
             .await;
         }
     }
+    #[cfg(feature = "crash")]
+    let mut stable = false;
     while xila::lifecycle::SYSTEM.is_running() {
+        #[cfg(feature = "crash")]
+        if !stable {
+            stable = crash::mark_stable();
+        }
         task::Manager::sleep(LIFECYCLE_POLL_INTERVAL).await;
     }
     console::set_interactive(false);
