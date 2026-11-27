@@ -6671,6 +6671,7 @@ dependencies = [
  "sdio",
  "smoltcp",
  "static_cell",
+ "xila-audio",
  "xila-drivers-peripherals",
  "xila-drivers-shared",
  "xila-file-system",

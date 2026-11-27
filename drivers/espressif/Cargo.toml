@@ -8,6 +8,7 @@ rust-version.workspace = true
 # nothing, so the Platforms workspace stays checkable on x86_64.
 [target.'cfg(any(target_arch = "xtensa", target_arch = "riscv32"))'.dependencies]
 aligned = { version = "0.4", optional = true }
+audio = { workspace = true, optional = true }
 block-device-driver = { version = "0.2", optional = true }
 critical-section = { workspace = true }
 drivers_peripherals = { workspace = true, optional = true }
@@ -104,6 +105,17 @@ console = [
 ]
 # 8080 parallel display bus over LCD_CAM with DMA (ESP32-S3), for `mipidsi`.
 lcd-i8080 = ["dep:drivers_shared", "drivers_shared/display-mipidsi"]
+# I2S playback through the Xila PCM mixer (ESP32-S3).
+speaker = [
+  "esp32s3",
+  "dep:audio",
+  "dep:embassy-time",
+  "dep:file_system",
+  "dep:log",
+  "dep:shared",
+  "dep:task",
+  "dep:virtual_file_system",
+]
 # 4-wire SPI display bus with non-blocking DMA and FIFO commands (ESP32).
 spi-display = ["dep:drivers_shared", "drivers_shared/display-mipidsi"]
 # Enable debug-level logging on the serial console (including display timings).

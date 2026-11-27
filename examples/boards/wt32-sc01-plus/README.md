@@ -1,10 +1,61 @@
-# WT32-SC01 Plus Wi-Fi
+# WT32-SC01 Plus
+
+## Wi-Fi
 
 The board starts its ESP32-S3 station in 2.4 GHz mode and exposes
 `/devices/network/wlan0`. It can scan and associate with open and WPA2 Personal
 networks. The Settings Wi-Fi panel can turn the radio on and off, scan, connect
 and disconnect when the graphical firmware includes Settings. Core owns
 Ethernet frame processing, IP addressing and DNS.
+
+## Speaker output
+
+The NS4168 mono amplifier drives the two-pin speaker connector. Connect a
+4-ohm speaker rated for at least 2.5 W across SPK+ and SPK-. Both terminals
+are driven. Keep both isolated from ground. The amplifier delivers a typical
+2.5 W into 4 ohms at 5 V and 10% total harmonic distortion plus noise.
+[NS4168 datasheet, electrical characteristics](https://pdf.data.kynix.com/r/datasheets/04aba3168248e67c38dd0a24fbd44cbd.pdf)
+
+| Signal | Connection |
+| --- | --- |
+| Word select (LRCK) | GPIO 35 |
+| Bit clock (BCLK) | GPIO 36 |
+| Data out (DOUT) | GPIO 37 |
+| Amplifier enable and channel select (CTRL) | R9 pulls CTRL to 3.3 V |
+
+The board has no amplifier enable or mute GPIO. The schematic and both pin
+tables give the same I2S assignments.
+[Wireless-Tag datasheet V1.9, table 7 and AUDIO schematic](https://img03.71360.com/w3/77q677/20241031/bf724a7a164740edb1896e09c5ea50d5.pdf)
+[ESPBoards pin table](https://www.espboards.dev/esp32/wt32-sc01-plus/)
+
+Open `/devices/audio/playback` to write 48 kHz stereo PCM as interleaved
+little-endian 32-bit floating-point samples. Each open stream starts paused
+at 100% volume. Start the stream before draining it. Stop pauses mixing and
+retains the stream's queued samples. Samples already in the DMA buffer can
+still play for up to 43 ms. Set volume from 0 to 100%. The driver averages
+the mixed channels and sends the same signed 16-bit sample in both Philips
+I2S slots. A DMA or mixer failure makes the device report
+`DeviceUnavailable` until reboot.
+
+### Tone smoke test
+
+1. Connect the speaker with the board powered off. Flash the Plus firmware
+   using the [WT32-SC01 Plus build and flash steps](../README.md#build-and-flash-the-wt32-sc01-plus-firmware).
+2. Boot with the full Plus storage image, which includes Synth. Sign in on
+   the console. On an existing installation with the Xila package repository
+   and a network connection, install Synth with `package install xila.synth`.
+3. Run these commands in the Xila shell.
+
+   ```text
+   ls /devices/audio
+   /applications/executables/wasm /applications/bundles/xila.synth/executables/synth.wasm
+   ```
+
+4. Check that `ls` lists `playback` and that Synth shows **Audio ready**.
+   Select **Sine**, lower the volume, then hold a note. Listen for a tone.
+   Release the note and check that playback returns to silence.
+5. Change the volume and play the same note again. Close Synth, run the
+   command again, and check that a new stream plays.
 
 ## USB console and human interface emulation
 
@@ -215,7 +266,8 @@ require cache-accessible internal SRAM. Rust allocations made by radio
 threads, interrupts and calls into the radio library also use internal SRAM.
 Normal Xila thread allocations prefer the 2 MiB PSRAM when it is available.
 
-The Wi-Fi firmware reserves 188 KiB (192,512 bytes) for the internal heap.
+The firmware reserves about 180 KiB for the internal heap. Speaker DMA
+uses 8 KiB plus its descriptors from the 188 KiB internal memory budget.
 The board linker enforces a 40 KiB main stack. LittleFS copies flash transfers
 through an internal SRAM buffer so the ROM can access them with caches suspended.
 The radio caps frame buffers at six static receive, twelve dynamic receive
