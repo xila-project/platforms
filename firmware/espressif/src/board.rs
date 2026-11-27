@@ -1,5 +1,7 @@
 //! The board description that a board crate hands to [`crate::run`].
 
+#[cfg(feature = "speaker")]
+use alloc::boxed::Box;
 use drivers_espressif::{console::ConsolePort, random::RandomDevice, shared::Gpio};
 use esp_storage::FlashStorage;
 use peripherals::real_time_clock::RealTimeClockController;
@@ -36,6 +38,9 @@ pub struct Board {
     /// The microSD slot, on boards that have one. The firmware probes it once,
     /// at boot, and mounts a card that holds LittleFS.
     pub sd_card: Option<SdCardSlot>,
+    /// Opens the I2S transmitter on the executor that runs the speaker task.
+    #[cfg(feature = "speaker")]
+    pub speaker: Box<dyn FnOnce() -> drivers_espressif::speaker::Transmitter + Send>,
     /// The screen, on boards that have one. The firmware drives it when it is
     /// built with the `display` feature.
     pub display: Option<Display>,

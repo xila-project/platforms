@@ -64,7 +64,11 @@
     )
 ))]
 
-#[cfg(any(feature = "sd-card", feature = "usb-human-interface"))]
+#[cfg(any(
+    feature = "sd-card",
+    feature = "speaker",
+    feature = "usb-human-interface"
+))]
 extern crate alloc;
 
 const SELECTED_CHIPS: u8 = cfg!(feature = "esp32") as u8
@@ -124,6 +128,8 @@ pub mod real_time_clock;
 pub mod rom_memory;
 #[cfg(all(feature = "sd-card", feature = "esp32s3"))]
 pub mod sd_card;
+#[cfg(feature = "speaker")]
+pub mod speaker;
 #[cfg(all(feature = "spi-display", feature = "esp32"))]
 pub mod spi_display;
 #[cfg(feature = "time")]

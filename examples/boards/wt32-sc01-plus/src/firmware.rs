@@ -31,10 +31,11 @@
 use alloc::{boxed::Box, format};
 use core::{fmt::Write, panic::PanicInfo};
 
-use drivers_espressif::{random::RandomDevice, sd_card::SdCard};
+use drivers_espressif::{random::RandomDevice, sd_card::SdCard, speaker};
 use drivers_shared::devices::SectorBlockDevice;
 use esp_hal::{
     clock::CpuClock,
+    i2s::master::I2s,
     peripherals::{GPIO38, GPIO39, GPIO40, GPIO41, SDHOST, USB_DEVICE},
     psram::{FlashFreq, Psram, PsramConfig, PsramMode, SpiRamFreq},
     timer::systimer::SystemTimer,
@@ -145,6 +146,26 @@ fn main() -> ! {
                 .expect("the build date fits in a signed timestamp"),
         ),
     ));
+    // Wireless-Tag WT32-SC01 Plus datasheet V1.9, table 7 and AUDIO schematic.
+    // The public ESPBoards pin table agrees. See the board README for both links.
+    // R9 pulls the amplifier CTRL pin high. There is no enable or mute GPIO.
+    let speaker = Box::new(move || {
+        I2s::new(
+            peripherals.I2S0,
+            peripherals.DMA_CH1,
+            speaker::configuration(),
+        )
+        .map(|controller| {
+            controller
+                .into_async()
+                .i2s_tx
+                .with_bclk(peripherals.GPIO36)
+                .with_ws(peripherals.GPIO35)
+                .with_dout(peripherals.GPIO37)
+                .build()
+        })
+    });
+
     let board = Board {
         name: "WT32-SC01 Plus",
         console,
@@ -171,6 +192,7 @@ fn main() -> ! {
             peripherals.GPIO41,
         )),
         gpio: Some(gpio::controller()),
+        speaker,
         #[cfg(feature = "usb-human-interface")]
         human_interface: Some(usb_human_interface.controller),
         real_time_clock: Some(real_time_clock),

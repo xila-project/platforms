@@ -23,6 +23,7 @@ esp-storage = { version = "0.10", features = ["esp32s3"] }
 firmware = { package = "xila-firmware-espressif", path = "../../../firmware/espressif", features = [
   "graphics",
   "neural-network",
+  "speaker",
   "wasm",
   "wifi",
 ] }

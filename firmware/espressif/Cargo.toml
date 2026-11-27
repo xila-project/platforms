@@ -83,6 +83,7 @@ graphics = [
 # package installer at `/applications/executables/package`. Combined
 # with `graphics`, guests also receive the LVGL graphics host import.
 wasm = ["dep:wasm", "dep:package"]
+speaker = ["drivers_espressif/speaker"]
 neural-network = ["drivers_shared/neural-network-classifier"]
 wifi = [
   "drivers_espressif/wifi",

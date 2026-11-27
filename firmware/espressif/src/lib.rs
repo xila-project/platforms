@@ -63,8 +63,12 @@ pub use sd_card::{OpenedSdCard, SdCardSlot};
 pub const HEAP_SIZE: usize = 256 * 1024;
 // The radio and scheduler add internal code and data. Leave room for the
 // executor's main stack in the shared instruction/data SRAM bank.
-#[cfg(feature = "wifi")]
+#[cfg(all(feature = "wifi", not(feature = "speaker")))]
 pub const HEAP_SIZE: usize = 188 * 1024;
+// Reserve the speaker DMA storage from the internal heap budget to preserve
+// the board's main stack space.
+#[cfg(all(feature = "wifi", feature = "speaker"))]
+pub const HEAP_SIZE: usize = 188 * 1024 - drivers_espressif::speaker::DMA_STORAGE_BYTES;
 static mut HEAP: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
 
 /// LittleFS cache: a divisor of the 4096-byte flash page.
@@ -220,6 +224,8 @@ async fn start(task_manager: &'static task::Manager) {
         memory_check,
         system_check,
         sd_card,
+        #[cfg(feature = "speaker")]
+        speaker,
         display,
         gpio,
         real_time_clock,
@@ -689,6 +695,15 @@ async fn start(task_manager: &'static task::Manager) {
     }
     #[cfg(any(feature = "graphics", feature = "wasm", feature = "native-linked"))]
     applications::mount(executable_context, virtual_file_system, task).await;
+
+    // Start DMA after storage and graphics setup, which can delay the refill task.
+    #[cfg(feature = "speaker")]
+    match drivers_espressif::speaker::mount(speaker(), virtual_file_system, task_manager, task)
+        .await
+    {
+        Ok(()) => log::information!("Xila: speaker mounted at /devices/audio/playback"),
+        Err(error) => log::error!("Xila: speaker setup failed: {error:?}"),
+    }
 
     task_manager
         .set_environment_variable(
