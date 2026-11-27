@@ -117,10 +117,10 @@ pub fn install(destination: &Path) -> io::Result<Option<Registration>> {
 
     let previous_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |information| {
-        if let Some(state) = claim() {
-            if let Err(error) = capture_panic(state, information) {
-                eprintln!("Failed to save the crash report: {error}");
-            }
+        if let Some(state) = claim()
+            && let Err(error) = capture_panic(state, information)
+        {
+            eprintln!("Failed to save the crash report: {error}");
         }
         previous_hook(information);
     }));
