@@ -30,8 +30,9 @@ const CLAIM_SPIN_BOUND: u32 = 1 << 20;
 
 /// Take access to retention for a panic, until reset. The other core may
 /// still run: when the claim cannot be taken within the spin bound, the
-/// record is written through `Retention::slot_raw` with volatile writes only,
-/// never through a second `&mut` to the shared slot.
+/// record is written directly into the slot through the raw cursor of
+/// `Retention::slot_raw`, with the magic committed last, and never staged
+/// in a buffer on the panic stack.
 pub fn claim_for_panic() -> Retention {
     // SAFETY: Panic handling never returns to the interrupted code. Disable
     // maskable interrupts without taking the HAL's cross-core lock.
@@ -47,9 +48,11 @@ pub fn claim_for_panic() -> Retention {
     }
     // The other core still holds the claim, for example because it panicked
     // first and never releases it. Proceeding without the claim is acceptable
-    // only because this path never creates a `&mut` to the shared statics:
-    // two live `&mut` references to one slot would be undefined behavior even
-    // though the magic written last detects the torn record on the next boot.
+    // only because this path writes through the raw cursor of `slot_raw` and
+    // commits the magic last: the concurrent-write window is bounded (the
+    // claim holder resets the chip right after committing) and a record torn
+    // by the concurrent write is rejected by the magic and the checksum on
+    // the next boot.
     Retention {
         panic: true,
         owned: false,
@@ -93,10 +96,11 @@ impl Retention {
     }
 
     /// The retained slot as a raw pointer, for the panic path that could not
-    /// take the claim. The record must be written through this pointer with
-    /// volatile writes only (`copy_record`): the core that holds the claim may
-    /// have a live `&mut` to the same slot, and a second `&mut` would be
-    /// undefined behavior.
+    /// take the claim. The record is written directly into the slot through
+    /// this raw cursor: the core that holds the claim may have a live `&mut`
+    /// to the same slot, so no staging copy is made and the write is
+    /// committed with the magic last, which a concurrent write tears in a
+    /// way the checksum rejects on the next boot.
     pub fn slot_raw(&mut self) -> *mut [u8; ESPRESSIF_RECORD_CAPACITY] {
         &raw mut RETAINED_RECORD
     }
@@ -104,6 +108,11 @@ impl Retention {
     /// Record a crash in the retained guard and return the new count. Without
     /// the claim, the guard is updated through a local copy and volatile reads
     /// and writes, so no second `&mut` to the shared guard is created either.
+    /// Two simultaneous panics can both read the same count and both write
+    /// back the same increment, or tear the 16-byte update: the effect is
+    /// bounded, because a torn update is rejected by the guard's magic and
+    /// checksum (it then reads as zero) and a lost increment only delays
+    /// reaching `CRASH_LOOP_LIMIT` by one panic.
     pub fn record_crash(&mut self) -> u32 {
         if self.owned {
             self.guard().record_crash()
@@ -159,28 +168,18 @@ unsafe fn write_volatile_bytes(destination: *mut u8, source: &[u8]) {
     fence(Ordering::SeqCst);
 }
 
-/// Copy a finished record into the retained slot, magic last, with volatile
-/// writes only.
-///
-/// # Safety
-/// `destination` must be the retained record slot, `source` a complete record,
-/// and no `&mut` to the slot may be live on any core: the claim holder may
-/// write through one, and two `&mut` references to the same memory would be
-/// undefined behavior. A record torn by a concurrent write is detected by the
-/// magic and the checksum on the next boot.
-pub unsafe fn copy_record(destination: *mut [u8; ESPRESSIF_RECORD_CAPACITY], source: &[u8]) {
-    let destination = destination.cast::<u8>();
-    let length = source.len().min(ESPRESSIF_RECORD_CAPACITY);
-    let record = &source[..length];
-    if length > 4 {
-        // SAFETY: The caller guarantees a writable slot and no live `&mut`.
-        unsafe { write_volatile_bytes(destination.add(4), &record[4..]) };
-        // SAFETY: The magic goes last, so a present magic means a full record.
-        unsafe { write_volatile_bytes(destination, &record[..4]) };
-    } else {
-        // SAFETY: The caller guarantees a writable slot and no live `&mut`.
-        unsafe { write_volatile_bytes(destination, record) };
-    }
+/// Whether the secondary (application) core has been started. Only the Wi-Fi
+/// RTOS (`esp_rtos::start`) starts it on ESP32-S3.
+static SECONDARY_CORE_STARTED: AtomicBool = AtomicBool::new(false);
+
+/// Record that the secondary core started running.
+pub fn mark_secondary_core_started() {
+    SECONDARY_CORE_STARTED.store(true, Ordering::Release);
+}
+
+/// Whether the secondary core has started.
+pub fn secondary_core_started() -> bool {
+    SECONDARY_CORE_STARTED.load(Ordering::Acquire)
 }
 
 pub fn uptime_microseconds() -> u64 {

@@ -7,9 +7,8 @@ use drivers_espressif::crash::{self as retention, Registers};
 use esp_hal::system::{Cpu, software_reset};
 use xila::{
     crash::{
-        Architecture, BuildIdentifier, CRASH_LOOP_LIMIT, ESPRESSIF_RECORD_CAPACITY, Header, Limits,
-        RecordKind, ResetReason, SECONDARY_CORE_UNHALTED, Writer, complete_reset_reason,
-        invalidate,
+        Architecture, BuildIdentifier, CRASH_LOOP_LIMIT, Header, Limits, RecordKind, ResetReason,
+        SECONDARY_CORE_UNHALTED, Writer, complete_reset_reason, invalidate,
     },
     log, task,
 };
@@ -105,6 +104,13 @@ pub fn panic(information: &PanicInfo<'_>, metadata: Metadata, summary: impl FnOn
     let bounds = stack_bounds(core, registers.stack_pointer);
     let active_task = task::active_task::snapshot();
     let count = retention.record_crash();
+    // The secondary core only counts as unhalted when it really started (the
+    // Wi-Fi RTOS is what starts it) and is not the panicking core itself.
+    let flags = if core == 0 && retention::secondary_core_started() {
+        SECONDARY_CORE_UNHALTED
+    } else {
+        0
+    };
     let header = Header {
         program_counter: registers.link_register.saturating_sub(3) as u64,
         link_register: registers.link_register as u64,
@@ -121,24 +127,29 @@ pub fn panic(information: &PanicInfo<'_>, metadata: Metadata, summary: impl FnOn
             .map_or("", task::active_task::ActiveTask::name),
         uptime_microseconds: retention::uptime_microseconds(),
         consecutive_crashes: count,
-        flags: SECONDARY_CORE_UNHALTED,
+        flags,
         ..metadata.header(RecordKind::KernelPanic)
     };
+    // Write the record directly into the retained slot in both the owned and
+    // the unowned case: the panic stack budget is 512 bytes
+    // (xila-project/core#900), so the record is never staged on the stack.
+    // `Writer` commits it with the magic written last through volatile stores
+    // and fences, so a record torn by a concurrent write is rejected on the
+    // next boot.
     if retention.owns_claim() {
         if let Some(slot) = retention.slot() {
             write_record(slot, &header, &registers, &bounds, information);
         }
     } else {
-        // The other core holds the claim and may have a live `&mut` to the
-        // slot, so the record is built in a local buffer and copied into the
-        // slot through the raw pointer with volatile writes only.
-        let mut local = [0; ESPRESSIF_RECORD_CAPACITY];
-        let length = write_record(&mut local, &header, &registers, &bounds, information);
-        // SAFETY: The claim is held by the other core, which may write the
-        // slot through a `&mut`; this path never creates a second `&mut` to
-        // it. The magic is copied last, so a record torn by the concurrent
-        // write is detected on the next boot.
-        unsafe { retention::copy_record(retention.slot_raw(), &local[..length]) };
+        // SAFETY: The claim is held by the other core, which may be writing
+        // the slot through its own reference right now. This path writes the
+        // record directly into the slot through the raw cursor instead of
+        // staging a copy: the concurrent-write window is bounded (the claim
+        // holder resets the chip immediately after committing), the magic is
+        // written last with volatile stores, and the CRC-32 is verified when
+        // the record is read, so a torn record never imports.
+        let output: &mut [u8] = unsafe { &mut *retention.slot_raw() };
+        write_record(output, &header, &registers, &bounds, information);
     }
     summary();
     if count < CRASH_LOOP_LIMIT {
@@ -149,14 +160,14 @@ pub fn panic(information: &PanicInfo<'_>, metadata: Metadata, summary: impl FnOn
     }
 }
 
-/// Write one panic record into `output` and return its length in bytes.
+/// Write one panic record into `output`, which is the retained slot itself.
 fn write_record(
     output: &mut [u8],
     header: &Header<'_>,
     registers: &Registers,
     bounds: &Range<usize>,
     information: &PanicInfo<'_>,
-) -> usize {
+) {
     let mut writer = Writer::new(output, header, Limits::ESPRESSIF).unwrap();
     let mut frame_pointer = registers.stack_pointer;
     // SAFETY: A main or coroutine stack range is used only after validating
@@ -168,15 +179,13 @@ fn write_record(
         frame_pointer = parent;
     }
     let stack_length = bounds.end.saturating_sub(registers.stack_pointer);
-    writer
-        .finish_with_stack(
-            format_args!("{information}"),
-            stack_length,
-            // SAFETY: The writer clamps the length and never reads above bounds.end.
-            |output| unsafe { retention::copy_stack(registers.stack_pointer, output) },
-            |output| Some(log::snapshot_tail(output)),
-        )
-        .len()
+    writer.finish_with_stack(
+        format_args!("{information}"),
+        stack_length,
+        // SAFETY: The writer clamps the length and never reads above bounds.end.
+        |output| unsafe { retention::copy_stack(registers.stack_pointer, output) },
+        |output| Some(log::snapshot_tail(output)),
+    );
 }
 
 fn stack_bounds(core: usize, pointer: usize) -> Range<usize> {

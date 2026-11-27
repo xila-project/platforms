@@ -292,6 +292,10 @@ pub(super) async fn run(
             // The existing executor remains on the scheduler's main thread.
             allocation::internal(|| {
                 esp_rtos::start(timer, interrupt);
+                // `esp_rtos::start` also starts the application core, which the
+                // crash report flags as unhalted only from now on.
+                #[cfg(all(feature = "crash", feature = "esp32s3"))]
+                crate::crash::mark_secondary_core_started();
                 allocation::record_main_task();
             });
         }
