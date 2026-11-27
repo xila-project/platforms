@@ -144,6 +144,9 @@ fn main() -> ! {
         ),
     ));
     let flash_storage = FlashStorage::new(peripherals.FLASH);
+    // esp-storage's multicore_auto_park stalls the other core during flash
+    // writes and erases, so the write path must not allocate: the stalled core
+    // may hold the heap lock, and an allocation would wait for it forever.
     #[cfg(feature = "dual-core")]
     let flash_storage = flash_storage.multicore_auto_park();
 
