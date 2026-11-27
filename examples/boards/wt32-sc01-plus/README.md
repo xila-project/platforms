@@ -34,8 +34,21 @@ at 100% volume. Start the stream before draining it. Stop pauses mixing and
 retains the stream's queued samples. Samples already in the DMA buffer can
 still play for up to 43 ms. Set volume from 0 to 100%. The driver averages
 the mixed channels and sends the same signed 16-bit sample in both Philips
-I2S slots. A DMA or mixer failure makes the device report
-`DeviceUnavailable` until reboot.
+I2S slots.
+
+The eight DMA descriptors hold 42.7 ms of audio, and the refill task shares
+the single-core executor with the graphics loop, so a slow LVGL frame can
+outlast the buffer. A DMA underrun is then recovered: the driver stops the
+transfer, refills the DMA buffer with silence plus the next mixed block,
+restarts the DMA and counts the underrun. Read the count with the
+`GET_UNDERRUNS` control command of kind `b'A'`, number `0x08`, which returns
+a `u32`; an underrun is also logged at most once per second. Each extra
+descriptor would cost 1036 bytes of internal SRAM for 5.3 ms more, and
+covering the measured 130 ms worst-case frame would take 25 descriptors
+(25.3 KiB, against 8.1 KiB today), so underruns are recovered in software
+instead of enlarging the buffer. Only a failure that a restart cannot fix,
+such as a restart that fails eight times in a row or a mixer error, makes
+the device report `DeviceUnavailable` until reboot.
 
 ### Tone smoke test
 
