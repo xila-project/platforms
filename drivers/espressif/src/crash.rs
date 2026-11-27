@@ -252,15 +252,41 @@ fn normalize_return_address(address: usize) -> usize {
     }
 }
 
+// esp-hal 1.2.2's linker script defines only the core 0 stack bounds. Define
+// the core 1 bounds as weak zeroes: a linker script that provides them with
+// strong definitions overrides these, and a zero address then means that the
+// symbols were not provided.
+core::arch::global_asm!(
+    ".weak _stack_start_cpu1",
+    ".weak _stack_end_cpu1",
+    ".set _stack_start_cpu1, 0",
+    ".set _stack_end_cpu1, 0",
+);
+
 pub fn main_stack_bounds() -> Range<usize> {
     unsafe extern "C" {
         static _stack_end_cpu0: u8;
         static _stack_start_cpu0: u8;
+        static _stack_end_cpu1: u8;
+        static _stack_start_cpu1: u8;
     }
-    if Cpu::current() != Cpu::ProCpu {
+    let (end, start) = if Cpu::current() == Cpu::ProCpu {
+        (
+            (&raw const _stack_end_cpu0).addr(),
+            (&raw const _stack_start_cpu0).addr(),
+        )
+    } else {
+        (
+            (&raw const _stack_end_cpu1).addr(),
+            (&raw const _stack_start_cpu1).addr(),
+        )
+    };
+    // A zero bound means the linker script does not provide this core's stack
+    // symbols (esp-hal 1.2.2 provides only the core 0 ones).
+    if end == 0 || start == 0 || end >= start {
         return 0..0;
     }
-    (&raw const _stack_end_cpu0).addr()..(&raw const _stack_start_cpu0).addr()
+    end..start
 }
 
 /// Read the return address and previous stack pointer from the base save area.
