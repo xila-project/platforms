@@ -83,3 +83,32 @@ async fn next_process_imports_panic_and_signal() {
     }
     std::fs::remove_dir_all(&directory).unwrap();
 }
+
+#[task::test]
+async fn import_pending_removes_a_malformed_file() {
+    let task_manager = task::test_manager();
+    let root = task_manager.get_current_task_identifier().await;
+    let users = Box::leak(Box::new(users::Manager::new()));
+    let time = Box::leak(Box::new(
+        time::Manager::new(&testing_support::TimeDevice).unwrap(),
+    ));
+    let disk = MemoryDevice::<512>::new_static(256 * 512);
+    let filesystem =
+        little_fs::FileSystem::get_or_format(disk, little_fs::Options::new(256)).unwrap();
+    let filesystem =
+        virtual_file_system::initialize(task_manager, users, time, filesystem).unwrap();
+    virtual_file_system::create_default_hierarchy(&filesystem, root)
+        .await
+        .unwrap();
+
+    let directory = std::env::temp_dir().join(format!("xila-crash-test-{}", std::process::id()));
+    std::fs::create_dir(&directory).unwrap();
+    let pending = directory.join("disk.crash.pending");
+    std::fs::write(&pending, b"not a crash record").unwrap();
+    let error = import_pending(&filesystem, &pending, 128 * 1024)
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    assert!(!pending.exists());
+    std::fs::remove_dir_all(&directory).unwrap();
+}

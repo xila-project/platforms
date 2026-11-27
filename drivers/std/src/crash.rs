@@ -273,7 +273,7 @@ fn executable_identity() -> (BuildIdentifier, u64, Option<std::ops::Range<u64>>)
 }
 
 /// Import a file left by the previous process. Preserve it when storage fails
-/// so the next start can retry. Return an error for an invalid file.
+/// so the next start can retry. Remove an invalid file and return an error.
 pub async fn import_pending(
     file_system: &virtual_file_system::VirtualFileSystem,
     pending: &Path,
@@ -287,17 +287,21 @@ pub async fn import_pending(
     let mut bytes = Vec::new();
     file.take(NATIVE_RECORD_CAPACITY as u64 + 1)
         .read_to_end(&mut bytes)?;
-    if bytes.len() <= NATIVE_RECORD_CAPACITY
-        && Record::read(&bytes).is_ok_and(|record| record.bytes().len() == bytes.len())
+    if bytes.len() > NATIVE_RECORD_CAPACITY
+        || !Record::read(&bytes).is_ok_and(|record| record.bytes().len() == bytes.len())
     {
-        ::crash::import(file_system, &bytes, storage_capacity)
-            .await
-            .map_err(io::Error::other)?;
-    } else {
+        // A malformed pending file can never validate: remove it so the next
+        // start does not retry it.
+        std::fs::remove_file(pending)?;
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "Invalid pending crash report",
         ));
     }
+    // Keep the pending file when the storage import fails, so the next start
+    // can retry the report.
+    ::crash::import(file_system, &bytes, storage_capacity)
+        .await
+        .map_err(io::Error::other)?;
     std::fs::remove_file(pending)
 }
