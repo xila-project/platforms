@@ -121,7 +121,8 @@ usb-human-interface = [
 # Executable memory for the native loader, on the chips listed in
 # `executable_memory`; elsewhere the feature adds nothing.
 executable-memory = ["dep:native_loader"]
-executor = ["dep:embassy-executor", "dep:static_cell"]
+executor = ["dep:embassy-executor", "dep:static_cell", "dep:task"]
+dual-core = ["executor", "esp32"]
 power = ["dep:peripherals", "peripherals/power"]
 # Internal real-time clock over esp-hal's `rtc_cntl::Rtc` (wall-clock UTC across
 # resets, lost on power-off).

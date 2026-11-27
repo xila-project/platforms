@@ -1,3 +1,5 @@
+#[cfg(feature = "dual-core")]
+pub mod dual_core;
 mod signal;
 
 use embassy_executor::{Spawner, raw};
@@ -8,35 +10,44 @@ static WORK: WorkSignal = WorkSignal::new();
 static EXECUTOR: StaticCell<Executor> = StaticCell::new();
 
 #[unsafe(export_name = "__pender")]
-fn pend_executor(_context: *mut ()) {
-    WORK.signal();
+fn pend_executor(context: *mut ()) {
+    // SAFETY: every Espressif executor sets its context to its static work flag.
+    let work = unsafe { &*context.cast::<WorkSignal>() };
+    work.signal();
+    #[cfg(feature = "dual-core")]
+    dual_core::interrupt_if_remote(work);
 }
 
-/// Single-core Embassy executor for Espressif targets.
+/// One thread-mode Embassy executor for an Espressif core.
 pub struct Executor {
     inner: raw::Executor,
+    work: &'static WorkSignal,
 }
 
 impl Executor {
     /// Takes the executor from static storage. Panics if it has already been taken.
     pub fn take() -> &'static mut Self {
-        EXECUTOR.init(Self {
-            inner: raw::Executor::new(core::ptr::null_mut()),
-        })
+        EXECUTOR.init(Self::new(&WORK))
+    }
+
+    fn new(work: &'static WorkSignal) -> Self {
+        Self {
+            inner: raw::Executor::new(core::ptr::from_ref(work).cast_mut().cast()),
+            work,
+        }
     }
 
     /// Starts the executor in thread mode and never returns.
-    ///
-    /// All interrupts and tasks that wake the executor must run on this core.
-    /// Keep the other application core parked while using this executor.
     pub fn start(&'static mut self, initialize: impl FnOnce(Spawner)) -> ! {
-        initialize(self.inner.spawner());
+        let spawner = self.inner.spawner();
+        let activity = task::metrics::ExecutorActivity::new(spawner);
+        initialize(spawner);
 
         loop {
-            WORK.begin_poll();
+            self.work.begin_poll();
             // SAFETY: this loop owns the executor and never polls it reentrantly.
             unsafe { self.inner.poll() };
-            sleep_unless_pending(&WORK);
+            activity.measure_idle(|| sleep_unless_pending(self.work));
         }
     }
 }
