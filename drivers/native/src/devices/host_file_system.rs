@@ -179,6 +179,92 @@ impl HostFileSystem {
             .ok_or(IoErrorKind::InvalidArgument)
     }
 
+    /// Attributes that the virtual file system passes directly to native
+    /// symbolic link creation without intersecting `writable_attributes()`.
+    const SYMLINK_CREATION_ATTRIBUTES: AttributeFlags = AttributeFlags::Kind
+        .union(AttributeFlags::User)
+        .union(AttributeFlags::Group)
+        .union(AttributeFlags::Permissions);
+
+    /// Create a regular file beneath `directory` and apply `Size` when set.
+    ///
+    /// Other fields in `attributes` are rejected with
+    /// [`IoErrorKind::Unsupported`] (xila-project/platforms#240). The host has
+    /// no Xila attribute storage, `User`, `Group` and `Permissions` are
+    /// synthetic in [`HostFileSystemOptions`], and `writable_attributes()`
+    /// reports only `AttributeFlags::Size`.
+    fn create_regular_file(
+        &self,
+        directory: &Dir,
+        relative: &StdPath,
+        attributes: &Attributes,
+    ) -> Result<()> {
+        let size = Self::writable_size(attributes)?;
+        // `O_CREAT | O_EXCL` fails on an existing entry, including a link.
+        let file = directory
+            .open_with(relative, self.open_options().write(true).create_new(true))
+            .map_err(map_io_error)?;
+        if let Some(size) = size
+            && let Err(error) = file.set_len(size)
+        {
+            drop(file);
+            let _ = directory.remove_file(relative);
+            return Err(map_io_error(error));
+        }
+        Ok(())
+    }
+
+    /// Create a directory beneath `directory` and reject any requested
+    /// attributes.
+    ///
+    /// Directories do not support `set_len`, and the host has no Xila
+    /// attribute storage (`writable_attributes()` is `AttributeFlags::Size`,
+    /// xila-project/platforms#240).
+    fn create_directory_at(
+        directory: &Dir,
+        relative: &StdPath,
+        attributes: &Attributes,
+    ) -> Result<()> {
+        if !attributes.get_mask().is_empty() {
+            return Err(IoErrorKind::Unsupported);
+        }
+        directory.create_dir(relative).map_err(map_io_error)
+    }
+
+    /// Create a symbolic link beneath `directory` without following `link`.
+    ///
+    /// `Kind`, `User`, `Group` and `Permissions` are ignored
+    /// (xila-project/platforms#240). The host has no Xila attribute storage,
+    /// `User`, `Group` and `Permissions` are synthetic in
+    /// [`HostFileSystemOptions`], `Kind::SymbolicLink` comes from the host link
+    /// entry, and the virtual file system passes those four flags directly to
+    /// native symbolic link creation without intersecting
+    /// `writable_attributes()`. Other fields (including `Size`, timestamps,
+    /// `Inode` and `Links`) cannot be honored on a host symbolic link and
+    /// return [`IoErrorKind::Unsupported`].
+    fn create_symlink_at(
+        directory: &Dir,
+        target: &Path,
+        link: &StdPath,
+        attributes: &Attributes,
+    ) -> Result<()> {
+        if !attributes
+            .get_mask()
+            .difference(Self::SYMLINK_CREATION_ATTRIBUTES)
+            .is_empty()
+        {
+            return Err(IoErrorKind::Unsupported);
+        }
+        if attributes
+            .get_kind()
+            .is_some_and(|kind| *kind != Kind::SymbolicLink)
+        {
+            return Err(IoErrorKind::InvalidArgument);
+        }
+        let target = symlink_target(target)?;
+        directory.symlink(target, link).map_err(map_io_error)
+    }
+
     /// The pinned host directory of a parent context opened by this filesystem.
     #[cfg(target_os = "linux")]
     fn entry_parent(context: &Context) -> Result<&Dir> {
@@ -689,13 +775,11 @@ impl FileSystemOperations for HostFileSystem {
         &self,
         parent: &Context,
         name: &str,
-        _attributes: &Attributes,
+        attributes: &Attributes,
     ) -> Result<()> {
         self.writable()?;
         let name = entry_name(name)?;
-        Self::entry_parent(parent)?
-            .create_dir(name)
-            .map_err(map_io_error)
+        Self::create_directory_at(Self::entry_parent(parent)?, name, attributes)
     }
 
     #[cfg(target_os = "linux")]
@@ -703,15 +787,11 @@ impl FileSystemOperations for HostFileSystem {
         &self,
         parent: &Context,
         name: &str,
-        _attributes: &Attributes,
+        attributes: &Attributes,
     ) -> Result<()> {
         self.writable()?;
         let name = entry_name(name)?;
-        // `O_CREAT | O_EXCL` fails on an existing entry, including a link.
-        Self::entry_parent(parent)?
-            .open_with(name, self.open_options().write(true).create_new(true))
-            .map(|_| ())
-            .map_err(map_io_error)
+        self.create_regular_file(Self::entry_parent(parent)?, name, attributes)
     }
 
     #[cfg(target_os = "linux")]
@@ -777,14 +857,11 @@ impl FileSystemOperations for HostFileSystem {
         target: &Path,
         parent: &Context,
         name: &str,
-        _attributes: &Attributes,
+        attributes: &Attributes,
     ) -> Result<()> {
         self.writable()?;
-        let target = symlink_target(target)?;
         let name = entry_name(name)?;
-        Self::entry_parent(parent)?
-            .symlink(target, name)
-            .map_err(map_io_error)
+        Self::create_symlink_at(Self::entry_parent(parent)?, target, name, attributes)
     }
 
     #[cfg(target_os = "linux")]
@@ -831,11 +908,10 @@ impl FileSystemOperations for HostFileSystem {
         file.set_len(size).map_err(map_io_error)
     }
 
-    fn create_symlink(&self, target: &Path, link: &Path, _attributes: &Attributes) -> Result<()> {
+    fn create_symlink(&self, target: &Path, link: &Path, attributes: &Attributes) -> Result<()> {
         self.writable()?;
-        let target = symlink_target(target)?;
         let link = Self::relative_path(link)?;
-        self.root()?.symlink(target, &link).map_err(map_io_error)
+        Self::create_symlink_at(&*self.root()?, target, &link, attributes)
     }
 
     fn read_symlink(&self, link: &Path, buffer: &mut [u8]) -> Result<usize> {
@@ -863,19 +939,16 @@ impl FileSystemOperations for HostFileSystem {
         Ok(())
     }
 
-    fn create_directory(&self, path: &Path, _attributes: &Attributes) -> Result<()> {
+    fn create_directory(&self, path: &Path, attributes: &Attributes) -> Result<()> {
         self.writable()?;
         let path = Self::relative_path(path)?;
-        self.root()?.create_dir(&path).map_err(map_io_error)
+        Self::create_directory_at(&*self.root()?, &path, attributes)
     }
 
-    fn create_file(&self, path: &Path, _attributes: &Attributes) -> Result<()> {
+    fn create_file(&self, path: &Path, attributes: &Attributes) -> Result<()> {
         self.writable()?;
         let path = Self::relative_path(path)?;
-        self.root()?
-            .open_with(&path, self.open_options().write(true).create_new(true))
-            .map(|_| ())
-            .map_err(map_io_error)
+        self.create_regular_file(&*self.root()?, &path, attributes)
     }
 
     fn remove(&self, path: &Path) -> Result<()> {
@@ -2317,5 +2390,273 @@ mod tests {
         assert!(!outside.join("pwned").exists());
         let _ = fs::remove_dir_all(root);
         let _ = fs::remove_dir_all(outside);
+    }
+
+    #[test]
+    fn create_file_applies_size_and_rejects_unsupported_attributes() {
+        let root = temp_root();
+        let filesystem = HostFileSystem::open(&root, HostFileSystemOptions::default()).unwrap();
+
+        filesystem
+            .create_file(Path::new("/sized"), &Attributes::new().set_size(4))
+            .unwrap();
+        assert_eq!(fs::read(root.join("sized")).unwrap(), vec![0; 4]);
+        let mut read_back = Attributes::new().set_mask(AttributeFlags::Size);
+        FileSystemOperations::get_attributes(&filesystem, Path::new("/sized"), &mut read_back)
+            .unwrap();
+        assert_eq!(read_back.get_size(), Some(&4));
+
+        filesystem
+            .create_file(Path::new("/zero"), &Attributes::new().set_size(0))
+            .unwrap();
+        assert_eq!(fs::read(root.join("zero")).unwrap(), Vec::<u8>::new());
+
+        #[cfg(unix)]
+        {
+            assert!(
+                filesystem
+                    .create_file(
+                        Path::new("/too-large"),
+                        &Attributes::new().set_size(u64::MAX),
+                    )
+                    .is_err()
+            );
+            assert!(!root.join("too-large").exists());
+        }
+
+        let unsupported_attributes = [
+            Attributes::new().set_inode(42),
+            Attributes::new().set_kind(Kind::File),
+            Attributes::new().set_links(2),
+            Attributes::new().set_creation(Time::new(1)),
+            Attributes::new().set_modification(Time::new(2)),
+            Attributes::new().set_access(Time::new(3)),
+            Attributes::new().set_status(Time::new(4)),
+            Attributes::new().set_permissions(Permissions::USER_READ_WRITE),
+            Attributes::new().set_user(users::UserIdentifier::new(1000)),
+            Attributes::new().set_group(users::GroupIdentifier::new(1000)),
+            Attributes::new()
+                .set_size(4)
+                .set_permissions(Permissions::USER_READ_WRITE),
+        ];
+
+        for (index, attributes) in unsupported_attributes.iter().enumerate() {
+            let file_name = format!("rejected-file-{index}");
+            let file_path = format!("/{file_name}");
+            assert_eq!(
+                filesystem.create_file(Path::new(&file_path), attributes),
+                Err(IoErrorKind::Unsupported),
+                "file attribute mask {:?}",
+                attributes.get_mask()
+            );
+            assert!(!root.join(&file_name).exists());
+
+            let directory_name = format!("rejected-dir-{index}");
+            let directory_path = format!("/{directory_name}");
+            assert_eq!(
+                filesystem.create_directory(Path::new(&directory_path), attributes),
+                Err(IoErrorKind::Unsupported),
+                "directory attribute mask {:?}",
+                attributes.get_mask()
+            );
+            assert!(!root.join(&directory_name).exists());
+        }
+
+        assert_eq!(
+            filesystem.create_directory(Path::new("/sized-dir"), &Attributes::new().set_size(4)),
+            Err(IoErrorKind::Unsupported)
+        );
+        assert!(!root.join("sized-dir").exists());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn create_entry_applies_size_and_rejects_unsupported_attributes() {
+        let root = temp_root();
+        let filesystem = HostFileSystem::open(&root, HostFileSystemOptions::default()).unwrap();
+        let root_context = open_root_entry(&filesystem);
+
+        filesystem
+            .create_file_entry(&root_context, "sized", &Attributes::new().set_size(7))
+            .unwrap();
+        assert_eq!(fs::read(root.join("sized")).unwrap(), vec![0; 7]);
+        let mut read_back = Attributes::new().set_mask(AttributeFlags::Size);
+        filesystem
+            .get_entry_attributes(&root_context, "sized", &mut read_back)
+            .unwrap();
+        assert_eq!(read_back.get_size(), Some(&7));
+
+        assert!(
+            filesystem
+                .create_file_entry(
+                    &root_context,
+                    "too-large",
+                    &Attributes::new().set_size(u64::MAX),
+                )
+                .is_err()
+        );
+        assert!(!root.join("too-large").exists());
+
+        let unsupported_attributes = [
+            Attributes::new().set_inode(42),
+            Attributes::new().set_kind(Kind::File),
+            Attributes::new().set_links(2),
+            Attributes::new().set_creation(Time::new(1)),
+            Attributes::new().set_modification(Time::new(2)),
+            Attributes::new().set_access(Time::new(3)),
+            Attributes::new().set_status(Time::new(4)),
+            Attributes::new().set_permissions(Permissions::USER_READ_WRITE),
+            Attributes::new().set_user(users::UserIdentifier::new(1000)),
+            Attributes::new().set_group(users::GroupIdentifier::new(1000)),
+            Attributes::new()
+                .set_size(7)
+                .set_user(users::UserIdentifier::new(1000)),
+        ];
+
+        for (index, attributes) in unsupported_attributes.iter().enumerate() {
+            let file_name = format!("rejected-entry-file-{index}");
+            assert_eq!(
+                filesystem.create_file_entry(&root_context, &file_name, attributes),
+                Err(IoErrorKind::Unsupported),
+                "file entry attribute mask {:?}",
+                attributes.get_mask()
+            );
+            assert!(!root.join(&file_name).exists());
+
+            let directory_name = format!("rejected-entry-dir-{index}");
+            assert_eq!(
+                filesystem.create_directory_entry(&root_context, &directory_name, attributes),
+                Err(IoErrorKind::Unsupported),
+                "directory entry attribute mask {:?}",
+                attributes.get_mask()
+            );
+            assert!(!root.join(&directory_name).exists());
+        }
+
+        assert_eq!(
+            filesystem.create_directory_entry(
+                &root_context,
+                "sized-dir",
+                &Attributes::new().set_size(7),
+            ),
+            Err(IoErrorKind::Unsupported)
+        );
+        assert!(!root.join("sized-dir").exists());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn create_symlink_handles_creation_attributes() {
+        let root = temp_root();
+        fs::write(root.join("target"), b"payload").unwrap();
+        let filesystem = HostFileSystem::open(&root, HostFileSystemOptions::default()).unwrap();
+
+        let vfs_symlink_attributes = Attributes::new()
+            .set_kind(Kind::SymbolicLink)
+            .set_user(users::UserIdentifier::new(1000))
+            .set_group(users::GroupIdentifier::new(1000))
+            .set_permissions(Permissions::ALL_FULL);
+
+        filesystem
+            .create_symlink(
+                Path::new("target"),
+                Path::new("/link"),
+                &vfs_symlink_attributes,
+            )
+            .unwrap();
+        assert_eq!(
+            fs::read_link(root.join("link")).unwrap(),
+            PathBuf::from("target")
+        );
+
+        let mut read_back = Attributes::new().set_mask(
+            AttributeFlags::Kind
+                | AttributeFlags::User
+                | AttributeFlags::Group
+                | AttributeFlags::Permissions,
+        );
+        FileSystemOperations::get_attributes(&filesystem, Path::new("/link"), &mut read_back)
+            .unwrap();
+        assert_eq!(read_back.get_kind(), Some(&Kind::SymbolicLink));
+        assert_eq!(read_back.get_user(), Some(&users::UserIdentifier::ROOT));
+        assert_eq!(read_back.get_group(), Some(&users::GroupIdentifier::ROOT));
+        assert_eq!(
+            read_back.get_permissions(),
+            Some(&Permissions::FILE_DEFAULT)
+        );
+
+        assert_eq!(
+            filesystem.create_symlink(
+                Path::new("target"),
+                Path::new("/bad-kind"),
+                &Attributes::new().set_kind(Kind::File),
+            ),
+            Err(IoErrorKind::InvalidArgument)
+        );
+        assert!(fs::symlink_metadata(root.join("bad-kind")).is_err());
+
+        for (index, attributes) in [
+            Attributes::new().set_size(4),
+            Attributes::new().set_inode(42),
+            Attributes::new().set_links(2),
+            Attributes::new().set_creation(Time::new(1)),
+            Attributes::new().set_modification(Time::new(2)),
+            Attributes::new().set_access(Time::new(3)),
+            Attributes::new().set_status(Time::new(4)),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let link_name = format!("rejected-link-{index}");
+            let link_path = format!("/{link_name}");
+            assert_eq!(
+                filesystem.create_symlink(Path::new("target"), Path::new(&link_path), attributes),
+                Err(IoErrorKind::Unsupported),
+                "symlink attribute mask {:?}",
+                attributes.get_mask()
+            );
+            assert!(fs::symlink_metadata(root.join(&link_name)).is_err());
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            let root_context = open_root_entry(&filesystem);
+            filesystem
+                .create_symlink_entry(
+                    Path::new("target"),
+                    &root_context,
+                    "entry-link",
+                    &vfs_symlink_attributes,
+                )
+                .unwrap();
+            assert_eq!(
+                fs::read_link(root.join("entry-link")).unwrap(),
+                PathBuf::from("target")
+            );
+            assert_eq!(
+                filesystem.create_symlink_entry(
+                    Path::new("target"),
+                    &root_context,
+                    "entry-bad-kind",
+                    &Attributes::new().set_kind(Kind::Directory),
+                ),
+                Err(IoErrorKind::InvalidArgument)
+            );
+            assert_eq!(
+                filesystem.create_symlink_entry(
+                    Path::new("target"),
+                    &root_context,
+                    "entry-sized",
+                    &Attributes::new().set_size(4),
+                ),
+                Err(IoErrorKind::Unsupported)
+            );
+            assert!(fs::symlink_metadata(root.join("entry-sized")).is_err());
+        }
+
+        let _ = fs::remove_dir_all(root);
     }
 }
