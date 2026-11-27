@@ -15,7 +15,7 @@ The Espressif firmware (`firmware/espressif`), the native runtime
 
 ```json
 {
-  "shortcut": "xila.clock",
+  "shortcut": "dev.xila.clock",
   "user": "administrator"
 }
 ```

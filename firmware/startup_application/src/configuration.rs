@@ -34,7 +34,7 @@ const MAXIMUM_IDENTIFIER_LENGTH: usize = 128;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Program {
     /// The command and arguments of an installed shortcut, by identifier: a
-    /// bundle identifier such as `xila.clock`, or a native application
+    /// bundle identifier such as `dev.xila.clock`, or a native application
     /// shortcut such as `settings`.
     Shortcut(String),
     /// An explicit command, an absolute executable path, with its arguments.
@@ -273,7 +273,7 @@ mod tests {
         let configuration = Configuration::parse(
             r#"{
                 "$schema": "https://example.invalid/startup.schema.json",
-                "shortcut": "xila.clock",
+                "shortcut": "dev.xila.clock",
                 "user": "administrator"
             }"#,
         )
@@ -281,7 +281,7 @@ mod tests {
         assert_eq!(
             configuration,
             Configuration {
-                program: Program::Shortcut("xila.clock".into()),
+                program: Program::Shortcut("dev.xila.clock".into()),
                 user: "administrator".into(),
             }
         );
@@ -323,20 +323,20 @@ mod tests {
                 ConfigurationError::Syntax,
             ),
             (
-                r#"{"shortcut": "xila.clock"}"#,
+                r#"{"shortcut": "dev.xila.clock"}"#,
                 ConfigurationError::MissingUser,
             ),
             (
-                r#"{"shortcut": "xila.clock", "user": ""}"#,
+                r#"{"shortcut": "dev.xila.clock", "user": ""}"#,
                 ConfigurationError::MissingUser,
             ),
             (r#"{"user": "a"}"#, ConfigurationError::MissingProgram),
             (
-                r#"{"shortcut": "xila.clock", "command": "/x", "user": "a"}"#,
+                r#"{"shortcut": "dev.xila.clock", "command": "/x", "user": "a"}"#,
                 ConfigurationError::AmbiguousProgram,
             ),
             (
-                r#"{"shortcut": "xila.clock", "arguments": [], "user": "a"}"#,
+                r#"{"shortcut": "dev.xila.clock", "arguments": [], "user": "a"}"#,
                 ConfigurationError::ArgumentsWithShortcut,
             ),
             (
@@ -354,7 +354,12 @@ mod tests {
 
     #[test]
     fn identifiers_are_single_safe_names() {
-        for identifier in ["xila.clock", "file_manager", "xila.pixel-painter", "a"] {
+        for identifier in [
+            "dev.xila.clock",
+            "file_manager",
+            "dev.xila.pixel-painter",
+            "a",
+        ] {
             assert!(is_valid_identifier(identifier), "{identifier}");
         }
         for identifier in ["", ".", "..", ".hidden", "a/b", "a\\b", "a b", "é"] {
@@ -366,14 +371,14 @@ mod tests {
     #[test]
     fn bundle_shortcuts_come_before_native_shortcuts() {
         assert_eq!(
-            shortcut_locations("xila.clock"),
+            shortcut_locations("dev.xila.clock"),
             [
                 ShortcutLocation {
-                    path: "/applications/bundles/xila.clock/shortcut.json".into(),
-                    bundle: Some("/applications/bundles/xila.clock".into()),
+                    path: "/applications/bundles/dev.xila.clock/shortcut.json".into(),
+                    bundle: Some("/applications/bundles/dev.xila.clock".into()),
                 },
                 ShortcutLocation {
-                    path: "/configuration/shared/applications/shortcuts/xila.clock.json".into(),
+                    path: "/configuration/shared/applications/shortcuts/dev.xila.clock.json".into(),
                     bundle: None,
                 },
             ]
@@ -392,14 +397,16 @@ mod tests {
 
     #[test]
     fn bundle_shortcuts_resolve_their_paths() {
-        let program = parse_shortcut(CLOCK, Some("/applications/bundles/xila.clock")).unwrap();
+        let program = parse_shortcut(CLOCK, Some("/applications/bundles/dev.xila.clock")).unwrap();
         assert_eq!(
             program,
             ShortcutProgram {
                 command: "/applications/executables/wasm".into(),
-                arguments: vec!["/applications/bundles/xila.clock/executables/clock.wasm".into()],
+                arguments: vec![
+                    "/applications/bundles/dev.xila.clock/executables/clock.wasm".into()
+                ],
                 bundle_files: vec![
-                    "/applications/bundles/xila.clock/executables/clock.wasm".into()
+                    "/applications/bundles/dev.xila.clock/executables/clock.wasm".into()
                 ],
             }
         );

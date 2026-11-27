@@ -50,5 +50,5 @@ sort -u "$platforms/tools/fs_image/profiles/native.txt" "$platforms/tools/fs_ima
     cp "$source_root/packaging/$app.json" "$source_directory/xila-package.json"
     cp "$source_root/executables/$app/shortcut.json" "$source_directory/shortcut.json"
     cp "$wasm_dir/$app.wasm" "$source_directory/executables/$app.wasm"
-    "$builder" bundle build "$source_directory" "$output/xila.${app//_/-}"
+    "$builder" bundle build "$source_directory" "$output/dev.xila.${app//_/-}"
   done

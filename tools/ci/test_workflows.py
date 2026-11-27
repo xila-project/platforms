@@ -258,7 +258,7 @@ class PlatformWorkflowPolicy(unittest.TestCase):
                 output = pathlib.Path(args[args.index('--') + 1])
                 bundles = pathlib.Path(args[args.index('--bundles-dir') + 1])
                 locale = os.environ['EMBEDDED_I18N_LOCALE']
-                assert (bundles / 'xila.calculator/executables/calculator.wasm').read_text() == locale
+                assert (bundles / 'dev.xila.calculator/executables/calculator.wasm').read_text() == locale
                 bundle = args[args.index('--bundle') + 1]
                 with output.open('x') as image:
                     image.write(locale + ':' + bundle)
@@ -281,8 +281,8 @@ class PlatformWorkflowPolicy(unittest.TestCase):
                     ;;
                   ci:bundle-applications)
                     mkdir "$XILA_BUNDLES_DIR"
-                    mkdir -p "$XILA_BUNDLES_DIR/xila.calculator/executables"
-                    cp "$CARGO_TARGET_DIR/wasm32-wasip1/release-wasm/calculator.wasm" "$XILA_BUNDLES_DIR/xila.calculator/executables/"
+                    mkdir -p "$XILA_BUNDLES_DIR/dev.xila.calculator/executables"
+                    cp "$CARGO_TARGET_DIR/wasm32-wasip1/release-wasm/calculator.wasm" "$XILA_BUNDLES_DIR/dev.xila.calculator/executables/"
                     ;;
                   pages:demo)
                     test "$(cat target/seed/wasm/seed.img)" = "$EMBEDDED_I18N_LOCALE:wasm"
