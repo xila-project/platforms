@@ -4,7 +4,7 @@ use core::{
     arch::asm,
     hint::spin_loop,
     ops::Range,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, Ordering, fence},
 };
 
 use ::crash::{BOOT_GUARD_SIZE, BootGuard, ESPRESSIF_RECORD_CAPACITY};
@@ -22,20 +22,46 @@ static mut BOOT_GUARD: [u8; BOOT_GUARD_SIZE] = [0; BOOT_GUARD_SIZE];
 
 static CLAIMED: AtomicBool = AtomicBool::new(false);
 
-/// Take exclusive access to retention until reset. The other core may still run.
+/// Upper bound of the claim spin in the panic path. A core that holds the
+/// claim in boot code releases it within microseconds; a core that panicked
+/// first never releases it, and the panic path must not spin forever with
+/// interrupts disabled.
+const CLAIM_SPIN_BOUND: u32 = 1 << 20;
+
+/// Take access to retention for a panic, until reset. The other core may
+/// still run: when the claim cannot be taken within the spin bound, the
+/// record is written through `Retention::slot_raw` with volatile writes only,
+/// never through a second `&mut` to the shared slot.
 pub fn claim_for_panic() -> Retention {
     // SAFETY: Panic handling never returns to the interrupted code. Disable
     // maskable interrupts without taking the HAL's cross-core lock.
     unsafe { asm!("wsr {mask}, intenable", "rsync", mask = in(reg) 0u32, options(nostack)) };
-    while !try_claim() {
+    for _ in 0..CLAIM_SPIN_BOUND {
+        if try_claim() {
+            return Retention {
+                panic: true,
+                owned: true,
+            };
+        }
         spin_loop();
     }
-    Retention { panic: true }
+    // The other core still holds the claim, for example because it panicked
+    // first and never releases it. Proceeding without the claim is acceptable
+    // only because this path never creates a `&mut` to the shared statics:
+    // two live `&mut` references to one slot would be undefined behavior even
+    // though the magic written last detects the torn record on the next boot.
+    Retention {
+        panic: true,
+        owned: false,
+    }
 }
 
 /// Take temporary exclusive access to retention in normal boot code.
 pub fn try_claim_at_boot() -> Option<Retention> {
-    try_claim().then_some(Retention { panic: false })
+    try_claim().then_some(Retention {
+        panic: false,
+        owned: true,
+    })
 }
 
 fn try_claim() -> bool {
@@ -46,12 +72,51 @@ fn try_claim() -> bool {
 
 pub struct Retention {
     panic: bool,
+    owned: bool,
 }
 
 impl Retention {
-    pub fn slot(&mut self) -> &mut [u8; ESPRESSIF_RECORD_CAPACITY] {
-        // SAFETY: The claim gives this token exclusive access to the slot.
-        unsafe { &mut *(&raw mut RETAINED_RECORD) }
+    /// Whether this token owns the claim and may use `slot` and `guard`.
+    pub fn owns_claim(&self) -> bool {
+        self.owned
+    }
+
+    /// Exclusive access to the retained slot, only when the claim is owned.
+    pub fn slot(&mut self) -> Option<&mut [u8; ESPRESSIF_RECORD_CAPACITY]> {
+        if self.owned {
+            // SAFETY: The claim gives this token exclusive access to the slot:
+            // no other token can hold a reference to it.
+            Some(unsafe { &mut *(&raw mut RETAINED_RECORD) })
+        } else {
+            None
+        }
+    }
+
+    /// The retained slot as a raw pointer, for the panic path that could not
+    /// take the claim. The record must be written through this pointer with
+    /// volatile writes only (`copy_record`): the core that holds the claim may
+    /// have a live `&mut` to the same slot, and a second `&mut` would be
+    /// undefined behavior.
+    pub fn slot_raw(&mut self) -> *mut [u8; ESPRESSIF_RECORD_CAPACITY] {
+        &raw mut RETAINED_RECORD
+    }
+
+    /// Record a crash in the retained guard and return the new count. Without
+    /// the claim, the guard is updated through a local copy and volatile reads
+    /// and writes, so no second `&mut` to the shared guard is created either.
+    pub fn record_crash(&mut self) -> u32 {
+        if self.owned {
+            self.guard().record_crash()
+        } else {
+            let mut local = [0; BOOT_GUARD_SIZE];
+            // SAFETY: Volatile byte reads within the retained guard.
+            unsafe { read_volatile_bytes((&raw mut BOOT_GUARD).cast::<u8>(), &mut local) };
+            let count = BootGuard::new(&mut local).record_crash();
+            // SAFETY: Volatile byte writes within the retained guard; a torn
+            // update is rejected by the guard's magic and checksum.
+            unsafe { write_volatile_bytes((&raw mut BOOT_GUARD).cast::<u8>(), &local) };
+            count
+        }
     }
 
     pub fn guard(&mut self) -> BootGuard<'_> {
@@ -65,6 +130,56 @@ impl Drop for Retention {
         if !self.panic {
             CLAIMED.store(false, Ordering::Release);
         }
+    }
+}
+
+/// Copy bytes from a raw address into a local buffer with volatile reads.
+///
+/// # Safety
+/// The range starting at `source` for `output.len()` bytes must be readable.
+unsafe fn read_volatile_bytes(source: *const u8, output: &mut [u8]) {
+    for (offset, byte) in output.iter_mut().enumerate() {
+        // SAFETY: The caller guarantees the readable range.
+        unsafe { *byte = core::ptr::read_volatile(source.add(offset)) };
+    }
+}
+
+/// Copy bytes to a raw address with volatile writes, then fence.
+///
+/// # Safety
+/// The range starting at `destination` for `source.len()` bytes must be
+/// writable, and no `&mut` to it may be live on any core.
+unsafe fn write_volatile_bytes(destination: *mut u8, source: &[u8]) {
+    for (offset, byte) in source.iter().enumerate() {
+        // SAFETY: The caller guarantees the writable range and the absence of
+        // a live `&mut`; the volatile write keeps the compiler from assuming
+        // exclusive access.
+        unsafe { core::ptr::write_volatile(destination.add(offset), *byte) };
+    }
+    fence(Ordering::SeqCst);
+}
+
+/// Copy a finished record into the retained slot, magic last, with volatile
+/// writes only.
+///
+/// # Safety
+/// `destination` must be the retained record slot, `source` a complete record,
+/// and no `&mut` to the slot may be live on any core: the claim holder may
+/// write through one, and two `&mut` references to the same memory would be
+/// undefined behavior. A record torn by a concurrent write is detected by the
+/// magic and the checksum on the next boot.
+pub unsafe fn copy_record(destination: *mut [u8; ESPRESSIF_RECORD_CAPACITY], source: &[u8]) {
+    let destination = destination.cast::<u8>();
+    let length = source.len().min(ESPRESSIF_RECORD_CAPACITY);
+    let record = &source[..length];
+    if length > 4 {
+        // SAFETY: The caller guarantees a writable slot and no live `&mut`.
+        unsafe { write_volatile_bytes(destination.add(4), &record[4..]) };
+        // SAFETY: The magic goes last, so a present magic means a full record.
+        unsafe { write_volatile_bytes(destination, &record[..4]) };
+    } else {
+        // SAFETY: The caller guarantees a writable slot and no live `&mut`.
+        unsafe { write_volatile_bytes(destination, record) };
     }
 }
 

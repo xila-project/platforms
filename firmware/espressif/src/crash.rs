@@ -7,8 +7,9 @@ use drivers_espressif::crash::{self as retention, Registers};
 use esp_hal::system::{Cpu, software_reset};
 use xila::{
     crash::{
-        Architecture, BuildIdentifier, CRASH_LOOP_LIMIT, Header, Limits, RecordKind, ResetReason,
-        SECONDARY_CORE_UNHALTED, Writer, complete_reset_reason, invalidate,
+        Architecture, BuildIdentifier, CRASH_LOOP_LIMIT, ESPRESSIF_RECORD_CAPACITY, Header, Limits,
+        RecordKind, ResetReason, SECONDARY_CORE_UNHALTED, Writer, complete_reset_reason,
+        invalidate,
     },
     log, task,
 };
@@ -40,17 +41,16 @@ impl Metadata {
 }
 
 /// Copy retention after the hardware and heap start, before mounting storage.
+/// The retained slot stays valid until `release_retained` runs after the
+/// report is durable in storage, so a reset in between cannot lose it.
 pub fn early_boot(metadata: Metadata) -> Option<Box<[u8]>> {
     task::active_task::set_core_identifier_provider(|| Cpu::current() as usize);
     let mut retention = retention::try_claim_at_boot()?;
     let (reason, raw) = retention::current_reset_reason();
-    let slot = retention.slot();
+    let slot = retention.slot()?;
     if let Ok(length) = complete_reset_reason(slot, reason, raw) {
-        let copy = Box::from(&slot[..length]);
-        invalidate(slot.first_chunk_mut().unwrap());
-        return Some(copy);
+        return Some(Box::from(&slot[..length]));
     }
-    invalidate(slot.first_chunk_mut().unwrap());
 
     let (kind, message) = match reason {
         ResetReason::Watchdog => (RecordKind::WatchdogReset, "Watchdog reset"),
@@ -64,13 +64,21 @@ pub fn early_boot(metadata: Metadata) -> Option<Box<[u8]>> {
         consecutive_crashes,
         ..metadata.header(kind)
     };
-    let slot = retention.slot();
+    let slot = retention.slot()?;
     let record = Writer::new(slot, &header, Limits::ESPRESSIF)
         .unwrap()
         .finish(format_args!("{message}"), &[], |_| Some(0));
-    let copy = Box::from(record);
-    invalidate(slot.first_chunk_mut().unwrap());
-    Some(copy)
+    Some(Box::from(record))
+}
+
+/// Invalidate the retained slot once `xila::crash::import` reported the
+/// report durable in storage, so the next boot does not read it again.
+pub fn release_retained() {
+    if let Some(mut retention) = retention::try_claim_at_boot()
+        && let Some(slot) = retention.slot()
+    {
+        invalidate(slot.first_chunk_mut().unwrap());
+    }
 }
 
 /// Clear the crash-loop guard when the sessions have started and uptime is
@@ -96,7 +104,7 @@ pub fn panic(information: &PanicInfo<'_>, metadata: Metadata, summary: impl FnOn
     let core = Cpu::current() as usize;
     let bounds = stack_bounds(core, registers.stack_pointer);
     let active_task = task::active_task::snapshot();
-    let count = retention.guard().record_crash();
+    let count = retention.record_crash();
     let header = Header {
         program_counter: registers.link_register.saturating_sub(3) as u64,
         link_register: registers.link_register as u64,
@@ -116,25 +124,22 @@ pub fn panic(information: &PanicInfo<'_>, metadata: Metadata, summary: impl FnOn
         flags: SECONDARY_CORE_UNHALTED,
         ..metadata.header(RecordKind::KernelPanic)
     };
-    let slot = retention.slot();
-    let mut writer = Writer::new(slot, &header, Limits::ESPRESSIF).unwrap();
-    let mut frame_pointer = registers.stack_pointer;
-    // SAFETY: A main or coroutine stack range is used only after validating
-    // the captured stack pointer against that range.
-    while let Some((address, parent)) = unsafe { retention::caller(frame_pointer, &bounds) } {
-        if !writer.push_frame(address as u64) {
-            break;
+    if retention.owns_claim() {
+        if let Some(slot) = retention.slot() {
+            write_record(slot, &header, &registers, &bounds, information);
         }
-        frame_pointer = parent;
+    } else {
+        // The other core holds the claim and may have a live `&mut` to the
+        // slot, so the record is built in a local buffer and copied into the
+        // slot through the raw pointer with volatile writes only.
+        let mut local = [0; ESPRESSIF_RECORD_CAPACITY];
+        let length = write_record(&mut local, &header, &registers, &bounds, information);
+        // SAFETY: The claim is held by the other core, which may write the
+        // slot through a `&mut`; this path never creates a second `&mut` to
+        // it. The magic is copied last, so a record torn by the concurrent
+        // write is detected on the next boot.
+        unsafe { retention::copy_record(retention.slot_raw(), &local[..length]) };
     }
-    let stack_length = bounds.end.saturating_sub(registers.stack_pointer);
-    writer.finish_with_stack(
-        format_args!("{information}"),
-        stack_length,
-        // SAFETY: The writer clamps the length and never reads above bounds.end.
-        |output| unsafe { retention::copy_stack(registers.stack_pointer, output) },
-        |output| Some(log::snapshot_tail(output)),
-    );
     summary();
     if count < CRASH_LOOP_LIMIT {
         software_reset();
@@ -142,6 +147,36 @@ pub fn panic(information: &PanicInfo<'_>, metadata: Metadata, summary: impl FnOn
     loop {
         core::hint::spin_loop();
     }
+}
+
+/// Write one panic record into `output` and return its length in bytes.
+fn write_record(
+    output: &mut [u8],
+    header: &Header<'_>,
+    registers: &Registers,
+    bounds: &Range<usize>,
+    information: &PanicInfo<'_>,
+) -> usize {
+    let mut writer = Writer::new(output, header, Limits::ESPRESSIF).unwrap();
+    let mut frame_pointer = registers.stack_pointer;
+    // SAFETY: A main or coroutine stack range is used only after validating
+    // the captured stack pointer against that range.
+    while let Some((address, parent)) = unsafe { retention::caller(frame_pointer, bounds) } {
+        if !writer.push_frame(address as u64) {
+            break;
+        }
+        frame_pointer = parent;
+    }
+    let stack_length = bounds.end.saturating_sub(registers.stack_pointer);
+    writer
+        .finish_with_stack(
+            format_args!("{information}"),
+            stack_length,
+            // SAFETY: The writer clamps the length and never reads above bounds.end.
+            |output| unsafe { retention::copy_stack(registers.stack_pointer, output) },
+            |output| Some(log::snapshot_tail(output)),
+        )
+        .len()
 }
 
 fn stack_bounds(core: usize, pointer: usize) -> Range<usize> {

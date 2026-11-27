@@ -546,11 +546,15 @@ async fn start(task_manager: &'static task::Manager) {
     }
     .expect("Failed to load the accounts");
     #[cfg(feature = "crash")]
-    if let Some(report) = pending_crash
-        && let Err(error) =
-            xila::crash::import(virtual_file_system, &report, u64::from(storage.length)).await
-    {
-        log::warning!("Failed to import the retained crash report: {error}");
+    if let Some(report) = pending_crash {
+        match xila::crash::import(virtual_file_system, &report, u64::from(storage.length)).await {
+            // The rename into the crash directory is durable (or the crash
+            // loop limit dropped the report): release the retained slot.
+            Ok(_) => crash::release_retained(),
+            Err(error) => {
+                log::warning!("Failed to import the retained crash report: {error}")
+            }
+        }
     }
 
     // - Graphics, on boards with a screen.
