@@ -25,10 +25,6 @@ tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", compone
 ] }
 run = "cargo fmt --all -- --check"
 
-[tasks."ci:format-toml"]
-tools.taplo = "{{ vars.taplo_version }}"
-run = "taplo format --check"
-
 [tasks."build:native"]
 extends = "ci:rust"
 
@@ -37,16 +33,6 @@ extends = "ci:rust"
 
 [tasks."check:browser"]
 extends = "ci:browser"
-
-[tasks."ci:toolchain"]
-tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal" }
-run = '''
-set -eu
-rustc --version
-if [ -n "${GITHUB_OUTPUT:-}" ]; then
-  echo "version={{ vars.rust_version }}" >> "$GITHUB_OUTPUT"
-fi
-'''
 
 [tasks."ci:build-applications"]
 tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = [
@@ -223,11 +209,6 @@ run = "cargo nextest run --locked -p xila-drivers-std --lib --features profiling
 extends = "ci:rust"
 tools."github:nextest-rs/nextest" = "cargo-nextest-{{ vars.nextest_version }}"
 run = "cargo nextest run --locked -p xila-native-example --bin native_example --features profiling,heaptrack"
-
-[tasks."ci:lint-workflows"]
-tools."aqua:rhysd/actionlint" = "{{ vars.actionlint_version }}"
-tools."aqua:koalaman/shellcheck" = "{{ vars.shellcheck_version }}"
-run = "actionlint"
 
 # Native dependencies are applied only by explicit mise bootstrap tasks.
 [bootstrap.packages]
