@@ -51,6 +51,7 @@ file_system = { workspace = true }
 log = { workspace = true }
 
 [target.'cfg(not(target_os = "none"))'.dev-dependencies]
+io_error.workspace = true
 critical-section = { workspace = true, features = ["std"] }
 linked_list_allocator = { workspace = true }
 testing_support = { workspace = true }
