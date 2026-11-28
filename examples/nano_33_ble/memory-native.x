@@ -6,18 +6,15 @@
    firmware past the default 448 KiB slot, so this layout gives the firmware
    576 KiB (`0x10000..0xA0000`) and leaves 384 KiB (`0xA0000..0x100000`) for
    the LittleFS root file system (96 4-KiB pages, still above the 288 KiB
-   needed by the default Xila directory hierarchy). The `linked-hexdump`
-   feature gives the firmware 592 KiB and leaves 368 KiB for LittleFS.
+   needed by the default Xila directory hierarchy).
 
    RAM: identical to `memory.x`. The bootloader runs at every reset and uses
    the bottom of the RAM, so what must survive a reset (the message of a crash)
    lives in the last 256 bytes, which nothing of the bootloader reaches. */
-PROVIDE(_native_flash_size = 576K);
-
 MEMORY
 {
-  FLASH   : ORIGIN = 0x00010000, LENGTH = _native_flash_size
-  STORAGE : ORIGIN = ORIGIN(FLASH) + LENGTH(FLASH), LENGTH = 960K - LENGTH(FLASH)
+  FLASH   : ORIGIN = 0x00010000, LENGTH = 576K
+  STORAGE : ORIGIN = 0x000A0000, LENGTH = 384K
   RAM     : ORIGIN = 0x20000000, LENGTH = 256K - 256
   CRASH   : ORIGIN = 0x20000000 + 256K - 256, LENGTH = 256
 }

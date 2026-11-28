@@ -314,23 +314,24 @@ async fn run(task_manager: &'static task::Manager) {
     .expect("Failed to mount the executables");
 
     #[cfg(feature = "native-linked")]
-    mount_application_executable(
-        executable_context,
-        virtual_file_system,
-        task,
-        "/applications/executables/c_demo",
-        c_demo::CDemoExecutable,
-    )
-    .await;
-    #[cfg(feature = "linked-hexdump")]
-    mount_application_executable(
-        executable_context,
-        virtual_file_system,
-        task,
-        "/applications/executables/hexdump",
-        hexdump::HexdumpExecutable,
-    )
-    .await;
+    {
+        mount_application_executable(
+            executable_context,
+            virtual_file_system,
+            task,
+            "/applications/executables/c_demo",
+            c_demo::CDemoExecutable,
+        )
+        .await;
+        mount_application_executable(
+            executable_context,
+            virtual_file_system,
+            task,
+            "/applications/executables/hexdump",
+            hexdump::HexdumpExecutable,
+        )
+        .await;
+    }
 
     #[cfg(any(feature = "native-dev", feature = "native-linked"))]
     const PATHS: &str = "/system/executables:/applications/executables";

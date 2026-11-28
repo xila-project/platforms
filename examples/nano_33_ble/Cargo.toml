@@ -16,11 +16,9 @@ bring-up = []
 # executables, with their images in the SRAM heap. It does not sandbox them.
 # Selects `memory-native.x` (576 KiB firmware flash, 384 KiB LittleFS).
 native-dev = ["xila/native-dev"]
-# Statically linked C sample mounted under `/applications/executables`.
+# Statically linked C programs mounted under `/applications/executables`.
 # Selects `memory-native.x` (576 KiB firmware flash, 384 KiB LittleFS).
-native-linked = ["dep:c_demo", "xila/native-linked"]
-# Adds hexdump and gives the firmware 592 KiB, leaving 368 KiB for LittleFS.
-linked-hexdump = ["native-linked", "dep:hexdump"]
+native-linked = ["dep:c_demo", "dep:hexdump", "xila/native-linked"]
 
 [target.'cfg(all(target_arch = "arm", target_os = "none"))'.dependencies]
 # Not the workspace entries: this board has no network, and a workspace member
