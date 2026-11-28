@@ -82,7 +82,8 @@ Profiling metadata and the reporter itself add overhead in feature-enabled runs.
   sizes exclude allocator padding and Xila ABI allocation headers are included
   when the manager receives them. Heaptrack also captures ordinary libc calls.
 
-For before/after consumption comparisons, rebuild with `mise run build:profiling`.
+For before/after consumption comparisons, rebuild without the `profiling` and
+`heaptrack` features with `mise run build:profiling` (it passes no `--features`).
 Repeat `measure` with the same scenario and inputs. Compare medians and
 individual runs. Linux `wait4` CPU accounting includes waited-for children;
 peak RSS is a high-water mark, not a sum of simultaneous process-tree memory.
