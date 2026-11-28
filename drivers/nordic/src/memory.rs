@@ -112,7 +112,7 @@ mod tests {
         manager
     }
 
-    memory::implement_memory_manager_tests!(
+    testing_support::implement_memory_manager_tests!(
         [#[test]], test_manager(),
         capabilities = CapabilityFlags::Executable
             | CapabilityFlags::DirectMemoryAccess
