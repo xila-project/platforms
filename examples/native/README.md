@@ -36,11 +36,8 @@ compilation or bundled application installation. The native bundle includes
 Calculator, Clock, Pixel Painter, Synth and Weather. Updating the reference image does
 not replace applications on existing disks.
 
-The `prebuilt-applications` feature remains accepted for older profiling commands,
-but every build now uses the disk image. `XILA_PROFILE_APP_DIR` remains useful to
-the profiling recorder for hashing source guest binaries; it no longer changes
-runtime loading. See the repository's profiling instructions for preparing and
-selecting a seed before measurement.
+See the [profiling guide](../../tools/profiling/README.md) to prepare and select
+a seed image before measurement.
 
 With the `audio` feature enabled, the example mounts `/devices/audio/playback`
 using the default host audio output, and logs `Native audio ready`. Audio

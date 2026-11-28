@@ -12,7 +12,7 @@ Build before recording, after mise has installed the project tools:
 ```bash
 # Released bundles; for locally built guests set XILA_BUNDLES_DIR (see tools/fs_image).
 mise run image:native
-mise run build:profiling -- --features prebuilt-applications
+mise run build:profiling
 cargo run --manifest-path tools/profiling/Cargo.toml -- measure \
   --scenario terminal-idle --output target/profiles/before --runs 3 --duration 30 \
   --applications-dir /path/to/applications/target/wasm32-wasip1/release-wasm \
@@ -23,10 +23,9 @@ The `profiling` Cargo profile keeps release optimizations and full debug symbols
 If using an explicit Cargo target or custom target directory, adjust the binary
 path. Every native build loads bundled applications from the disk. Prepare the
 reference image before measurement and pass `--seed-image` for a new disk;
-existing disks are mounted without reinstallation. The `prebuilt-applications`
-feature is retained for compatibility. `--applications-dir` and
-`XILA_PROFILE_APP_DIR` let the recorder identify and hash guest build artifacts;
-they no longer cause runtime compilation or copying. See the
+existing disks are mounted without reinstallation. The recorder uses
+`--applications-dir` or `XILA_PROFILE_APP_DIR` to identify and hash guest build
+artifacts. See the
 [native example](../../examples/native/README.md) and [image builder](../fs_image/README.md).
 Measurements still include OS startup; they are not steady-state-only data.
 Use the same disk fixture and settings on each run. A mutable disk can change
@@ -83,9 +82,9 @@ Profiling metadata and the reporter itself add overhead in feature-enabled runs.
   sizes exclude allocator padding and Xila ABI allocation headers are included
   when the manager receives them. Heaptrack also captures ordinary libc calls.
 
-For before/after consumption comparisons, rebuild **without** `profiling` and
-`heaptrack` (retain only `prebuilt-applications` for the OS workload), repeat `measure` with the same scenario/inputs, and compare medians
-and individual runs. Linux `wait4` CPU accounting includes waited-for children;
+For before/after consumption comparisons, rebuild with `mise run build:profiling`.
+Repeat `measure` with the same scenario and inputs. Compare medians and
+individual runs. Linux `wait4` CPU accounting includes waited-for children;
 peak RSS is a high-water mark, not a sum of simultaneous process-tree memory.
 Instrumented CPU/heap runs explain costs; their timings are not uninstrumented
 benchmarks. No heavy profiler is run automatically on PRs or merge groups.
