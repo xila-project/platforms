@@ -12,6 +12,9 @@ rust-version.workspace = true
 # Use the minimal shell (plus the time commands, which operate the real-time
 # clock this firmware mounts); the board Wi-Fi feature adds the network ones.
 command_line_shell = { package = "xila-command-line-shell", git = "https://github.com/xila-project/applications", branch = "main", default-features = false, features = [
+  "completion",
+  "history",
+  "line-editing",
   "time-commands",
 ] }
 critical-section = { workspace = true }
