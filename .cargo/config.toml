@@ -1,3 +1,7 @@
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
 [target.xtensa-esp32-none-elf]
 # ESP32 revision v1.x can lose PSRAM writes without the cache workaround
 # (erratum CPU-3.9). The C code gets the same workaround from the board build

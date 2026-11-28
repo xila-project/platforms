@@ -15,6 +15,7 @@ rust = { version = "{{ vars.rust_version }}", profile = "minimal", components = 
 
 [bootstrap.packages]
 "apt:clang" = "latest"
+"apt:mold" = "latest"
 "apt:pkg-config" = "latest"
 "apt:libasound2-dev" = "latest"
 "apt:libudev-dev" = "latest"
