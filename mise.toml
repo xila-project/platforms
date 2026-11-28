@@ -16,6 +16,16 @@ pyyaml_version = "6.0.3"
 # Same binaryen release as Applications' build:applications (wasm-opt).
 binaryen_version = "133"
 
+[env]
+# Every build of this repository describes the final firmware, not Core: the
+# short Platforms commit pins every other repository through Cargo.lock, so
+# Core reads it as XILA_BUILD_COMMIT, with a -dirty suffix on local changes.
+XILA_BUILD_COMMIT = "{{ exec(command='tools/dev/build_information.sh commit') }}"
+# Reproducible builds: the commit time of HEAD as SOURCE_DATE_EPOCH, which the
+# firmware build scripts already read for XILA_BUILD_EPOCH, unless the caller
+# set the variable.
+SOURCE_DATE_EPOCH = "{{ env.SOURCE_DATE_EPOCH | default(value=exec(command='tools/dev/build_information.sh epoch')) }}"
+
 [tasks."build:native"]
 description = "Build the native runtime"
 run = "cargo build --locked -p xila-native-example"
