@@ -232,6 +232,7 @@ run = "actionlint"
 # Native dependencies are applied only by explicit mise bootstrap tasks.
 [bootstrap.packages]
 "apt:clang" = { env = "ci" }
+"apt:mold" = { env = "ci" }
 "apt:libclang-dev" = { env = "ci" }
 "apt:libgcrypt20" = { env = "espressif" }
 "apt:libpixman-1-0" = { env = "espressif" }
