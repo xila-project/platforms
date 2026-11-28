@@ -7,8 +7,9 @@ use drivers_espressif::crash::{self as retention, Registers};
 use esp_hal::system::{Cpu, software_reset};
 use xila::{
     crash::{
-        Architecture, BuildIdentifier, CRASH_LOOP_LIMIT, Header, Limits, RecordKind, ResetReason,
-        SECONDARY_CORE_UNHALTED, Writer, complete_reset_reason, invalidate,
+        Architecture, BuildIdentifier, CRASH_LOOP_LIMIT, ESPRESSIF_RECORD_CAPACITY, Header, Limits,
+        RawWriter, RecordKind, ResetReason, SECONDARY_CORE_UNHALTED, Writer, complete_reset_reason,
+        invalidate,
     },
     log, task,
 };
@@ -130,26 +131,27 @@ pub fn panic(information: &PanicInfo<'_>, metadata: Metadata, summary: impl FnOn
         flags,
         ..metadata.header(RecordKind::KernelPanic)
     };
-    // Write the record directly into the retained slot in both the owned and
-    // the unowned case: the panic stack budget is 512 bytes
-    // (xila-project/core#900), so the record is never staged on the stack.
-    // `Writer` commits it with the magic written last through volatile stores
-    // and fences, so a record torn by a concurrent write is rejected on the
-    // next boot.
+    // Write the record directly into the retained slot in both cases: the
+    // panic stack budget is 512 bytes (xila-project/core#900), so the record
+    // is never staged on the stack. The owned path uses the exclusive slot
+    // reference; the unowned path uses the raw writer, which touches the slot
+    // only with volatile reads and writes through the raw cursor.
     if retention.owns_claim() {
         if let Some(slot) = retention.slot() {
             write_record(slot, &header, &registers, &bounds, information);
         }
     } else {
-        // SAFETY: The claim is held by the other core, which may be writing
-        // the slot through its own reference right now. This path writes the
-        // record directly into the slot through the raw cursor instead of
-        // staging a copy: the concurrent-write window is bounded (the claim
-        // holder resets the chip immediately after committing), the magic is
-        // written last with volatile stores, and the CRC-32 is verified when
-        // the record is read, so a torn record never imports.
-        let output: &mut [u8] = unsafe { &mut *retention.slot_raw() };
-        write_record(output, &header, &registers, &bounds, information);
+        // SAFETY: The claim is held by the other core, which may hold a live
+        // `&mut` to the slot from `slot()`: no Rust reference to the slot is
+        // created without the claim, because two live `&mut` references to the
+        // same memory would be undefined behavior. The raw writer writes
+        // every field with volatile stores through the raw cursor, computes
+        // the checksum over a volatile read-back, and commits the magic last
+        // between fences. The concurrent-write window is bounded (the claim
+        // holder resets the chip right after committing), and a record torn by
+        // the concurrent write fails the checksum on the next boot.
+        let slot = retention.slot_raw();
+        write_record_raw(slot, &header, &registers, &bounds, information);
     }
     summary();
     if count < CRASH_LOOP_LIMIT {
@@ -160,24 +162,16 @@ pub fn panic(information: &PanicInfo<'_>, metadata: Metadata, summary: impl FnOn
     }
 }
 
-/// Write one panic record into `output`, which is the retained slot itself.
+/// Write one panic record into the exclusively owned slot.
 fn write_record(
-    output: &mut [u8],
+    slot: &mut [u8],
     header: &Header<'_>,
     registers: &Registers,
     bounds: &Range<usize>,
     information: &PanicInfo<'_>,
 ) {
-    let mut writer = Writer::new(output, header, Limits::ESPRESSIF).unwrap();
-    let mut frame_pointer = registers.stack_pointer;
-    // SAFETY: A main or coroutine stack range is used only after validating
-    // the captured stack pointer against that range.
-    while let Some((address, parent)) = unsafe { retention::caller(frame_pointer, bounds) } {
-        if !writer.push_frame(address as u64) {
-            break;
-        }
-        frame_pointer = parent;
-    }
+    let mut writer = Writer::new(slot, header, Limits::ESPRESSIF).unwrap();
+    write_frames(&mut writer, registers, bounds);
     let stack_length = bounds.end.saturating_sub(registers.stack_pointer);
     writer.finish_with_stack(
         format_args!("{information}"),
@@ -186,6 +180,73 @@ fn write_record(
         |output| unsafe { retention::copy_stack(registers.stack_pointer, output) },
         |output| Some(log::snapshot_tail(output)),
     );
+}
+
+/// Write one panic record into the retained slot through the raw writer,
+/// without creating any Rust reference to the slot.
+fn write_record_raw(
+    slot: *mut [u8; ESPRESSIF_RECORD_CAPACITY],
+    header: &Header<'_>,
+    registers: &Registers,
+    bounds: &Range<usize>,
+    information: &PanicInfo<'_>,
+) {
+    // SAFETY: The slot is the retained record slot; the panic path without the
+    // claim guarantees that no reference to it is created here, so the raw
+    // writer's volatile accesses are the only ones in flight.
+    let mut writer = unsafe {
+        RawWriter::new(
+            slot.cast::<u8>(),
+            ESPRESSIF_RECORD_CAPACITY,
+            header,
+            Limits::ESPRESSIF,
+        )
+    }
+    .unwrap();
+    write_frames(&mut writer, registers, bounds);
+    let stack_length = bounds.end.saturating_sub(registers.stack_pointer);
+    writer.finish_with_stack(
+        format_args!("{information}"),
+        stack_length,
+        // SAFETY: The writer clamps the length and never reads above bounds.end.
+        |output, length| unsafe {
+            retention::copy_stack_raw(registers.stack_pointer, output, length)
+        },
+        |output, length| {
+            // SAFETY: The window is into the retained slot and is valid for
+            // `length` bytes; no reference to it is created.
+            Some(unsafe { log::snapshot_tail_raw(output, length) })
+        },
+    );
+}
+
+trait FrameSink {
+    fn push_frame(&mut self, address: u64) -> bool;
+}
+
+impl FrameSink for Writer<'_> {
+    fn push_frame(&mut self, address: u64) -> bool {
+        Writer::push_frame(self, address)
+    }
+}
+
+impl FrameSink for RawWriter {
+    fn push_frame(&mut self, address: u64) -> bool {
+        RawWriter::push_frame(self, address)
+    }
+}
+
+/// Walk the captured frames into the record writer.
+fn write_frames(sink: &mut impl FrameSink, registers: &Registers, bounds: &Range<usize>) {
+    let mut frame_pointer = registers.stack_pointer;
+    // SAFETY: A main or coroutine stack range is used only after validating
+    // the captured stack pointer against that range.
+    while let Some((address, parent)) = unsafe { retention::caller(frame_pointer, bounds) } {
+        if !sink.push_frame(address as u64) {
+            break;
+        }
+        frame_pointer = parent;
+    }
 }
 
 fn stack_bounds(core: usize, pointer: usize) -> Range<usize> {

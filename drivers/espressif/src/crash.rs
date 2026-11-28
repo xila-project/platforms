@@ -29,10 +29,11 @@ static CLAIMED: AtomicBool = AtomicBool::new(false);
 const CLAIM_SPIN_BOUND: u32 = 1 << 20;
 
 /// Take access to retention for a panic, until reset. The other core may
-/// still run: when the claim cannot be taken within the spin bound, the
-/// record is written directly into the slot through the raw cursor of
-/// `Retention::slot_raw`, with the magic committed last, and never staged
-/// in a buffer on the panic stack.
+/// still run: when the claim cannot be taken within the spin bound, no Rust
+/// reference to the slot is created without the claim; the record is written
+/// directly into the slot through the raw cursor of `Retention::slot_raw`
+/// with volatile writes only, and never staged in a buffer on the panic
+/// stack.
 pub fn claim_for_panic() -> Retention {
     // SAFETY: Panic handling never returns to the interrupted code. Disable
     // maskable interrupts without taking the HAL's cross-core lock.
@@ -48,11 +49,12 @@ pub fn claim_for_panic() -> Retention {
     }
     // The other core still holds the claim, for example because it panicked
     // first and never releases it. Proceeding without the claim is acceptable
-    // only because this path writes through the raw cursor of `slot_raw` and
-    // commits the magic last: the concurrent-write window is bounded (the
-    // claim holder resets the chip right after committing) and a record torn
-    // by the concurrent write is rejected by the magic and the checksum on
-    // the next boot.
+    // only because this path never creates a Rust reference to the slot (in
+    // particular no second `&mut`, which would be undefined behavior while
+    // the claim holder may have a live one): the record is written through
+    // the raw cursor of `slot_raw` with volatile writes only, the magic is
+    // committed last between fences, and a record torn by the concurrent
+    // write is rejected by the checksum on the next boot.
     Retention {
         panic: true,
         owned: false,
@@ -96,11 +98,13 @@ impl Retention {
     }
 
     /// The retained slot as a raw pointer, for the panic path that could not
-    /// take the claim. The record is written directly into the slot through
-    /// this raw cursor: the core that holds the claim may have a live `&mut`
-    /// to the same slot, so no staging copy is made and the write is
-    /// committed with the magic last, which a concurrent write tears in a
-    /// way the checksum rejects on the next boot.
+    /// take the claim. The contract is that no Rust reference to the slot is
+    /// created without the claim: the core that holds the claim may have a
+    /// live `&mut` to the same slot, and a second reference would be undefined
+    /// behavior. The record is written directly into the slot through this
+    /// raw cursor with volatile writes only, committed with the magic last
+    /// between fences, so a concurrent write tears the record in a way the
+    /// checksum rejects on the next boot.
     pub fn slot_raw(&mut self) -> *mut [u8; ESPRESSIF_RECORD_CAPACITY] {
         &raw mut RETAINED_RECORD
     }
@@ -337,5 +341,30 @@ pub unsafe fn copy_stack(address: usize, output: &mut [u8]) {
             );
         }
         *byte = value as u8;
+    }
+}
+
+/// Copy stack bytes into the retained slot through a raw pointer with
+/// volatile writes, for the panic path that could not take the claim: no Rust
+/// reference to the slot may be created without the claim.
+///
+/// # Safety
+/// The range starting at `address` for `length` bytes must be readable, and
+/// `output..output.add(length)` must be writable with no live reference to it.
+pub unsafe fn copy_stack_raw(address: usize, output: *mut u8, length: usize) {
+    for offset in 0..length {
+        let value: u32;
+        // SAFETY: The caller established the readable range. Assembly can
+        // read padding.
+        unsafe {
+            asm!(
+                "l8ui {value}, {address}, 0",
+                address = in(reg) address + offset,
+                value = out(reg) value,
+                options(readonly, nostack),
+            );
+        }
+        // SAFETY: The caller established the writable, unreferenced range.
+        unsafe { core::ptr::write_volatile(output.add(offset), value as u8) };
     }
 }
