@@ -439,6 +439,9 @@ async fn lvgl_partial_display_redraws_after_viewport_rotation() {
         .unwrap();
     let pixel = |x, y| context.get_image_data(x, y, 1.0, 1.0).unwrap().data().0;
 
+    // SAFETY: this test runs a standalone LVGL instance on the single-threaded
+    // browser runtime: no manager and no other task touches LVGL, and the
+    // display creation, inspection and destruction stay inside this scope.
     unsafe {
         lvgl::lv_init();
         let display =

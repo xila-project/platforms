@@ -79,6 +79,19 @@ const FLASH_FREQUENCY: FlashFreq = FlashFreq::FlashFreq80m;
 fn main() -> ! {
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CPU_CLOCK));
     let heap = firmware::initialize_heap();
+    #[cfg(feature = "bluetooth")]
+    {
+        use core::{mem::MaybeUninit, ptr::addr_of_mut};
+
+        // The radio adds internal code and data. Move 24 KiB of heap out of
+        // the main stack bank into SRAM reclaimed after the bootloader exits.
+        #[unsafe(link_section = ".dram2_uninit")]
+        static mut RECLAIMED_HEAP: [MaybeUninit<u8>; 24 * 1024] =
+            [MaybeUninit::uninit(); 24 * 1024];
+        // SAFETY: The linker reserves this SRAM slice for the heap. It is
+        // DMA-capable, accessible with the cache suspended and initialized once.
+        assert!(unsafe { heap.init_reclaimed_internal(&mut *addr_of_mut!(RECLAIMED_HEAP)) });
+    }
 
     // Quad SPI PSRAM. Probing for octal PSRAM first, as the automatic mode
     // does, would drive pins the module does not use for it.
@@ -185,6 +198,8 @@ fn main() -> ! {
         board,
         drivers_espressif::wifi::Hardware::Station(drivers_espressif::wifi::Peripherals {
             radio: peripherals.WIFI,
+            #[cfg(feature = "bluetooth")]
+            bluetooth: peripherals.BT,
             scheduler_timer: peripherals.TIMG0,
             scheduler_interrupt: peripherals.FROM_CPU_INTR0,
         }),

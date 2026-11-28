@@ -30,15 +30,19 @@ async fn main() {
 
     let _task = task_instance.get_current_task_identifier().await;
 
-    let graphics = graphics::initialize(
-        time_manager,
-        Box::leak(Box::new(screen_device)),
-        Box::leak(Box::new(pointer_device)),
-        InputKind::Pointer,
-        BUFFER_SIZE,
-        true,
-    )
-    .await;
+    // Keep the manager alive for the lifetime of its window: create_window
+    // needs a static manager, so leak it like the examples do.
+    let graphics: &'static graphics::Manager = Box::leak(Box::new(
+        graphics::initialize(
+            time_manager,
+            Box::leak(Box::new(screen_device)),
+            Box::leak(Box::new(pointer_device)),
+            InputKind::Pointer,
+            BUFFER_SIZE,
+            true,
+        )
+        .await,
+    ));
 
     graphics
         .add_input_device(Box::leak(Box::new(keyboard_device)), InputKind::Keypad)
@@ -52,33 +56,42 @@ async fn main() {
         .await
         .unwrap();
 
-    let mut window = graphics.create_window().await.unwrap();
-
-    let window = window.as_object_mutable();
-
-    let _calendar = unsafe { lvgl::lv_calendar_create(window) };
-
-    let button = unsafe { lvgl::lv_button_create(window) };
-
-    let label = unsafe { lvgl::lv_label_create(button) };
-
-    let slider = unsafe { lvgl::lv_slider_create(window) };
-
     unsafe extern "C" fn quit(_event: *mut lvgl::lv_event_t) {
         exit(0);
     }
 
-    unsafe {
-        lvgl::lv_obj_set_align(slider, lvgl::lv_align_t_LV_ALIGN_LEFT_MID);
-        lvgl::lv_obj_set_align(button, lvgl::lv_align_t_LV_ALIGN_CENTER);
-        lvgl::lv_label_set_text(label, c"Quit".as_ptr());
-        lvgl::lv_obj_add_event_cb(
-            button,
-            Some(quit),
-            lvgl::lv_event_code_t_LV_EVENT_CLICKED,
-            null_mut(),
-        );
-    }
+    // Create the window and its contents in the same locked section. The
+    // leaked manager outlives the window, which the event loop keeps alive
+    // until the demonstration quits.
+    let _window = {
+        let mut guard = graphics.lock().await;
+        let window = guard
+            .with_lvgl(|lvgl| graphics.create_window(lvgl))
+            .unwrap()
+            .unwrap();
+        let window_object = window.as_object();
+        // SAFETY: the guard holds the graphics lock and the window is live.
+        unsafe {
+            let _calendar = lvgl::lv_calendar_create(window_object);
+
+            let button = lvgl::lv_button_create(window_object);
+
+            let label = lvgl::lv_label_create(button);
+
+            let slider = lvgl::lv_slider_create(window_object);
+
+            lvgl::lv_obj_set_align(slider, lvgl::lv_align_t_LV_ALIGN_LEFT_MID);
+            lvgl::lv_obj_set_align(button, lvgl::lv_align_t_LV_ALIGN_CENTER);
+            lvgl::lv_label_set_text(label, c"Quit".as_ptr());
+            lvgl::lv_obj_add_event_cb(
+                button,
+                Some(quit),
+                lvgl::lv_event_code_t_LV_EVENT_CLICKED,
+                null_mut(),
+            );
+        }
+        window
+    };
 
     graphics.r#loop(task::Manager::sleep).await.unwrap();
 }

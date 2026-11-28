@@ -239,6 +239,7 @@ pub(super) async fn run(
     mut peripherals: Peripherals,
     heap: &'static MemoryManager,
     file_system: &'static VirtualFileSystem,
+    #[cfg(feature = "bluetooth")] task_manager: &'static task::Manager,
     task: TaskIdentifier,
     profile: Option<Profile>,
 ) {
@@ -264,6 +265,8 @@ pub(super) async fn run(
     let timer_group = TimerGroup::new(peripherals.scheduler_timer);
     let mut scheduler = Some((timer_group.timer0, peripherals.scheduler_interrupt));
     let mut watchdog = timer_group.wdt;
+    #[cfg(feature = "bluetooth")]
+    let mut bluetooth = Some(peripherals.bluetooth);
     loop {
         if !start_now {
             // Only enabling the radio is accepted while it is off.
@@ -324,6 +327,14 @@ pub(super) async fn run(
             state.error = WifiConnectionErrorKind::NONE;
             state.busy = true;
         });
+        #[cfg(feature = "bluetooth")]
+        if let Some(peripheral) = bluetooth.take() {
+            if let Err(error) =
+                super::bluetooth::start(peripheral, heap, file_system, task_manager, task).await
+            {
+                log::warning!("Bluetooth: startup failed ({error})");
+            }
+        }
         let mut retry = Retry::new();
         let mut connection = preferred.clone();
         if let Some(station) = &connection {
@@ -348,7 +359,7 @@ pub(super) async fn run(
             retry,
         )
         .await;
-        // Deinitializing the controller shuts down Wi-Fi and the modem clocks.
+        // The radio stays powered if Bluetooth still holds a radio reference.
         allocation::internal(|| drop(radio));
         update_state(|state| {
             state.radio = WifiRadioState::OFF;

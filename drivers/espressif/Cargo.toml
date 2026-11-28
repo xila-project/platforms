@@ -8,6 +8,7 @@ rust-version.workspace = true
 # nothing, so the Platforms workspace stays checkable on x86_64.
 [target.'cfg(any(target_arch = "xtensa", target_arch = "riscv32"))'.dependencies]
 aligned = { version = "0.4", optional = true }
+bluetooth = { package = "xila-bluetooth", git = "https://github.com/xila-project/core", branch = "main", optional = true }
 block-device-driver = { version = "0.2", optional = true }
 critical-section = { workspace = true }
 drivers_peripherals = { workspace = true, optional = true }
@@ -168,6 +169,8 @@ wifi = [
   "dep:time",
   "dep:virtual_file_system",
 ]
+
+bluetooth = ["wifi", "dep:bluetooth", "esp-radio/ble", "esp-radio/coex"]
 
 # Supported Espressif chips (esp-hal 1.2.2). Enable exactly one; without one
 # the crate is empty.

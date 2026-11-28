@@ -22,6 +22,8 @@ extern crate alloc;
 mod applications;
 #[cfg(feature = "display")]
 pub mod backlight;
+#[cfg(feature = "bluetooth")]
+mod bluetooth_scan;
 mod board;
 mod flash;
 #[cfg(feature = "display")]
@@ -63,8 +65,10 @@ pub use sd_card::{OpenedSdCard, SdCardSlot};
 pub const HEAP_SIZE: usize = 256 * 1024;
 // The radio and scheduler add internal code and data. Leave room for the
 // executor's main stack in the shared instruction/data SRAM bank.
-#[cfg(feature = "wifi")]
+#[cfg(all(feature = "wifi", not(feature = "bluetooth")))]
 pub const HEAP_SIZE: usize = 188 * 1024;
+#[cfg(feature = "bluetooth")]
+pub const HEAP_SIZE: usize = 164 * 1024;
 static mut HEAP: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
 
 /// LittleFS cache: a divisor of the 4096-byte flash page.
@@ -680,6 +684,11 @@ async fn start(task_manager: &'static task::Manager) {
         task,
         &[
             (&SHELL_PATH, command_line_shell::ShellExecutable),
+            #[cfg(feature = "bluetooth")]
+            (
+                &"/system/executables/bluetooth_scan",
+                bluetooth_scan::BluetoothScan
+            ),
             (&GRAPHICAL_SHELL_PATH, graphical_shell::ShellExecutable),
         ]
     )
