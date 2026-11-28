@@ -51,9 +51,9 @@ jobs:
   deep:
     name: Deep validation for release tag
     if: startsWith(github.ref, 'refs/tags/v')
-    uses: xila-project/core/.github/workflows/extended.yml@48ea1046fd8619c8d852dba81fac8b084bc10e1e
+    uses: xila-project/core/.github/workflows/extended.yml@a6e9882b0b2a963253028267cf4c92bf27c3168c
     with:
-      core_ref: 48ea1046fd8619c8d852dba81fac8b084bc10e1e
+      core_ref: a6e9882b0b2a963253028267cf4c92bf27c3168c
     secrets: inherit
 
   runtime-pr:
@@ -178,7 +178,7 @@ jobs:
         (startsWith(github.ref, 'refs/tags/v') &&
          needs.primary.result == 'success' &&
          needs.deep.result == 'success' &&
-         needs.deep.outputs.validated-sha == '48ea1046fd8619c8d852dba81fac8b084bc10e1e')
+         needs.deep.outputs.validated-sha == 'a6e9882b0b2a963253028267cf4c92bf27c3168c')
       )
     runs-on: ubuntu-latest
     timeout-minutes: 60
