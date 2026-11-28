@@ -1,4 +1,7 @@
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+use xila::task;
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod cli;
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -16,7 +19,6 @@ const CPU_NN_LOADER_MAXIMUM_MODEL_SIZE: usize = 4 * 1024 * 1024;
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 #[xila::task::run(
-    task_path = xila::task,
     executor = drivers_std::executor::instantiate_static_executor!(),
     manager = &TASK_MANAGER
 )]
@@ -39,7 +41,6 @@ async fn main(task_manager: &'static xila::task::Manager) {
     use xila::little_fs;
     use xila::log;
     use xila::network::{self, ADD_DNS_SERVER, ADD_IP_ADDRESS, ADD_ROUTE};
-    use xila::task;
     use xila::time;
     use xila::users;
     use xila::virtual_file_system;

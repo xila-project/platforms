@@ -84,7 +84,6 @@ fn entry() -> ! {
 }
 
 #[xila::task::run(
-    task_path = xila::task,
     executor = drivers_nordic::executor::instantiate_static_executor!(),
     manager = &TASK_MANAGER
 )]

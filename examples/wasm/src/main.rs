@@ -60,6 +60,9 @@ mod power;
 mod storage;
 
 #[cfg(target_arch = "wasm32")]
+use xila::task;
+
+#[cfg(target_arch = "wasm32")]
 static TASK_MANAGER: xila::task::Manager = xila::task::Manager::new();
 
 /// Maximum model size accepted by the dynamic CPU neural network loader (2 MiB).
@@ -68,7 +71,6 @@ const CPU_NN_LOADER_MAXIMUM_MODEL_SIZE: usize = 2 * 1024 * 1024;
 
 #[cfg(target_arch = "wasm32")]
 #[xila::task::run(
-    task_path = xila::task,
     executor = drivers_wasm::executor::instantiate_static_executor!(),
     manager = &TASK_MANAGER
 )]
@@ -93,7 +95,6 @@ async fn main(task_manager: &'static xila::task::Manager) {
     use xila::file_system::mbr::Mbr;
     use xila::file_system::{IoErrorKind, Path};
     use xila::log;
-    use xila::task;
     use xila::time::{self, Duration};
     use xila::virtual_file_system::mount_static;
     use xila::{authentication, graphics, users, virtual_file_system};

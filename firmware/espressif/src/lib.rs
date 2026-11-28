@@ -201,7 +201,6 @@ pub fn run(board: Board) -> ! {
 const BOOTSPLASH_MINIMUM_DURATION: Duration = Duration::from_secs(1);
 
 #[xila::task::run(
-    task_path = xila::task,
     executor = drivers_espressif::executor::Executor::take(),
     manager = &TASK_MANAGER
 )]
