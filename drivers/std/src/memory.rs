@@ -517,7 +517,7 @@ mod tests {
         assert_eq!(round_page_size(page_size * 2, page_size), page_size * 2);
     }
 
-    memory::implement_memory_manager_tests!(
+    testing_support::implement_memory_manager_tests!(
         [#[test]], MemoryManager::new(),
         capabilities = CapabilityFlags::Executable | CapabilityFlags::AlwaysAccessible
     );

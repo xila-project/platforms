@@ -187,7 +187,7 @@ mod tests {
         })))
     }
 
-    memory_exported::implement_memory_manager_tests!(
+    testing_support::implement_memory_manager_tests!(
         [#[wasm_bindgen_test::wasm_bindgen_test]], test_manager(),
         capabilities = CapabilityFlags::AlwaysAccessible
     );

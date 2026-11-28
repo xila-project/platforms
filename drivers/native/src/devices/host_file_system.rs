@@ -1597,9 +1597,9 @@ mod tests {
     fn satisfies_generic_filesystem_metadata_contract() {
         let root = temp_root();
         let filesystem = HostFileSystem::open(&root, HostFileSystemOptions::default()).unwrap();
-        file_system::tests::test_attribute_operations_with_capabilities(
+        testing::file_system_tests::test_attribute_operations_with_capabilities(
             &filesystem,
-            file_system::tests::FileSystemTestCapabilities {
+            testing::file_system_tests::FileSystemTestCapabilities {
                 readable: AttributeFlags::Inode
                     | AttributeFlags::Kind
                     | AttributeFlags::Size

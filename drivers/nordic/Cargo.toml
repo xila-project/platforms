@@ -52,6 +52,7 @@ log = { workspace = true }
 [target.'cfg(not(target_os = "none"))'.dev-dependencies]
 critical-section = { workspace = true, features = ["std"] }
 linked_list_allocator = { workspace = true }
+testing_support = { workspace = true }
 memory = { workspace = true }
 native_loader = { workspace = true }
 synchronization = { workspace = true }

@@ -88,6 +88,7 @@ web-sys = { version = "0.3.64", features = [
 js-sys = "0.3"
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+testing_support = { workspace = true }
 wasm-bindgen-test = "0.3"
 little_fs = { workspace = true }
 xila = { workspace = true }
