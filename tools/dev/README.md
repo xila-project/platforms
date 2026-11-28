@@ -12,6 +12,13 @@ are driven by the `mise` tasks documented in the
 [repository README](../../README.md); the board helpers below are run by
 hand against real hardware.
 
+`build_information.sh` is not run by hand: the `[env]` templates of
+`mise.toml` call it to export `XILA_BUILD_COMMIT` (the short commit of HEAD,
+with a `-dirty` suffix on local changes) and `SOURCE_DATE_EPOCH` (the commit
+time of HEAD, unless the caller set it) for every task, so that builds carry
+the build date and commit that Core's `about` module and the Settings
+application show.
+
 ## Board serial helpers
 
 All three helpers talk to the board's UART console (115200 baud, 8N1, raw)
