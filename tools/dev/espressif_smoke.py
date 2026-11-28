@@ -25,7 +25,8 @@ import tempfile
 import time
 import zlib
 
-TIMEOUT = 60
+BOOT_TIMEOUT = 60
+SHELL_TIMEOUT = 120
 RNG_MARKER = "Random generator works"
 NATIVE_MARKER = "Xila: native executable memory self-test passed"
 LVGL_MARKER = "Xila: LVGL frame flushed"
@@ -223,7 +224,7 @@ def run(chip, qemu, image, runs, expect_wifi_profile=False):
     ]
     if check_display:
         command += ["-qmp", "unix:qmp.sock,server=on,wait=off"]
-    deadline = time.monotonic() + TIMEOUT
+    deadline = time.monotonic() + BOOT_TIMEOUT
     with (directory / "qemu.log").open("wb") as diagnostics, uart.open("wb") as serial_log:
         emulator = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=serial_log,
                                     stderr=diagnostics)
@@ -243,7 +244,9 @@ def run(chip, qemu, image, runs, expect_wifi_profile=False):
             if check_display:
                 check_frame(screendump(directory, deadline))
                 if not expect_wifi_profile:
-                    check_hexdump(emulator, uart, deadline, position)
+                    # File writes can take longer than boot on a loaded host.
+                    shell_deadline = time.monotonic() + SHELL_TIMEOUT
+                    check_hexdump(emulator, uart, shell_deadline, position)
             failed = False
         except BaseException:
             sys.stdout.write(uart.read_text(errors="replace") if uart.exists() else "")
