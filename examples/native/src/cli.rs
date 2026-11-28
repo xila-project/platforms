@@ -27,6 +27,7 @@ pub struct Config {
     pub display_driver: DisplayDriver,
     pub resolution: (i16, i16),
     pub disk_path: String,
+    pub crash_file: Option<String>,
     pub seed_image: String,
     pub disk_size: u64,
     pub interface_name: String,
@@ -69,6 +70,9 @@ struct Arguments<'a> {
         allow_hyphen_values = true
     )]
     disk_path: &'a str,
+    /// Pending crash file (default: append .crash.pending to the disk path).
+    #[arg(long, value_name = "PATH", value_parser = non_empty)]
+    crash_file: Option<&'a str>,
     /// Reference image imported only when the backing disk is absent.
     #[arg(
         long = "seed-image",
@@ -124,6 +128,7 @@ where
         display_driver: arguments.display_driver.unwrap_or_default(),
         resolution: arguments.resolution,
         disk_path: arguments.disk_path.to_string(),
+        crash_file: arguments.crash_file.map(str::to_string),
         seed_image: arguments.seed_image.to_string(),
         disk_size: arguments.disk_size,
         interface_name: arguments.interface_name.to_string(),

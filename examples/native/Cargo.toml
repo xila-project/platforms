@@ -13,7 +13,7 @@ xila = { workspace = true, features = [
 ] }
 c_demo = { workspace = true }
 file_manager = { workspace = true }
-command_line_shell = { workspace = true }
+command_line_shell = { workspace = true, features = ["crash-command"] }
 graphical_shell = { workspace = true }
 wasm = { workspace = true, features = ["host", "graphics"] }
 terminal = { workspace = true }
@@ -24,7 +24,7 @@ activity = { workspace = true }
 package = { workspace = true }
 drivers_core = { workspace = true }
 drivers_peripherals = { workspace = true }
-drivers_std = { workspace = true }
+drivers_std = { workspace = true, features = ["crash"] }
 drivers_shared = { workspace = true }
 drivers_native = { workspace = true }
 drivers_headless = { workspace = true }

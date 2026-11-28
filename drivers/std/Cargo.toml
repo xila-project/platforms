@@ -6,6 +6,9 @@ rust-version.workspace = true
 
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
 file_system = { workspace = true }
+crash = { package = "xila-crash", git = "https://github.com/xila-project/core", branch = "main", features = [
+  "persistence",
+], optional = true }
 io_error = { workspace = true }
 log = { workspace = true }
 memory = { workspace = true }
@@ -32,7 +35,14 @@ embassy-executor = { workspace = true, default-features = false, features = [
 smoltcp = { workspace = true, features = ["phy-tuntap_interface"] }
 miniserde = { workspace = true, optional = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+object = { version = "0.37", default-features = false, features = [
+  "read_core",
+  "elf",
+], optional = true }
+
 [features]
+crash = ["dep:crash", "dep:object", "task/crash"]
 default = []
 heaptrack = []
 profiling = ["task/profiling", "dep:miniserde"]

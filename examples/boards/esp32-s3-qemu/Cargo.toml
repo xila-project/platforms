@@ -19,6 +19,7 @@ esp-println = { version = "0.18", default-features = false, features = [
 esp-storage = { version = "0.10", features = ["esp32s3"] }
 # No Settings on this board: the `time_zone` shell command sets the time zone.
 firmware = { package = "xila-firmware-espressif", path = "../../../firmware/espressif", features = [
+  "crash",
   "native-dev",
   "native-linked",
   "time-zone-command",
@@ -27,6 +28,9 @@ firmware = { package = "xila-firmware-espressif", path = "../../../firmware/espr
 xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false, features = [
   "graphics_rendering_rgb565",
 ] }
+
+[features]
+crash-smoke-test = []
 
 [[bin]]
 name = "esp32_s3_qemu"

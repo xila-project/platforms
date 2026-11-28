@@ -71,8 +71,9 @@ Limits of the emulation:
 - The console transmits only while the host asserts DTR on the CDC-ACM port,
   that is, while a terminal program has the port open. Output queued before that
   is sent when the port opens.
-- Panic messages are not visible while the feature is on: the panic handler
-  writes to the USB Serial/JTAG controller, whose PHY the OTG controller owns.
+- USB OTG owns the physical layer while the feature is on, so the panic
+  handler saves the report and resets without writing to USB Serial/JTAG.
+  After startup, use `crash show latest` to read the report.
 
 Check the enumeration:
 

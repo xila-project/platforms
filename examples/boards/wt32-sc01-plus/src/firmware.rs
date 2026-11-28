@@ -29,16 +29,17 @@
 //!   including guest linear memory and module source) land in PSRAM.
 
 use alloc::{boxed::Box, format};
-use core::{fmt::Write, panic::PanicInfo};
+use core::panic::PanicInfo;
 
 use drivers_espressif::{random::RandomDevice, sd_card::SdCard};
 use drivers_shared::devices::SectorBlockDevice;
+#[cfg(not(feature = "usb-human-interface"))]
+use esp_hal::usb::usb_serial_jtag::UsbSerialJtag;
 use esp_hal::{
     clock::CpuClock,
-    peripherals::{GPIO38, GPIO39, GPIO40, GPIO41, SDHOST, USB_DEVICE},
+    peripherals::{GPIO38, GPIO39, GPIO40, GPIO41, SDHOST},
     psram::{FlashFreq, Psram, PsramConfig, PsramMode, SpiRamFreq},
     timer::systimer::SystemTimer,
-    usb::usb_serial_jtag::UsbSerialJtag,
 };
 use esp_storage::FlashStorage;
 use firmware::{
@@ -52,6 +53,14 @@ mod gpio;
 mod screen;
 
 esp_bootloader_esp_idf::esp_app_desc!();
+
+fn crash_metadata() -> firmware::crash::Metadata {
+    firmware::crash::Metadata {
+        target: "wt32-sc01-plus",
+        firmware_version: env!("CARGO_PKG_VERSION"),
+        image_identifier: ESP_APP_DESC.app_elf_sha256(),
+    }
+}
 
 /// The `storage` partition of `partitions.csv`.
 const STORAGE: StoragePartition = StoragePartition {
@@ -79,6 +88,7 @@ const FLASH_FREQUENCY: FlashFreq = FlashFreq::FlashFreq80m;
 fn main() -> ! {
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CPU_CLOCK));
     let heap = firmware::initialize_heap();
+    let pending_crash = firmware::crash::early_boot(crash_metadata());
 
     // Quad SPI PSRAM. Probing for octal PSRAM first, as the automatic mode
     // does, would drive pins the module does not use for it.
@@ -146,6 +156,7 @@ fn main() -> ! {
         ),
     ));
     let board = Board {
+        pending_crash,
         name: "WT32-SC01 Plus",
         console,
         flash_storage: FlashStorage::new(peripherals.FLASH),
@@ -221,18 +232,36 @@ fn check_memory(report: &MemoryReport) {
     boot_benchmark::run(report);
 }
 
-/// Writes the panic message to the console. esp-println writes to UART0,
-/// which this board does not expose. With the `usb-human-interface` feature the
-/// USB OTG controller owns the chip's single USB PHY, so this write through the
-/// USB Serial/JTAG controller reaches no host.
 #[panic_handler]
 fn panic(information: &PanicInfo<'_>) -> ! {
-    // SAFETY: the firmware has stopped; nothing else uses the controller again.
-    let device = unsafe { USB_DEVICE::steal() };
-    let mut console = UsbSerialJtag::new(device);
-    let _ = write!(console, "\r\nXila panic: {information}\r\n");
-    let _ = console.flush_tx();
-    loop {
-        core::hint::spin_loop();
-    }
+    firmware::crash::panic(information, crash_metadata(), || {
+        #[cfg(not(feature = "usb-human-interface"))]
+        {
+            let registers = esp_hal::peripherals::USB_DEVICE::regs();
+            for byte in b"\r\nXila panic: report captured\r\n" {
+                if !registers
+                    .ep1_conf()
+                    .read()
+                    .serial_in_ep_data_free()
+                    .bit_is_set()
+                {
+                    break;
+                }
+                // SAFETY: The byte is sent only when the FIFO has space.
+                registers
+                    .ep1()
+                    .write(|writer| unsafe { writer.rdwr_byte().bits(*byte) });
+            }
+            registers
+                .ep1_conf()
+                .modify(|_, writer| writer.wr_done().set_bit());
+            // The host can be absent. Bound the wait so capture still resets.
+            for _ in 0..10_000 {
+                if registers.ep1_conf().read().bits() & 0b11 != 0 {
+                    break;
+                }
+                core::hint::spin_loop();
+            }
+        }
+    })
 }

@@ -40,6 +40,7 @@
         target_arch = "xtensa",
         any(
             feature = "console",
+            feature = "crash",
             feature = "executor",
             feature = "esp32",
             feature = "executable-memory"
@@ -138,3 +139,6 @@ pub extern crate memory as memory_exported;
 
 #[cfg(feature = "wifi")]
 pub mod wifi;
+
+#[cfg(all(feature = "crash", feature = "esp32s3"))]
+pub mod crash;

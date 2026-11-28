@@ -10,6 +10,7 @@ rust-version.workspace = true
 aligned = { version = "0.4", optional = true }
 block-device-driver = { version = "0.2", optional = true }
 critical-section = { workspace = true }
+crash = { package = "xila-crash", git = "https://github.com/xila-project/core", branch = "main", optional = true }
 drivers_peripherals = { workspace = true, optional = true }
 drivers_shared = { package = "xila-drivers-shared", path = "../shared", default-features = false, optional = true }
 embassy-executor = { workspace = true, optional = true }
@@ -76,6 +77,7 @@ embassy-usb = { version = "0.6.0", default-features = false, features = [
 embassy-usb-synopsys-otg = "=0.4.0"
 
 [features]
+crash = ["dep:crash"]
 default = ["gpio", "i2c", "spi", "uart"]
 
 # Peripheral adapters.

@@ -294,6 +294,16 @@ depends = ["build:esp32-s3-qemu"]
 tools.uv = "{{ vars.uv_version }}"
 run = "uv run --no-project --with littlefs-python=={{ vars.littlefs_python_version }} python -I tools/dev/espressif_smoke.py target/espressif-emulator/tools/qemu-{{ vars.esp_qemu_version }}/qemu/bin/qemu-system-xtensa target/espressif-emulator/esp32-s3-qemu-flash.bin target/espressif-emulator/runs"
 
+[tasks."test:esp32-s3-qemu-crash"]
+description = "Panic and reboot the ESP32-S3 emulator, then decode the report from LittleFS"
+depends = ["setup:espressif-emulator"]
+tools.node = "{{ vars.node_version }}"
+tools.uv = "{{ vars.uv_version }}"
+run = """
+bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' esp32-s3-qemu --features crash-smoke-test
+uv run --no-project --with littlefs-python=={{ vars.littlefs_python_version }} python -I tools/dev/espressif_smoke.py --crash-elf target/espressif-emulator/esp32-s3-qemu.elf target/espressif-emulator/tools/qemu-{{ vars.esp_qemu_version }}/qemu/bin/qemu-system-xtensa target/espressif-emulator/esp32-s3-qemu-flash.bin target/espressif-emulator/runs
+"""
+
 [tasks."test:esp32-c6-qemu"]
 description = "Boot the ESP32-C6 QEMU board headless in Espressif QEMU and check LittleFS, the heap and the shell login prompt"
 depends = ["build:esp32-c6-qemu"]
