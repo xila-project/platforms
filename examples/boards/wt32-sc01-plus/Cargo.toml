@@ -55,6 +55,7 @@ time-zone-names-indian = ["firmware/time-zone-names-indian"]
 time-zone-names-pacific = ["firmware/time-zone-names-pacific"]
 time-zone-names-all = ["firmware/time-zone-names-all"]
 time-zone-names-legacy-aliases = ["firmware/time-zone-names-legacy-aliases"]
+bluetooth = ["firmware/bluetooth"]
 # Logs CPU, flash and PSRAM timings once at boot, right after the PSRAM
 # self-test. Off by default so production boots stay fast and quiet.
 boot-benchmark = []

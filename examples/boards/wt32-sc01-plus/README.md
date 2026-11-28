@@ -229,6 +229,64 @@ Core runner polls at least every 20 ms while idle, and the driver raises the
 radio receive queue from five to twelve frames to absorb bursts. An
 interrupt-driven receive path needs a wake interface from Core.
 
+## Bluetooth Low Energy
+
+The optional `bluetooth` feature mounts `/devices/bluetooth/hci0` for root.
+Build the firmware and flash its ELF using the board partition table.
+
+```sh
+mise run build:wt32-sc01-plus -- --features bluetooth
+export FLASH_PORT=/dev/ttyACM0 # Set this to the board's flash port.
+mise run run:espflash -- flash --chip esp32s3 --port "$FLASH_PORT" \
+  --flash-size 16mb --flash-mode qio --flash-freq 80mhz \
+  --partition-table examples/boards/wt32-sc01-plus/partitions.csv --partition-table-offset 0x8000 \
+  --monitor target/espressif-emulator/wt32-sc01-plus.elf
+```
+
+The ESP32-S3 uses one radio for Wi-Fi and Bluetooth. The board starts the
+Bluetooth controller during the first successful Wi-Fi radio startup. Both
+controllers use the same scheduler, and esp-radio's coexistence scheduler
+shares airtime between them. If the startup marker leaves Wi-Fi off at boot,
+enable Wi-Fi in Settings to start Bluetooth. After startup, the Bluetooth
+controller keeps its radio reference when Wi-Fi is turned off.
+
+1. Turn on a nearby device that sends legacy Bluetooth LE advertisements.
+2. Log in to the console as an administrator. Start a root shell with
+   `sudo command_line_shell`, then run `bluetooth_scan`. The command opens
+   the Bluetooth device, listens for five seconds, and prints advertiser
+   addresses, address types and received signal strength in dBm. Check for
+   the advertiser and the `Bluetooth scan complete` message.
+3. Connect the board to a 2.4 GHz Wi-Fi network. Run `ip address` on the board,
+   then run `ping <board-address>` from another machine on the network. Run
+   `bluetooth_scan` again in the root shell. Check that the advertiser
+   appears and that the board responds to pings during the scan.
+
+### Memory use
+
+These sizes come from the board's release ELF files. All sizes are in bytes.
+
+| Measurement | Bluetooth off | Bluetooth on |
+|---|---:|---:|
+| Linked flash payload | 3,912,200 | 4,129,928 |
+| Static internal SRAM, including the heap reservation | 295,472 | 319,084 |
+| Main stack capacity | 46,288 | 47,248 |
+| Static PSRAM | 0 | 0 |
+
+The flash payload excludes image headers and alignment padding. The board
+moves 24 KiB of its 188 KiB internal heap into SRAM reclaimed from the
+bootloader. This keeps the main stack above 40 KiB.
+
+The controller requests 8,192 bytes for its scheduler stack and 10,752 bytes
+for its packet buffer payloads in internal SRAM. The Bluetooth device and its
+host task future account for 10,368 bytes of PSRAM when PSRAM is available.
+These figures exclude allocator overhead, other controller allocations, and
+transient scan and connection data.
+
+The boot log reports the free internal heap immediately before and after
+Bluetooth controller startup. Compare the internal SRAM and PSRAM heap
+reports at login on builds with and without `bluetooth`, then repeat under
+Wi-Fi traffic while scanning to measure runtime memory use.
+
 ## microSD card
 
 The slot takes a microSD card. The firmware reads the card in native SD mode,

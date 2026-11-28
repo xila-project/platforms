@@ -458,6 +458,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "bt-hci"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f3c66fd0a41a3b3a5906847b1bf5516048ce083e24fa9341a0fa31d3b4cd73d"
+dependencies = [
+ "btuuid",
+ "embassy-sync 0.7.2",
+ "embedded-io 0.7.1",
+ "embedded-io-async 0.7.0",
+ "futures-intrusive",
+ "heapless 0.8.0",
+]
+
+[[package]]
+name = "bt-hci"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f63b3d6f0ef006d9b87a075705d6c142b03681ad34090659647f0e227c1c667f"
+dependencies = [
+ "bt-hci-transport",
+ "btuuid",
+ "embassy-sync 0.7.2",
+ "embedded-io 0.7.1",
+ "embedded-io-async 0.7.0",
+ "futures-intrusive",
+ "heapless 0.8.0",
+]
+
+[[package]]
+name = "bt-hci-transport"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ffb9819c69cf88877f5eebc8c5ade0ab50f2bf9475bbb3eb714d66c55b0cb64"
+dependencies = [
+ "embedded-io 0.7.1",
+ "embedded-io-async 0.7.0",
+]
+
+[[package]]
+name = "btuuid"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5f48f1e9b0aad0a4f05d17bdeae0fa20ff798e272a03a6940ca27ad9c5a6ae7"
+dependencies = [
+ "uuid",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1924,6 +1972,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "50247f4e91000fc87661e77254126c74acc4535f822ee247f7778807202dc938"
 dependencies = [
  "allocator-api2 0.3.1",
+ "bt-hci 0.9.0",
+ "bt-hci-transport",
  "docsplay",
  "document-features",
  "embassy-net-driver",
@@ -2366,6 +2416,16 @@ dependencies = [
  "futures-core",
  "futures-task",
  "futures-util",
+]
+
+[[package]]
+name = "futures-intrusive"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d930c203dd0b6ff06e0201a4a2fe9149b43c684fd4420555b26d21b1a02956f"
+dependencies = [
+ "futures-core",
+ "lock_api",
 ]
 
 [[package]]
@@ -5396,6 +5456,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "trouble-host"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19a566cc37ceaff5cc2a6ff8cc02debd1ee6b95d59ced8830d005da8b080cbe9"
+dependencies = [
+ "bt-hci 0.10.1",
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "embedded-io 0.7.1",
+ "futures",
+ "heapless 0.9.3",
+ "static_cell",
+ "zerocopy",
+]
+
+[[package]]
 name = "ttf-parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5467,6 +5544,12 @@ name = "utf8parse"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
+
+[[package]]
+name = "uuid"
+version = "1.29.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c14b15dffa2f4bd712103e857140aa04a4f2ff6e955c77d7eb8e53ee02a3b64"
 
 [[package]]
 name = "valuable"
@@ -6396,6 +6479,7 @@ source = "git+https://github.com/xila-project/core?branch=main#159c6514f188e6128
 dependencies = [
  "embedded-i18n",
  "xila-authentication",
+ "xila-bluetooth",
  "xila-bootsplash",
  "xila-executable",
  "xila-file-system",
@@ -6443,7 +6527,7 @@ dependencies = [
 [[package]]
 name = "xila-activity"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#85aa4c8a16c2cd45bb90615b35b00789be0b5258"
+source = "git+https://github.com/xila-project/applications?branch=main#53db253ac763c661ec8b866725614327ff286d9b"
 dependencies = [
  "embassy-futures",
  "embedded-i18n",
@@ -6476,6 +6560,25 @@ dependencies = [
  "xila-log",
  "xila-task",
  "xila-users",
+ "xila-virtual-file-system",
+]
+
+[[package]]
+name = "xila-bluetooth"
+version = "0.1.0"
+source = "git+https://github.com/xila-project/core?branch=main#159c6514f188e61283ff1340758cfff4320cbfc4"
+dependencies = [
+ "bt-hci 0.10.1",
+ "embassy-futures",
+ "embassy-time",
+ "embedded-io 0.7.1",
+ "heapless 0.9.3",
+ "trouble-host",
+ "xila-device",
+ "xila-file-system",
+ "xila-shared",
+ "xila-synchronization",
+ "xila-task",
  "xila-virtual-file-system",
 ]
 
@@ -6560,7 +6663,7 @@ dependencies = [
 [[package]]
 name = "xila-c-demo"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#85aa4c8a16c2cd45bb90615b35b00789be0b5258"
+source = "git+https://github.com/xila-project/applications?branch=main#53db253ac763c661ec8b866725614327ff286d9b"
 dependencies = [
  "cc",
  "xila-abi-application",
@@ -6581,7 +6684,7 @@ dependencies = [
 [[package]]
 name = "xila-command-line-shell"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#85aa4c8a16c2cd45bb90615b35b00789be0b5258"
+source = "git+https://github.com/xila-project/applications?branch=main#53db253ac763c661ec8b866725614327ff286d9b"
 dependencies = [
  "embassy-futures",
  "embedded-i18n",
@@ -6595,7 +6698,7 @@ dependencies = [
 [[package]]
 name = "xila-debug-application"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#85aa4c8a16c2cd45bb90615b35b00789be0b5258"
+source = "git+https://github.com/xila-project/applications?branch=main#53db253ac763c661ec8b866725614327ff286d9b"
 dependencies = [
  "portable-atomic",
  "serde_json",
@@ -6624,7 +6727,7 @@ dependencies = [
 [[package]]
 name = "xila-digits"
 version = "0.2.2"
-source = "git+https://github.com/xila-project/applications?branch=main#85aa4c8a16c2cd45bb90615b35b00789be0b5258"
+source = "git+https://github.com/xila-project/applications?branch=main#53db253ac763c661ec8b866725614327ff286d9b"
 dependencies = [
  "embedded-i18n",
  "xila-device",
@@ -6674,6 +6777,7 @@ dependencies = [
  "sdio",
  "smoltcp",
  "static_cell",
+ "xila-bluetooth",
  "xila-drivers-peripherals",
  "xila-drivers-shared",
  "xila-file-system",
@@ -6910,7 +7014,7 @@ dependencies = [
 [[package]]
 name = "xila-file-manager"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#85aa4c8a16c2cd45bb90615b35b00789be0b5258"
+source = "git+https://github.com/xila-project/applications?branch=main#53db253ac763c661ec8b866725614327ff286d9b"
 dependencies = [
  "embedded-i18n",
  "xila",
@@ -6936,6 +7040,7 @@ name = "xila-firmware-espressif"
 version = "0.1.0"
 dependencies = [
  "critical-section",
+ "embassy-time",
  "embedded-hal 1.0.0",
  "embedded-storage",
  "esp-hal",
@@ -7003,7 +7108,7 @@ dependencies = [
 [[package]]
 name = "xila-graphical-shell"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#85aa4c8a16c2cd45bb90615b35b00789be0b5258"
+source = "git+https://github.com/xila-project/applications?branch=main#53db253ac763c661ec8b866725614327ff286d9b"
 dependencies = [
  "embedded-i18n",
  "getargs",
@@ -7222,7 +7327,7 @@ dependencies = [
 [[package]]
 name = "xila-package-application"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#85aa4c8a16c2cd45bb90615b35b00789be0b5258"
+source = "git+https://github.com/xila-project/applications?branch=main#53db253ac763c661ec8b866725614327ff286d9b"
 dependencies = [
  "getargs",
  "getargs-derive",
@@ -7308,7 +7413,7 @@ dependencies = [
 [[package]]
 name = "xila-pixel-painter"
 version = "0.2.2"
-source = "git+https://github.com/xila-project/applications?branch=main#85aa4c8a16c2cd45bb90615b35b00789be0b5258"
+source = "git+https://github.com/xila-project/applications?branch=main#53db253ac763c661ec8b866725614327ff286d9b"
 dependencies = [
  "embedded-i18n",
  "xila-wasm",
@@ -7332,7 +7437,7 @@ dependencies = [
 [[package]]
 name = "xila-settings"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#85aa4c8a16c2cd45bb90615b35b00789be0b5258"
+source = "git+https://github.com/xila-project/applications?branch=main#53db253ac763c661ec8b866725614327ff286d9b"
 dependencies = [
  "const_format",
  "embassy-futures",
@@ -7425,7 +7530,7 @@ dependencies = [
 [[package]]
 name = "xila-terminal"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#85aa4c8a16c2cd45bb90615b35b00789be0b5258"
+source = "git+https://github.com/xila-project/applications?branch=main#53db253ac763c661ec8b866725614327ff286d9b"
 dependencies = [
  "embedded-i18n",
  "portable-atomic",
@@ -7540,7 +7645,7 @@ dependencies = [
 [[package]]
 name = "xila-wasm"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#85aa4c8a16c2cd45bb90615b35b00789be0b5258"
+source = "git+https://github.com/xila-project/applications?branch=main#53db253ac763c661ec8b866725614327ff286d9b"
 dependencies = [
  "embassy-time",
  "getargs",
@@ -7583,7 +7688,7 @@ dependencies = [
 [[package]]
 name = "xila-wasm-guest-build"
 version = "0.1.0"
-source = "git+https://github.com/xila-project/applications?branch=main#85aa4c8a16c2cd45bb90615b35b00789be0b5258"
+source = "git+https://github.com/xila-project/applications?branch=main#53db253ac763c661ec8b866725614327ff286d9b"
 dependencies = [
  "serde",
  "serde_json",

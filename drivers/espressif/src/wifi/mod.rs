@@ -3,6 +3,8 @@
 extern crate alloc;
 
 mod allocation;
+#[cfg(feature = "bluetooth")]
+mod bluetooth;
 mod configuration;
 mod controller;
 mod device;
@@ -28,6 +30,8 @@ static INTERNAL_HEAP: OnceLock<&'static MemoryManager> = OnceLock::new();
 /// Peripherals reserved by the ESP32-S3 board for Wi-Fi.
 pub struct Peripherals {
     pub radio: WIFI<'static>,
+    #[cfg(feature = "bluetooth")]
+    pub bluetooth: esp_hal::peripherals::BT<'static>,
     pub scheduler_timer: TIMG0<'static>,
     pub scheduler_interrupt: FROM_CPU_INTR0<'static>,
 }
@@ -100,7 +104,15 @@ pub async fn initialize(
 
     allocation::poll_internal(
         task_manager.spawn(task, "Wi-Fi station", None, move |task| {
-            controller::run(peripherals, heap, file_system, task, profile)
+            controller::run(
+                peripherals,
+                heap,
+                file_system,
+                #[cfg(feature = "bluetooth")]
+                task_manager,
+                task,
+                profile,
+            )
         }),
     )
     .await

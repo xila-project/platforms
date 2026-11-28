@@ -29,6 +29,7 @@ drivers_peripherals = { workspace = true, features = ["real-time-clock"] }
 drivers_shared = { package = "xila-drivers-shared", path = "../../drivers/shared", default-features = false }
 mipidsi = { git = "https://github.com/almindor/mipidsi", rev = "5ed6df58d9b8a2b9037221bc03de1328340eaf47", default-features = false, optional = true }
 embedded-hal = { workspace = true, optional = true }
+embassy-time = { workspace = true, optional = true }
 peripherals = { workspace = true, features = ["real-time-clock"] }
 embedded-storage = "0.3"
 esp-hal = { version = "=1.2.2", features = ["unstable"] }
@@ -89,6 +90,12 @@ wifi = [
   "command_line_shell/network",
   "drivers_shared/network",
   "xila/network",
+]
+bluetooth = [
+  "wifi",
+  "dep:embassy-time",
+  "drivers_espressif/bluetooth",
+  "xila/bluetooth",
 ]
 # Developer-only handler that runs raw ELF files from the file system as native
 # executables, with their images in `.dram2_uninit` (ESP32-C5, C6, C61, H2, P4,

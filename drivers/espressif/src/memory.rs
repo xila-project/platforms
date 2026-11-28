@@ -23,8 +23,9 @@ pub const DEFAULT_LARGE_ALLOCATION_THRESHOLD: usize = 4096;
 /// Chips with external PSRAM support (`esp32`, `esp32s2`, `esp32s3`, `esp32c5`, `esp32c61`,
 /// `esp32p4`, `esp32s31`) reserve slot `0` for internal SRAM and the last slot,
 /// [`PSRAM_REGION`], for optional PSRAM. ESP32 also reserves slot `1` for reclaimed internal
-/// SRAM. Chips without PSRAM (`esp32c2`, `esp32c3`, `esp32c6`, `esp32h2`) allocate a single slot.
-pub const REGION_COUNT: usize = if cfg!(feature = "esp32") {
+/// SRAM. The ESP32-S3 Bluetooth build also uses that slot.
+/// Chips without PSRAM (`esp32c2`, `esp32c3`, `esp32c6`, `esp32h2`) allocate one slot.
+pub const REGION_COUNT: usize = if cfg!(any(feature = "esp32", feature = "bluetooth")) {
     3
 } else if cfg!(any(
     feature = "esp32s2",
@@ -44,9 +45,9 @@ pub const REGION_COUNT: usize = if cfg!(feature = "esp32") {
 /// It is the last region: allocations at or above the large-allocation threshold probe the
 /// regions in reverse order, so they reach PSRAM before any internal SRAM, and smaller ones
 /// reach it only when every internal region is full.
-pub const PSRAM_REGION: usize = if cfg!(feature = "esp32") { 2 } else { 1 };
+pub const PSRAM_REGION: usize = if REGION_COUNT == 3 { 2 } else { 1 };
 
-#[cfg(feature = "esp32")]
+#[cfg(any(feature = "esp32", feature = "bluetooth"))]
 const RECLAIMED_INTERNAL_REGION: usize = 1;
 
 const INTERNAL_DMA_ALIGNMENT: usize = if cfg!(feature = "esp32p4") { 64 } else { 4 };
@@ -108,8 +109,8 @@ const fn default_descriptors() -> [RegionDescriptor; REGION_COUNT] {
 ///
 /// Region `0` is internal SRAM (`DirectMemoryAccess | AlwaysAccessible`). On PSRAM-capable chips,
 /// the last region, [`PSRAM_REGION`], is optional external PSRAM, left uninitialized until the
-/// board registers it via [`Self::init_psram`] or [`Self::init_psram_from_hal`]. ESP32 uses
-/// region `1` for optional reclaimed internal SRAM.
+/// board registers it via [`Self::init_psram`] or [`Self::init_psram_from_hal`]. ESP32 and
+/// ESP32-S3 with Bluetooth use region `1` for optional reclaimed internal SRAM.
 pub struct MemoryManager {
     inner: RegionManager<REGION_COUNT>,
     internal_only: AtomicBool,
@@ -163,7 +164,7 @@ impl MemoryManager {
     /// The application must own this region after bootloader handoff. It must
     /// be DMA-capable internal data RAM and remain accessible during flash
     /// cache suspension. The slice must not overlap another heap region.
-    #[cfg(feature = "esp32")]
+    #[cfg(any(feature = "esp32", feature = "bluetooth"))]
     pub unsafe fn init_reclaimed_internal(&self, slice: &'static mut [MaybeUninit<u8>]) -> bool {
         self.inner
             .init_region_from_slice(RECLAIMED_INTERNAL_REGION, slice)

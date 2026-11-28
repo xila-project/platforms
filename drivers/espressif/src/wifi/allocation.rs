@@ -9,7 +9,7 @@ use core::{
 
 use memory::{CapabilityFlags, ManagerTrait};
 
-use crate::memory::MemoryManager;
+use crate::memory::{MemoryManager, PSRAM_REGION};
 
 use super::{
     INTERNAL_HEAP,
@@ -61,9 +61,11 @@ fn heap() -> Option<&'static MemoryManager> {
 }
 
 pub(super) fn free_bytes(heap: &MemoryManager) -> usize {
-    heap.get_statistics().region_stats[0]
-        .as_ref()
-        .map_or(0, |region| region.free)
+    heap.get_statistics().region_stats[..PSRAM_REGION]
+        .iter()
+        .flatten()
+        .map(|region| region.free)
+        .sum()
 }
 
 #[unsafe(export_name = "malloc_internal")]
