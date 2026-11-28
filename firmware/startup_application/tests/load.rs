@@ -17,7 +17,7 @@ use xila::{
 const KIOSK: UserIdentifier = UserIdentifier::new(1001);
 const KIOSK_GROUP: GroupIdentifier = GroupIdentifier::new(1001);
 const RUNTIME: &str = "/applications/executables/runtime";
-const CLOCK_BUNDLE: &str = "/applications/bundles/xila.clock";
+const CLOCK_BUNDLE: &str = "/applications/bundles/dev.xila.clock";
 
 struct System {
     file_system: &'static VirtualFileSystem,
@@ -118,12 +118,12 @@ async fn a_bundle_shortcut_runs_as_the_configured_user() {
     let system = system().await;
     system.install_clock().await;
     system
-        .configure(r#"{"shortcut": "xila.clock", "user": "kiosk"}"#)
+        .configure(r#"{"shortcut": "dev.xila.clock", "user": "kiosk"}"#)
         .await;
     assert_eq!(
         system.load().await.unwrap(),
         Some(Application {
-            name: "xila.clock".into(),
+            name: "dev.xila.clock".into(),
             command: RUNTIME.into(),
             arguments: vec![
                 format!("{CLOCK_BUNDLE}/executables/clock.wasm"),
@@ -178,16 +178,16 @@ async fn problems_are_reported_instead_of_starting_something_else() {
     ));
 
     system
-        .configure(r#"{"shortcut": "xila.clock", "user": "kiosk"}"#)
+        .configure(r#"{"shortcut": "dev.xila.clock", "user": "kiosk"}"#)
         .await;
     assert!(matches!(
         system.load().await,
-        Err(Error::ShortcutNotFound(identifier)) if identifier == "xila.clock"
+        Err(Error::ShortcutNotFound(identifier)) if identifier == "dev.xila.clock"
     ));
 
     system.install_clock().await;
     system
-        .configure(r#"{"shortcut": "xila.clock", "user": "nobody"}"#)
+        .configure(r#"{"shortcut": "dev.xila.clock", "user": "nobody"}"#)
         .await;
     assert!(matches!(system.load().await, Err(Error::UnknownUser)));
 
@@ -205,7 +205,7 @@ async fn problems_are_reported_instead_of_starting_something_else() {
         .await
         .unwrap();
     system
-        .configure(r#"{"shortcut": "xila.clock", "user": "kiosk"}"#)
+        .configure(r#"{"shortcut": "dev.xila.clock", "user": "kiosk"}"#)
         .await;
     assert!(matches!(
         system.load().await,

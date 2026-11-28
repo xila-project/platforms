@@ -5,7 +5,7 @@
 //! application and the account it runs as:
 //!
 //! ```json
-//! { "shortcut": "xila.clock", "user": "administrator" }
+//! { "shortcut": "dev.xila.clock", "user": "administrator" }
 //! ```
 //!
 //! `shortcut` is the identifier of an installed shortcut: an application
@@ -475,7 +475,7 @@ mod tests {
     #[test]
     fn the_log_line_names_the_account_by_identifier() {
         let application = Application {
-            name: "xila.clock".into(),
+            name: "dev.xila.clock".into(),
             command: "/applications/executables/runtime".into(),
             arguments: Vec::new(),
             user_name: "kiosk".into(),
@@ -485,7 +485,7 @@ mod tests {
         let line = describe(&application);
         assert_eq!(
             line,
-            "xila.clock (/applications/executables/runtime) as user 1001"
+            "dev.xila.clock (/applications/executables/runtime) as user 1001"
         );
         assert!(!line.contains("kiosk"));
     }

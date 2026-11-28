@@ -77,7 +77,7 @@ fn out_of_space_removes_incomplete_output() {
 }
 
 fn write_bundle(root: &std::path::Path, app: &str) {
-    let bundle = root.join(format!("xila.{}", app.replace('_', "-")));
+    let bundle = root.join(format!("dev.xila.{}", app.replace('_', "-")));
     fs::create_dir_all(bundle.join(".xila")).unwrap();
     fs::create_dir_all(bundle.join("executables")).unwrap();
     fs::write(
@@ -225,7 +225,9 @@ fn missing_bundle_is_an_error_without_output() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("missing bundle xila.text-editor"));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("missing bundle dev.xila.text-editor")
+    );
     assert!(!f.0.join("missing.img").exists());
 }
 
@@ -311,7 +313,7 @@ fn both_profiles_require_the_digits_bundle() {
             !output.status.success(),
             "{profile} silently omitted Digits"
         );
-        assert!(String::from_utf8_lossy(&output.stderr).contains("missing bundle xila.digits"));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("missing bundle dev.xila.digits"));
         assert!(!image.exists());
     }
 }

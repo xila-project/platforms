@@ -25,8 +25,9 @@ def main() -> None:
         root = Path(directory)
         lock = {"applications": {}}
         for app in APPS:
-            package = "xila." + app.replace("_", "-")
-            version = json.loads((args.applications / f"packaging/{app}.json").read_text())["version"]
+            manifest = json.loads((args.applications / f"packaging/{app}.json").read_text())
+            package = manifest["name"]
+            version = manifest["version"]
             filename = f"{package}-{version}-wasm32-wasip1.xpk"
             subprocess.run([
                 "python3", str(args.package_manager / "tools/package_wasm.py"),

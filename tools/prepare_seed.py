@@ -57,7 +57,7 @@ def prepare(profile: str, lockfile: Path, output: Path, tool: Path) -> None:
             public_key = [str(stage / "publisher.key")]
         for name in names:
             item = applications[name]
-            identifier = "xila." + name.replace("_", "-")
+            identifier = "dev.xila." + name.replace("_", "-")
             if item["name"] != identifier:
                 raise ValueError(f"incorrect package identity for {name}")
             if not SHA256.fullmatch(item["sha256"]):
@@ -69,7 +69,7 @@ def prepare(profile: str, lockfile: Path, output: Path, tool: Path) -> None:
         output.mkdir()
         try:
             for name in names:
-                identifier = "xila." + name.replace("_", "-")
+                identifier = "dev.xila." + name.replace("_", "-")
                 (stage / identifier).rename(output / identifier)
         except Exception:
             shutil.rmtree(output)

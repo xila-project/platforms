@@ -130,7 +130,7 @@ mod tests {
         Manifest {
             schema: Some(SCHEMA_URL.into()),
             format_version: FORMAT_VERSION,
-            name: "xila.clock".into(),
+            name: "dev.xila.clock".into(),
             version: "1.0.0".into(),
             target: target.into(),
             xila_version,
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn extracts_the_complete_bundle() {
         let bytes = package("wasm32-wasip1", WASM, None);
-        let files = prepare(&bytes, "xila.clock", "1.0.0", sha256(&bytes), None).unwrap();
+        let files = prepare(&bytes, "dev.xila.clock", "1.0.0", sha256(&bytes), None).unwrap();
         let paths: Vec<_> = files.iter().map(|file| file.path.as_str()).collect();
         assert_eq!(
             paths,
@@ -227,7 +227,7 @@ mod tests {
             (memory64, false),
         ] {
             let bytes = package("wasm32-wasip1", payload, None);
-            let result = prepare(&bytes, "xila.clock", "1.0.0", sha256(&bytes), None);
+            let result = prepare(&bytes, "dev.xila.clock", "1.0.0", sha256(&bytes), None);
             assert_eq!(result.is_ok(), valid, "{payload:?}");
         }
     }
@@ -240,7 +240,7 @@ mod tests {
         let simd_type: &[u8] = b"\0asm\x01\0\0\0\x01\x05\x01\x60\x00\x01\x7b";
         for payload in [two_memories, simd_type] {
             let bytes = package("wasm32-wasip1", payload, None);
-            let result = prepare(&bytes, "xila.clock", "1.0.0", sha256(&bytes), None);
+            let result = prepare(&bytes, "dev.xila.clock", "1.0.0", sha256(&bytes), None);
             assert!(result.is_err(), "{payload:?}");
         }
     }
@@ -254,14 +254,30 @@ mod tests {
         };
         let signed = package("wasm32-wasip1", WASM, Some(&signer));
         let digest = sha256(&signed);
-        let files = prepare(&signed, "xila.clock", "1.0.0", digest, Some(&key(&signer))).unwrap();
+        let files = prepare(
+            &signed,
+            "dev.xila.clock",
+            "1.0.0",
+            digest,
+            Some(&key(&signer)),
+        )
+        .unwrap();
         assert!(files.iter().any(|file| file.path == ".xila/manifest.sig"));
-        assert!(prepare(&signed, "xila.clock", "1.0.0", digest, Some(&key(&other))).is_err());
+        assert!(
+            prepare(
+                &signed,
+                "dev.xila.clock",
+                "1.0.0",
+                digest,
+                Some(&key(&other))
+            )
+            .is_err()
+        );
         let unsigned = package("wasm32-wasip1", WASM, None);
         assert!(
             prepare(
                 &unsigned,
-                "xila.clock",
+                "dev.xila.clock",
                 "1.0.0",
                 sha256(&unsigned),
                 Some(&key(&signer))
@@ -274,9 +290,9 @@ mod tests {
     fn verifies_identity_target_xila_version_and_integrity_before_extracting() {
         let bytes = package("wasm32-wasip1", WASM, None);
         let expected = sha256(&bytes);
-        assert!(prepare(&bytes, "xila.clock", "1.0.0", expected, None).is_ok());
+        assert!(prepare(&bytes, "dev.xila.clock", "1.0.0", expected, None).is_ok());
         assert!(prepare(&bytes, "xila.other", "1.0.0", expected, None).is_err());
-        assert!(prepare(&bytes, "xila.clock", "2.0.0", expected, None).is_err());
+        assert!(prepare(&bytes, "dev.xila.clock", "2.0.0", expected, None).is_err());
         for incompatible in [
             XilaVersion::new(
                 RUNNING_XILA_VERSION.major,
@@ -289,20 +305,20 @@ mod tests {
         ] {
             let future = package_for_xila("wasm32-wasip1", incompatible, WASM, None);
             assert_eq!(
-                prepare(&future, "xila.clock", "1.0.0", sha256(&future), None).err(),
+                prepare(&future, "dev.xila.clock", "1.0.0", sha256(&future), None).err(),
                 Some("package requires a Xila version incompatible with this runtime")
             );
         }
         let mut corrupt = bytes.clone();
         let index = corrupt.windows(4).position(|w| w == b"\0asm").unwrap();
         corrupt[index] ^= 1;
-        assert!(prepare(&corrupt, "xila.clock", "1.0.0", expected, None).is_err());
-        assert!(prepare(&corrupt, "xila.clock", "1.0.0", sha256(&corrupt), None).is_err());
+        assert!(prepare(&corrupt, "dev.xila.clock", "1.0.0", expected, None).is_err());
+        assert!(prepare(&corrupt, "dev.xila.clock", "1.0.0", sha256(&corrupt), None).is_err());
         for package in [
             package("wasm32-wasip1", b"abc", None),
             package("wasm32-unknown-unknown", WASM, None),
         ] {
-            assert!(prepare(&package, "xila.clock", "1.0.0", sha256(&package), None).is_err());
+            assert!(prepare(&package, "dev.xila.clock", "1.0.0", sha256(&package), None).is_err());
         }
     }
 }

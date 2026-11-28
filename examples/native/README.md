@@ -296,7 +296,7 @@ The `neural-network` default feature mounts a runtime CPU model loader at
 TFLite model to that node and send the `LOAD` control command; the Digits model
 and guest belong to Applications, while this runtime selects the portable NN
 backend.
-Both reference image profiles include the signed `xila.digits` release. Build
+Both reference image profiles include the signed `dev.xila.digits` release. Build
 `mise run image:native` or `mise run image:browser`, then use a new disk to import
 the updated seed and open **Digits** from the launcher. Existing disks keep their
 installed applications.

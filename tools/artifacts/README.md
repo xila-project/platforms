@@ -9,9 +9,9 @@ To prepare an entire seed profile, `tools/prepare_seed.py` reads a JSON lockfile
   "publisher_key": "<base64 raw Ed25519 public key>",
   "applications": {
     "clock": {
-      "name": "xila.clock",
-      "version": "0.2.1",
-      "url": "https://github.com/xila-project/applications/releases/download/xila.clock-v0.2.1/xila.clock-0.2.1-wasm32-wasip1.xpk",
+      "name": "dev.xila.clock",
+      "version": "<version from the registry entry>",
+      "url": "<HTTPS archive URL from the registry entry>",
       "sha256": "<64 lowercase hex characters>"
     }
   }

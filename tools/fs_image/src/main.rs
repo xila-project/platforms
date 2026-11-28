@@ -414,7 +414,7 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         let bundles = root.join("bundles");
         for application in &board_profile.applications {
-            let bundle = bundles.join(format!("xila.{}", application.replace('_', "-")));
+            let bundle = bundles.join(format!("dev.xila.{}", application.replace('_', "-")));
             let executable = format!("{application}.wasm");
             fs::create_dir_all(bundle.join(".xila")).unwrap();
             fs::create_dir_all(bundle.join("executables")).unwrap();
@@ -495,7 +495,7 @@ mod tests {
             let package = application.replace('_', "-");
             assert_eq!(
                 read_file(&format!(
-                    "/applications/bundles/xila.{package}/executables/{application}.wasm"
+                    "/applications/bundles/dev.xila.{package}/executables/{application}.wasm"
                 )),
                 b"\0asm"
             );
@@ -508,7 +508,7 @@ mod tests {
                 0o644,
             ),
             (
-                "/applications/bundles/xila.calculator/executables/calculator.wasm",
+                "/applications/bundles/dev.xila.calculator/executables/calculator.wasm",
                 0o644,
             ),
         ] {
@@ -566,7 +566,7 @@ mod tests {
         assert_eq!(
             startup_application::Configuration::parse(configuration).unwrap(),
             startup_application::Configuration {
-                program: startup_application::Program::Shortcut("xila.clock".into()),
+                program: startup_application::Program::Shortcut("dev.xila.clock".into()),
                 user: "administrator".into(),
             }
         );
@@ -583,7 +583,7 @@ mod tests {
         // writable by root only, as the firmware requires.
         let root = env::temp_dir().join(format!("xila-fs-image-clock-test-{}", process::id()));
         let _ = fs::remove_dir_all(&root);
-        let bundle = root.join("bundles/xila.clock");
+        let bundle = root.join("bundles/dev.xila.clock");
         fs::create_dir_all(bundle.join(".xila")).unwrap();
         fs::create_dir_all(bundle.join("executables")).unwrap();
         fs::write(bundle.join(".xila/manifest.json"), b"{}").unwrap();

@@ -16,7 +16,7 @@ mounts them. This crate keeps Platforms' seed data (`profiles/`, `shortcuts/`,
 cargo run -p xila-fs-image -- empty.img
 # Import a directory; host ownership and timestamps are deliberately ignored.
 cargo run -p xila-fs-image -- populated.img 16777216 --root ./root
-# Seed a profile from verified application bundle directories (xila.clock/, ...).
+# Seed a profile from verified application bundle directories (dev.xila.clock/, ...).
 cargo run -p xila-fs-image -- native.img 16777216 --bundle native --bundles-dir bundles
 cargo run -p xila-fs-image -- browser.img 16777216 --bundle wasm --bundles-dir bundles
 # Seed the classic WT32-SC01 storage partition with native shortcuts.
