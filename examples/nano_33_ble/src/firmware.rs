@@ -322,6 +322,15 @@ async fn run(task_manager: &'static task::Manager) {
         c_demo::CDemoExecutable,
     )
     .await;
+    #[cfg(feature = "linked-hexdump")]
+    mount_application_executable(
+        executable_context,
+        virtual_file_system,
+        task,
+        "/applications/executables/hexdump",
+        hexdump::HexdumpExecutable,
+    )
+    .await;
 
     #[cfg(any(feature = "native-dev", feature = "native-linked"))]
     const PATHS: &str = "/system/executables:/applications/executables";

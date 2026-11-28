@@ -238,6 +238,10 @@ run = "actionlint"
 "apt:libsdl2-2.0-0" = { env = "espressif" }
 "apt:libslirp0" = { env = "espressif" }
 "apt:unzip" = { env = "espressif" }
+"apt:zstd" = { env = "espressif-sdk" }
+"apt:llvm" = { env = "espressif-sdk-riscv" }
+"apt:lld" = { env = "espressif-sdk-riscv" }
+"apt:gcc-riscv64-unknown-elf" = { env = "espressif-sdk-riscv" }
 "apt:pkg-config" = { env = "host" }
 "apt:libasound2-dev" = { env = "host" }
 "apt:libudev-dev" = { env = "host" }
@@ -319,3 +323,11 @@ bash tools/optimize_wasm.sh "${CARGO_TARGET_DIR:-../applications/target}/wasm32-
 [tasks."ci:packages-espressif"]
 description = "Install the shared libraries required by Espressif QEMU and espflash"
 run = "mise -E ci,espressif bootstrap packages apply --manager apt --update --yes"
+
+[tasks."ci:packages-espressif-sdk"]
+description = "Install the native SDK build packages for ESP32-S3 QEMU"
+run = "mise -E ci,espressif-sdk bootstrap packages apply --manager apt --update --yes"
+
+[tasks."ci:packages-espressif-sdk-riscv"]
+description = "Install the native SDK build packages for ESP32-C6 QEMU"
+run = "mise -E ci,espressif-sdk,espressif-sdk-riscv bootstrap packages apply --manager apt --update --yes"

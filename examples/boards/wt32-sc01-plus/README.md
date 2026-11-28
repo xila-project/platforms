@@ -6,6 +6,19 @@ networks. The Settings Wi-Fi panel can turn the radio on and off, scan, connect
 and disconnect when the graphical firmware includes Settings. Core owns
 Ethernet frame processing, IP addressing and DNS.
 
+## Linked C programs
+
+Build with `native-linked` to mount `c_demo` and `hexdump` under
+`/applications/executables`. Put the pinned Xtensa GCC tools on `PATH`
+before building the SDK. See the [SDK requirements](../README.md#linked-c-programs).
+The `native-linked` release build leaves 41,760 bytes free in the 4 MiB
+application partition (about 1%).
+
+```sh
+export XILA_SDK_DIRECTORY="$(mise run --quiet setup:native-sdk xtensa-esp32s3-elf)"
+mise run build:wt32-sc01-plus -- --features native-linked
+```
+
 ## USB console and human interface emulation
 
 The USB-C port is wired to the chip's USB pins (D- on GPIO 19, D+ on GPIO 20),

@@ -342,7 +342,9 @@ It prints its arguments, native ABI version and clocks, then writes and reads
 `c-demo.txt` in the current user's home through the native C ABI. The Rust bridge
 grants standard streams and the user's home; C borrows those startup objects.
 This is compiled into the firmware and is not a dynamically loaded package.
-Only desktop native targets include it; browser and hardware examples do not.
+The [Espressif boards](../boards/README.md#linked-c-programs) and
+[Arduino Nano 33 BLE](../nano_33_ble/README.md#linked-c-programs)
+also include this command when built with `native-linked`.
 
 ## Shutdown
 

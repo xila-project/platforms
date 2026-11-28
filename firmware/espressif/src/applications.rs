@@ -91,14 +91,24 @@ pub(crate) async fn mount(
         .await;
     }
     #[cfg(feature = "native-linked")]
-    mount_one(
-        context,
-        virtual_file_system,
-        task,
-        "/applications/executables/c_demo",
-        c_demo::CDemoExecutable,
-    )
-    .await;
+    {
+        mount_one(
+            context,
+            virtual_file_system,
+            task,
+            "/applications/executables/c_demo",
+            c_demo::CDemoExecutable,
+        )
+        .await;
+        mount_one(
+            context,
+            virtual_file_system,
+            task,
+            "/applications/executables/hexdump",
+            hexdump::HexdumpExecutable,
+        )
+        .await;
+    }
 }
 
 async fn mount_one(

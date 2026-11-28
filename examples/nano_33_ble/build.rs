@@ -36,5 +36,11 @@ fn main() {
     };
     fs::copy(memory_script, out.join("memory.x")).unwrap();
     println!("cargo:rustc-link-search={}", out.display());
+    if env::var_os("CARGO_FEATURE_LINKED_HEXDUMP").is_some() {
+        println!(
+            "cargo:rustc-link-arg-bins=--defsym=_native_flash_size={}",
+            592 * 1024
+        );
+    }
     println!("cargo:rustc-link-arg-bins=-Tlink.x");
 }

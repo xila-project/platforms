@@ -55,8 +55,9 @@ wasm = { package = "xila-wasm", git = "https://github.com/xila-project/applicati
 # Package installer: packages contain WebAssembly applications, so it is
 # mounted with the WebAssembly runtime.
 package = { workspace = true, optional = true }
-# Statically linked C demo executable (`native-linked` feature).
+# Statically linked C programs (`native-linked` feature).
 c_demo = { workspace = true, optional = true }
+hexdump = { workspace = true, optional = true }
 
 [features]
 # Minimal LVGL display and pointer support.
@@ -94,8 +95,8 @@ wifi = [
 # executables, with their images in `.dram2_uninit` (ESP32-C5, C6, C61, H2, P4,
 # S2 and S3). It does not sandbox them.
 native-dev = ["xila/native-dev", "drivers_espressif/executable-memory"]
-# Statically linked C demo executable mounted at `/applications/executables/c_demo`.
-native-linked = ["dep:c_demo", "xila/native-linked"]
+# Statically linked C programs mounted under `/applications/executables`.
+native-linked = ["dep:c_demo", "dep:hexdump", "xila/native-linked"]
 # Enables debug-level logging on the serial console, including periodic display
 # flush, frame-rate and invalidation summaries.
 debug-log = ["drivers_espressif/debug-log"]

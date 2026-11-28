@@ -246,6 +246,12 @@ description = "Run the pinned espflash binary"
 depends = ["setup:espflash"]
 run = "target/espressif-emulator/tools/espflash-{{ vars.espflash_version }}/espflash"
 
+[tasks."setup:native-sdk"]
+description = "Build the native SDK from the locked Core revision and print its directory"
+tools.rust = { version = "{{ vars.rust_version }}", profile = "minimal" }
+tools.uv = "{{ vars.uv_version }}"
+run = "python3 tools/dev/build_native_sdk.py '{{ vars.rust_version }}'"
+
 [tasks."build:esp32-s3-qemu"]
 description = "Build the ESP32-S3 QEMU board (examples/boards/esp32-s3-qemu) and merge it into a 4 MiB flash image"
 depends = ["setup:espressif-emulator"]
@@ -289,7 +295,7 @@ tools.node = "{{ vars.node_version }}"
 run = "bash tools/dev/build_espressif_image.sh '{{ vars.espflash_version }}' '{{ vars.rust_version }}' '{{ vars.esp_gcc_version }}' wt32-sc01-plus elf --features usb-human-interface"
 
 [tasks."test:esp32-s3-qemu"]
-description = "Boot the ESP32-S3 QEMU board headless in Espressif QEMU and check LittleFS, RNG, LVGL, the heap and login with and without a Wi-Fi profile"
+description = "Check ESP32-S3 QEMU boot, serial login, hexdump output and the Wi-Fi profile"
 depends = ["build:esp32-s3-qemu"]
 tools.uv = "{{ vars.uv_version }}"
 run = "uv run --no-project --with littlefs-python=={{ vars.littlefs_python_version }} python -I tools/dev/espressif_smoke.py target/espressif-emulator/tools/qemu-{{ vars.esp_qemu_version }}/qemu/bin/qemu-system-xtensa target/espressif-emulator/esp32-s3-qemu-flash.bin target/espressif-emulator/runs"

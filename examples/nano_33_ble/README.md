@@ -12,9 +12,9 @@ builds the firmware and writes it through the Arduino bootloader, which stays
 in place. Then open the serial port the board presents (any speed), for example
 `picocom /dev/ttyACM0`, and log in as `administrator` with an empty password.
 
-The first start formats the file system and creates that account. Flashing
-again keeps the file system; to start over, erase its first pages from the
-bootloader.
+On first start, the firmware formats the LittleFS partition and creates the
+default account. Flashing again with the same layout keeps the file system.
+To start over, erase its first pages from the bootloader.
 
 ## Layout
 
@@ -27,6 +27,30 @@ bootloader.
 `memory.x` holds these addresses. The RAM is 256 KiB: static data, then the
 heap, then 32 KiB of stack; the last 256 bytes carry the message of a crash
 across the reset.
+
+## Linked C programs
+
+Build with `native-linked` to mount `c_demo` under
+`/applications/executables`. Build with `linked-hexdump` to mount both
+`c_demo` and `hexdump`. To build with `linked-hexdump`, install Python
+3.12 or later, Clang, LLVM, LLD, Zstandard, and Arm bare-metal GCC.
+
+```sh
+export XILA_SDK_DIRECTORY="$(mise run --quiet setup:native-sdk thumbv7em-none-eabihf)"
+mise run build:nano-33-ble -- --features linked-hexdump
+```
+
+After login, `hexdump /file.txt` reads `file.txt` in your home directory.
+With `native-linked`, the firmware has 576 KiB and LittleFS starts at
+`0xA0000` with 384 KiB. With `linked-hexdump`, the firmware has 592 KiB
+and LittleFS starts at `0xA4000` with 368 KiB.
+
+Back up your files before switching layouts. Each layout uses a different
+LittleFS partition. The firmware does not migrate files between layouts,
+and flashing a new layout can overwrite files from the old one. If the
+firmware cannot mount LittleFS at the configured address, it formats the
+partition and creates the default account. If formatting or the next mount
+fails, startup stops.
 
 ## Recovery
 
