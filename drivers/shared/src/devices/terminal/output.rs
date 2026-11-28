@@ -7,8 +7,9 @@
 use core::task::{Context as TaskContext, Poll};
 use file_system::{
     ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice, MountOperations,
-    Operation, Result, Size,
+    Operation, Size,
 };
+use io_error::Result;
 use shared::AnyByLayout;
 
 /// VFS character device writing to a raw output device with `\n` sent as `\r\n`.

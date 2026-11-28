@@ -1,6 +1,7 @@
 use audio::{AudioStreamDevice, AudioSystem, Configuration, START, STOP, SampleFormat};
 use drivers_headless::HeadlessAudioOutput;
-use file_system::{BaseOperations, Context, ControlCommand, IoErrorKind};
+use file_system::{BaseOperations, Context, ControlCommand};
+use io_error::Kind;
 use shared::AnyByLayout;
 
 type System = AudioSystem<2, 32, 2, 1, 32>;
@@ -57,7 +58,7 @@ fn reads_whole_frames_and_leaves_queued_samples_intact_on_invalid_buffers() {
     stream.start().unwrap();
     system.as_ref().mix_next_block().unwrap();
 
-    assert_eq!(output.read(&mut [0; 7]), Err(IoErrorKind::InvalidArgument));
+    assert_eq!(output.read(&mut [0; 7]), Err(Kind::InvalidArgument));
     assert_eq!(output.read(&mut []), Ok(0));
     let mut frame = [0u8; 8];
     assert_eq!(output.read(&mut frame), Ok(8));
@@ -73,7 +74,7 @@ fn bounded_output_reports_overflow_and_drop_releases_its_reservation() {
     let output = HeadlessAudioOutput::new(system.as_ref()).unwrap();
     assert!(matches!(
         HeadlessAudioOutput::new(system.as_ref()),
-        Err(IoErrorKind::ResourceBusy)
+        Err(Kind::ResourceBusy)
     ));
     for _ in 0..3 {
         system.as_ref().mix_next_block().unwrap();
@@ -97,10 +98,7 @@ fn stream_device_controls_and_drain_work_without_a_hardware_backend() {
     device.open(&mut context).unwrap();
     let samples = pcm(&[0.25, -0.25, 0.125, -0.125]);
     assert_eq!(device.write_sync(&mut context, &samples, 0), Ok(16));
-    assert_eq!(
-        device.flush_sync(&mut context),
-        Err(IoErrorKind::WouldBlock)
-    );
+    assert_eq!(device.flush_sync(&mut context), Err(Kind::WouldBlock));
 
     let mut captured = [0xff; 16];
     system.mix_next_block().unwrap();

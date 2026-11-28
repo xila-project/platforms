@@ -18,8 +18,9 @@ use esp_radio::wifi::{
 };
 use file_system::{
     ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice,
-    IoErrorKind, MountOperations, Result, Size,
+    MountOperations, Size,
 };
+use io_error::{Kind, Result};
 use network::{
     CONNECT_WIFI_CLIENT, DISCONNECT_WIFI_CLIENT, GET_KIND, GET_WIFI_CAPABILITIES,
     GET_WIFI_CONNECTION_INFO, GET_WIFI_CONNECTION_STATE, GET_WIFI_LAST_CONNECTION_ERROR,
@@ -131,9 +132,9 @@ impl StationControl {
                 let (request, result) = GET_WIFI_SCAN_RESULT::cast(input, output)?;
                 *result = update_state(|state| {
                     if request.generation != state.scan.generation || request.index >= state.count {
-                        return Err(IoErrorKind::InvalidArgument);
+                        return Err(Kind::InvalidArgument);
                     }
-                    state.results[usize::from(request.index)].ok_or(IoErrorKind::InvalidArgument)
+                    state.results[usize::from(request.index)].ok_or(Kind::InvalidArgument)
                 })?;
             }
             GET_WIFI_CONNECTION_STATE::IDENTIFIER => {
@@ -142,7 +143,7 @@ impl StationControl {
             }
             GET_WIFI_CONNECTION_INFO::IDENTIFIER => {
                 *GET_WIFI_CONNECTION_INFO::cast_output(output)? =
-                    update_state(|state| state.information).ok_or(IoErrorKind::NotFound)?;
+                    update_state(|state| state.information).ok_or(Kind::NotFound)?;
             }
             GET_WIFI_LAST_CONNECTION_ERROR::IDENTIFIER => {
                 *GET_WIFI_LAST_CONNECTION_ERROR::cast_output(output)? =
@@ -151,7 +152,7 @@ impl StationControl {
             SET_WIFI_RADIO_STATE::IDENTIFIER => {
                 let desired = *SET_WIFI_RADIO_STATE::cast_input(input)?;
                 if !matches!(desired, WifiRadioState::ON | WifiRadioState::OFF) {
-                    return Err(IoErrorKind::InvalidArgument);
+                    return Err(Kind::InvalidArgument);
                 }
                 enqueue(Request::SetRadio(desired))?;
             }
@@ -159,7 +160,7 @@ impl StationControl {
                 let configuration = *START_WIFI_SCAN::cast_input(input)?;
                 configuration.validate()?;
                 if configuration.channel > 14 {
-                    return Err(IoErrorKind::InvalidArgument);
+                    return Err(Kind::InvalidArgument);
                 }
                 enqueue(Request::Scan(configuration))?;
             }
@@ -172,7 +173,7 @@ impl StationControl {
                 DISCONNECT_WIFI_CLIENT::cast_input(input)?;
                 enqueue(Request::Disconnect)?;
             }
-            _ => return Err(IoErrorKind::Unsupported),
+            _ => return Err(Kind::Unsupported),
         }
         Ok(())
     }
@@ -180,11 +181,11 @@ impl StationControl {
 
 impl DirectBaseOperations for StationControl {
     fn read(&self, _: &mut Context<'_>, _: &mut [u8], _: Size) -> Poll<Result<usize>> {
-        Poll::Ready(Err(IoErrorKind::Unsupported))
+        Poll::Ready(Err(Kind::Unsupported))
     }
 
     fn write(&self, _: &mut Context<'_>, _: &[u8], _: Size) -> Poll<Result<usize>> {
-        Poll::Ready(Err(IoErrorKind::Unsupported))
+        Poll::Ready(Err(Kind::Unsupported))
     }
 
     fn control(
@@ -213,15 +214,15 @@ fn enqueue(request: Request) -> Result<()> {
             return Ok(());
         }
         if state.busy || state.stopping {
-            return Err(IoErrorKind::AlreadyInProgress);
+            return Err(Kind::AlreadyInProgress);
         }
         match request {
             Request::SetRadio(radio) if state.radio == radio => return Ok(()),
             Request::SetRadio(_) => (),
-            _ if state.radio == WifiRadioState::OFF => return Err(IoErrorKind::NetworkDown),
+            _ if state.radio == WifiRadioState::OFF => return Err(Kind::NetworkDown),
             Request::Scan(_) => state.scan.phase = WifiScanPhase::SCANNING,
             Request::Connect(_) if state.connection != WifiConnectionState::DISCONNECTED => {
-                return Err(IoErrorKind::AlreadyInProgress);
+                return Err(Kind::AlreadyInProgress);
             }
             Request::Connect(_) => {
                 state.connection = WifiConnectionState::CONNECTING;
@@ -251,7 +252,7 @@ pub(super) async fn run(
     };
 
     let mut start_now = match file_system.get_statistics(&STARTUP_MARKER).await {
-        Err(IoErrorKind::NotFound) => true,
+        Err(Kind::NotFound) => true,
         Ok(_) => {
             log::warning!("Wi-Fi: previous startup was interrupted; radio stays off");
             false
@@ -372,7 +373,7 @@ struct Storage {
 impl Storage {
     async fn begin_startup(&self) -> Result<()> {
         match self.file_system.remove(self.task, &STARTUP_MARKER).await {
-            Ok(()) | Err(IoErrorKind::NotFound) => (),
+            Ok(()) | Err(Kind::NotFound) => (),
             Err(error) => return Err(error),
         }
         self.file_system
@@ -656,10 +657,10 @@ fn station_configuration(configuration: &WifiClientConfiguration) -> Result<Stat
                     .credential
                     .as_bytes()?
                     .try_into()
-                    .map_err(|_| IoErrorKind::InvalidArgument)?,
+                    .map_err(|_| Kind::InvalidArgument)?,
             )
         }
-        _ => return Err(IoErrorKind::Unsupported),
+        _ => return Err(Kind::Unsupported),
     };
     let mut station = StationConfig::default()
         .with_ssid(
@@ -667,7 +668,7 @@ fn station_configuration(configuration: &WifiClientConfiguration) -> Result<Stat
                 .ssid
                 .as_bytes()?
                 .try_into()
-                .map_err(|_| IoErrorKind::InvalidArgument)?,
+                .map_err(|_| Kind::InvalidArgument)?,
         )
         .with_authentication(authentication);
     if configuration.use_bssid != 0 {

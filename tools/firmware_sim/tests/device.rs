@@ -1,6 +1,7 @@
 mod support;
-use file_system::{AccessFlags, IoErrorKind, MemoryDevice, Permissions};
+use file_system::{AccessFlags, MemoryDevice, Permissions};
 use firmware_update::device::*;
+use io_error::Kind;
 use support::*;
 use users::{GroupIdentifier, UserIdentifier};
 use virtual_file_system::{File, ItemStatic, VirtualFileSystem};
@@ -50,15 +51,12 @@ async fn vfs_stream_is_exclusive_explicit_and_privileged() {
         .unwrap();
     assert!(matches!(
         File::open(vfs, task, DEVICE_PATH, AccessFlags::Write.into()).await,
-        Err(IoErrorKind::ResourceBusy)
+        Err(Kind::ResourceBusy)
     ));
-    assert!(matches!(
-        file.duplicate().await,
-        Err(IoErrorKind::Unsupported)
-    ));
+    assert!(matches!(file.duplicate().await, Err(Kind::Unsupported)));
     assert_eq!(
         file.control(ACTIVATE, &header()).await,
-        Err(IoErrorKind::InvalidArgument)
+        Err(Kind::InvalidArgument)
     );
     let request = begin_request(137, &manifest(&[0x5a; 137], 2)).unwrap();
     file.control(BEGIN, &request).await.unwrap();
@@ -83,7 +81,7 @@ async fn vfs_stream_is_exclusive_explicit_and_privileged() {
     vfs.task_manager().set_user(task, user).await.unwrap();
     assert!(matches!(
         File::open(vfs, task, DEVICE_PATH, AccessFlags::Write.into()).await,
-        Err(IoErrorKind::PermissionDenied)
+        Err(Kind::PermissionDenied)
     ));
 }
 #[task::test]
@@ -92,13 +90,10 @@ async fn readonly_controls_and_malformed_abi_do_not_mutate() {
     let mut f = File::open(vfs, task, DEVICE_PATH, AccessFlags::Read.into())
         .await
         .unwrap();
-    assert_eq!(
-        f.control(ABORT, &header()).await,
-        Err(IoErrorKind::BadDescriptor)
-    );
+    assert_eq!(f.control(ABORT, &header()).await, Err(Kind::BadDescriptor));
     assert_eq!(
         f.as_synchronous_file_mut().control(ABORT, &header()),
-        Err(IoErrorKind::BadDescriptor)
+        Err(Kind::BadDescriptor)
     );
     assert_eq!(
         f.as_synchronous_file_mut().control_raw(
@@ -106,7 +101,7 @@ async fn readonly_controls_and_malformed_abi_do_not_mutate() {
             shared::AnyByLayout::from(&header()),
             shared::AnyByLayout::from_mutable(&mut ())
         ),
-        Err(IoErrorKind::BadDescriptor)
+        Err(Kind::BadDescriptor)
     );
     f.close(vfs).await.unwrap();
     let mut f = File::open(vfs, task, DEVICE_PATH, AccessFlags::Write.into())
@@ -114,16 +109,10 @@ async fn readonly_controls_and_malformed_abi_do_not_mutate() {
         .unwrap();
     let mut bad = header();
     bad[7] = 1;
-    assert_eq!(
-        f.control(ABORT, &bad).await,
-        Err(IoErrorKind::InvalidArgument)
-    );
+    assert_eq!(f.control(ABORT, &bad).await, Err(Kind::InvalidArgument));
     let mut bad = begin_request(3, &manifest(b"new", 2)).unwrap();
     bad[279] = 1;
-    assert_eq!(
-        f.control(BEGIN, &bad).await,
-        Err(IoErrorKind::InvalidArgument)
-    );
+    assert_eq!(f.control(BEGIN, &bad).await, Err(Kind::InvalidArgument));
     f.control(BEGIN, &begin_request(3, &manifest(b"new", 2)).unwrap())
         .await
         .unwrap();

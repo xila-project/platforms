@@ -10,6 +10,7 @@ nrf52840 = ["embassy-nrf/nrf52840"]
 usb-console = ["dep:embassy-usb"]
 
 [target.'cfg(all(target_arch = "arm", target_os = "none"))'.dependencies]
+io_error.workspace = true
 device = { workspace = true }
 drivers_shared = { package = "xila-drivers-shared", path = "../shared", default-features = false }
 file_system = { workspace = true }

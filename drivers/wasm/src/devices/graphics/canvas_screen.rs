@@ -221,8 +221,8 @@ impl DirectBaseOperations for CanvasScreenDevice {
         _cx: &mut core::task::Context<'_>,
         _: &mut [u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
-        file_system::ready(|| Err(file_system::IoErrorKind::Unsupported))
+    ) -> core::task::Poll<io_error::Result<usize>> {
+        file_system::ready(|| Err(io_error::Kind::Unsupported))
     }
 
     fn write(
@@ -230,16 +230,16 @@ impl DirectBaseOperations for CanvasScreenDevice {
         _cx: &mut core::task::Context<'_>,
         buffer: &[u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         file_system::ready(|| {
             let buffer: &[RenderingColor] =
-                align_slice_to(buffer).ok_or(file_system::IoErrorKind::InvalidArgument)?;
+                align_slice_to(buffer).ok_or(io_error::Kind::InvalidArgument)?;
 
             let mut inner = block_on(self.0.write());
 
             inner
                 .draw_buffer(buffer)
-                .map_err(|_| file_system::IoErrorKind::InputOutput)?;
+                .map_err(|_| io_error::Kind::InputOutput)?;
 
             Ok(buffer.len())
         })
@@ -251,7 +251,7 @@ impl DirectBaseOperations for CanvasScreenDevice {
         command: ControlCommandIdentifier,
         input: &AnyByLayout,
         output: &mut AnyByLayout,
-    ) -> core::task::Poll<file_system::Result<()>> {
+    ) -> core::task::Poll<io_error::Result<()>> {
         file_system::ready(|| {
             match command {
                 SET_DRAWING_AREA::IDENTIFIER => {
@@ -267,7 +267,7 @@ impl DirectBaseOperations for CanvasScreenDevice {
 
                     let resolution = inner
                         .get_resolution()
-                        .map_err(|_| file_system::IoErrorKind::InputOutput)?;
+                        .map_err(|_| io_error::Kind::InputOutput)?;
 
                     *point = resolution;
                 }
@@ -280,7 +280,7 @@ impl DirectBaseOperations for CanvasScreenDevice {
                 }
                 // Optional commands, such as brightness control, are
                 // reported as unsupported so that Settings can hide them.
-                _ => return Err(file_system::IoErrorKind::Unsupported),
+                _ => return Err(io_error::Kind::Unsupported),
             }
 
             Ok(())

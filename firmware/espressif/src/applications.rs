@@ -17,7 +17,7 @@
 
 use xila::{
     executable::{ExecutableContext, ExecutableTrait, ExecutableWrapper},
-    file_system::{IoErrorKind, Kind, Permissions},
+    file_system::{Kind, Permissions},
     log, task,
     virtual_file_system::VirtualFileSystem,
 };
@@ -136,7 +136,7 @@ async fn mount_one(
             );
             return;
         }
-        Err(IoErrorKind::NotFound) => {}
+        Err(xila::io_error::Kind::NotFound) => {}
         Err(error) => {
             log::warning!("Xila: {path} is not mounted: {error}");
             return;

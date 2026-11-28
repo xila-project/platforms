@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             match stream.write(remaining) {
                 Ok(0) => thread::yield_now(),
                 Ok(written) => remaining = &remaining[written..],
-                Err(file_system::IoErrorKind::WouldBlock) => thread::yield_now(),
+                Err(io_error::Kind::WouldBlock) => thread::yield_now(),
                 Err(error) => return Err(error.into()),
             }
         }

@@ -419,7 +419,7 @@ async fn mount_application_executable(
     path: &'static str,
     executable: impl executable::ExecutableTrait + 'static,
 ) {
-    use xila::file_system::{IoErrorKind, Kind, Permissions};
+    use xila::file_system::{Kind, Permissions};
 
     match virtual_file_system
         .get_statistics_for_task(task, &path)
@@ -438,7 +438,7 @@ async fn mount_application_executable(
             );
             return;
         }
-        Err(IoErrorKind::NotFound) => {}
+        Err(xila::io_error::Kind::NotFound) => {}
         Err(error) => {
             log::warning!("Xila: {path} is not mounted: {error}");
             return;

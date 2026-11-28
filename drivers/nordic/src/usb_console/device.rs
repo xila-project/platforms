@@ -16,8 +16,9 @@ use embassy_usb::{Builder, UsbDevice};
 use file_system::character_device::IS_A_TERMINAL;
 use file_system::{
     ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice,
-    IoErrorKind, MountOperations, Operation, Result, Size,
+    MountOperations, Operation, Size,
 };
+use io_error::{Kind, Result};
 use shared::AnyByLayout;
 
 use super::logic::{OverwriteOldest, QueueWriter, RingBuffer, is_1200_bps_touch};
@@ -148,7 +149,7 @@ impl DirectBaseOperations for StandardInDevice {
         _buffer: &[u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
-        Poll::Ready(Err(IoErrorKind::Unsupported))
+        Poll::Ready(Err(Kind::Unsupported))
     }
 
     fn flush(&self, _cx: &mut core::task::Context<'_>) -> Poll<Result<()>> {
@@ -168,7 +169,7 @@ impl DirectBaseOperations for StandardInDevice {
                 *output = 1;
                 Poll::Ready(Ok(()))
             }
-            _ => Poll::Ready(Err(IoErrorKind::Unsupported)),
+            _ => Poll::Ready(Err(Kind::Unsupported)),
         }
     }
 
@@ -198,7 +199,7 @@ impl DirectBaseOperations for StandardOutDevice {
         _buffer: &mut [u8],
         _absolute_position: Size,
     ) -> Poll<Result<usize>> {
-        Poll::Ready(Err(IoErrorKind::Unsupported))
+        Poll::Ready(Err(Kind::Unsupported))
     }
 
     fn write(
@@ -259,7 +260,7 @@ impl DirectBaseOperations for StandardOutDevice {
                 *output = 1;
                 Poll::Ready(Ok(()))
             }
-            _ => Poll::Ready(Err(IoErrorKind::Unsupported)),
+            _ => Poll::Ready(Err(Kind::Unsupported)),
         }
     }
 
@@ -486,7 +487,7 @@ impl UsbConsole {
     /// failing to enumerate or clock packets properly on the host.
     pub fn new(usbd: Peri<'static, USBD>, config: UsbConsoleConfig) -> Result<Self> {
         if INITIALIZED.swap(true, Ordering::SeqCst) {
-            return Err(IoErrorKind::ResourceBusy);
+            return Err(Kind::ResourceBusy);
         }
 
         let vbus = HardwareVbusDetect::new(Irqs);

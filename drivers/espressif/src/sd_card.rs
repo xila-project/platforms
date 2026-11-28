@@ -43,7 +43,7 @@ use esp_hal::{
     peripherals::SDHOST,
     sdmmc::{Config, ConfigError, SdHostController, Slot, SlotClk, SlotCmd, SlotConfig, SlotData},
 };
-use file_system::{IoErrorKind, Result};
+use io_error::{Kind, Result};
 use sdio::{DefaultBlockDevice, MmcBus, MmcError, sd::Card};
 use static_cell::StaticCell;
 
@@ -211,13 +211,11 @@ impl<B: MmcBus> SdCard<B> {
     }
 }
 
-fn map_error(error: MmcError) -> IoErrorKind {
+fn map_error(error: MmcError) -> Kind {
     match error {
-        MmcError::Timeout | MmcError::Busy => IoErrorKind::TimedOut,
-        MmcError::BlockSize | MmcError::BusWidth | MmcError::Unsupported => {
-            IoErrorKind::Unsupported
-        }
-        _ => IoErrorKind::InputOutput,
+        MmcError::Timeout | MmcError::Busy => Kind::TimedOut,
+        MmcError::BlockSize | MmcError::BusWidth | MmcError::Unsupported => Kind::Unsupported,
+        _ => Kind::InputOutput,
     }
 }
 

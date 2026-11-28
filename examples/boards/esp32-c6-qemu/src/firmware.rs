@@ -50,7 +50,7 @@ fn main() -> ! {
         flash_storage: FlashStorage::new(peripherals.FLASH),
         storage: STORAGE,
         random_device: RandomDevice::from_entropy_source(|_| {
-            Err(xila::file_system::IoErrorKind::DeviceUnavailable)
+            Err(xila::io_error::Kind::DeviceUnavailable)
         }),
         has_entropy_source: false,
         check_random_device: false,

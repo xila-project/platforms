@@ -16,12 +16,12 @@ impl DirectBaseOperations for PointerDevice {
         _cx: &mut core::task::Context<'_>,
         buffer: &mut [u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         file_system::ready(|| {
             // - Cast the pointer data to the buffer.
             let data: &mut InputData = buffer
                 .try_into()
-                .map_err(|_| file_system::IoErrorKind::InvalidArgument)?;
+                .map_err(|_| io_error::Kind::InvalidArgument)?;
 
             // Deliver one queued sample per read; LVGL reads again while `continue` is set, so a
             // press and its release arriving within one frame both reach it.
@@ -45,19 +45,18 @@ impl DirectBaseOperations for PointerDevice {
         _cx: &mut core::task::Context<'_>,
         buffer: &[u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         file_system::ready(|| {
             if buffer.len() != 6 {
-                return Err(file_system::IoErrorKind::InvalidArgument);
+                return Err(io_error::Kind::InvalidArgument);
             }
             let x = i16::from_le_bytes([buffer[1], buffer[2]]);
             let y = i16::from_le_bytes([buffer[3], buffer[4]]);
-            let state = State::try_from(buffer[5])
-                .map_err(|_| file_system::IoErrorKind::InvalidArgument)?;
+            let state = State::try_from(buffer[5]).map_err(|_| io_error::Kind::InvalidArgument)?;
             match buffer[0] {
                 0 => self.0.move_to(x, y),
                 1 => self.0.set_pressed(state == State::Pressed),
-                _ => return Err(file_system::IoErrorKind::InvalidArgument),
+                _ => return Err(io_error::Kind::InvalidArgument),
             }
             Ok(buffer.len())
         })

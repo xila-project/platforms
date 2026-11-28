@@ -1,9 +1,7 @@
 use core::task::{Context, Poll};
 
-use file_system::{
-    DirectBaseOperations, DirectCharacterDevice, IoErrorKind, MountOperations, Position, Result,
-    Size,
-};
+use file_system::{DirectBaseOperations, DirectCharacterDevice, MountOperations, Position, Size};
+use io_error::{Kind, Result};
 
 #[cfg(any(
     feature = "esp32",
@@ -46,11 +44,11 @@ impl DirectBaseOperations for RandomDevice {
     }
 
     fn write(&self, _: &mut Context<'_>, _: &[u8], _: Size) -> Poll<Result<usize>> {
-        Poll::Ready(Err(IoErrorKind::Unsupported))
+        Poll::Ready(Err(Kind::Unsupported))
     }
 
     fn set_position(&self, _: Size, _: &Position) -> Result<Size> {
-        Err(IoErrorKind::Unsupported)
+        Err(Kind::Unsupported)
     }
 }
 

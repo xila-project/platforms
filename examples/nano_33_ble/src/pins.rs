@@ -213,7 +213,7 @@ pub const BOARD_PINS: &[PinEntry] = &[
 pub async fn mount_gpio_pins(
     virtual_file_system: &virtual_file_system::VirtualFileSystem,
     task: task::TaskIdentifier,
-) -> virtual_file_system::Result<()> {
+) -> xila::io_error::Result<()> {
     virtual_file_system::ignore_already_exists_error(
         virtual_file_system
             .create_directory(task, &file_system::Path::DEVICES)

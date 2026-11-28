@@ -8,9 +8,9 @@ impl DirectBaseOperations for RandomDevice {
         _cx: &mut core::task::Context<'_>,
         buffer: &mut [u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         file_system::ready(|| {
-            getrandom::fill(buffer).map_err(|_| file_system::IoErrorKind::InputOutput)?;
+            getrandom::fill(buffer).map_err(|_| io_error::Kind::InputOutput)?;
 
             Ok(buffer.len())
         })
@@ -21,16 +21,16 @@ impl DirectBaseOperations for RandomDevice {
         _cx: &mut core::task::Context<'_>,
         _: &[u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
-        file_system::ready(|| Err(file_system::IoErrorKind::Unsupported))
+    ) -> core::task::Poll<io_error::Result<usize>> {
+        file_system::ready(|| Err(io_error::Kind::Unsupported))
     }
 
     fn set_position(
         &self,
         _: Size,
         _position: &file_system::Position,
-    ) -> file_system::Result<file_system::Size> {
-        Err(file_system::IoErrorKind::Unsupported)
+    ) -> io_error::Result<file_system::Size> {
+        Err(io_error::Kind::Unsupported)
     }
 }
 

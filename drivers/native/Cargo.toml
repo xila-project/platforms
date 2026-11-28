@@ -16,6 +16,7 @@ name = "audio"
 required-features = ["audio"]
 
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
+io_error.workspace = true
 drivers_core = { workspace = true, features = ["wifi_mock"] }
 drivers_shared = { workspace = true, features = ["input-queue"] }
 file_system = { workspace = true }

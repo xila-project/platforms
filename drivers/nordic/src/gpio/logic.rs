@@ -6,7 +6,7 @@
 pub use device::gpio::{
     ABI_VERSION, CONFIGURE, CapabilitiesAbi, ConfigureAbi, GET_CAPABILITIES, RELEASE, VersionAbi,
 };
-use file_system::IoErrorKind;
+use io_error::Kind;
 
 /// Total number of GPIO pins on nRF52840 (Port 0 has 32, Port 1 has 16).
 pub const PIN_COUNT: usize = 48;
@@ -21,22 +21,22 @@ pub const PORT_1_PINS: u8 = 16;
 ///
 /// Port 0: pin 0..31 -> index 0..31
 /// Port 1: pin 0..15 -> index 32..47
-pub const fn pin_index(port: u8, pin: u8) -> Result<u8, IoErrorKind> {
+pub const fn pin_index(port: u8, pin: u8) -> Result<u8, Kind> {
     match port {
         0 if pin < PORT_0_PINS => Ok(pin),
         1 if pin < PORT_1_PINS => Ok(PORT_0_PINS + pin),
-        _ => Err(IoErrorKind::InvalidArgument),
+        _ => Err(Kind::InvalidArgument),
     }
 }
 
 /// Convert a flat pin index (0..47) to hardware (port, pin).
-pub const fn port_and_pin(index: u8) -> Result<(u8, u8), IoErrorKind> {
+pub const fn port_and_pin(index: u8) -> Result<(u8, u8), Kind> {
     if index < PORT_0_PINS {
         Ok((0, index))
     } else if index < (PORT_0_PINS + PORT_1_PINS) {
         Ok((1, index - PORT_0_PINS))
     } else {
-        Err(IoErrorKind::InvalidArgument)
+        Err(Kind::InvalidArgument)
     }
 }
 
@@ -52,12 +52,12 @@ pub const fn is_pin_reserved(index: u8, reserved_mask: u64) -> bool {
 }
 
 /// Validate that a pin index is valid and not reserved.
-pub const fn validate_pin(index: u8, reserved_mask: u64) -> Result<(), IoErrorKind> {
+pub const fn validate_pin(index: u8, reserved_mask: u64) -> Result<(), Kind> {
     if index >= (PORT_0_PINS + PORT_1_PINS) {
-        return Err(IoErrorKind::InvalidArgument);
+        return Err(Kind::InvalidArgument);
     }
     if is_pin_reserved(index, reserved_mask) {
-        return Err(IoErrorKind::PermissionDenied);
+        return Err(Kind::PermissionDenied);
     }
     Ok(())
 }
@@ -70,11 +70,11 @@ pub enum Direction {
 }
 
 /// Decode ABI direction byte.
-pub const fn decode_direction(value: u8) -> Result<Direction, IoErrorKind> {
+pub const fn decode_direction(value: u8) -> Result<Direction, Kind> {
     match value {
         0 => Ok(Direction::Input),
         1 => Ok(Direction::Output),
-        _ => Err(IoErrorKind::InvalidArgument),
+        _ => Err(Kind::InvalidArgument),
     }
 }
 
@@ -87,12 +87,12 @@ pub enum Pull {
 }
 
 /// Decode ABI pull resistor byte.
-pub const fn decode_pull(value: u8) -> Result<Pull, IoErrorKind> {
+pub const fn decode_pull(value: u8) -> Result<Pull, Kind> {
     match value {
         0 => Ok(Pull::Disabled),
         1 => Ok(Pull::Up),
         2 => Ok(Pull::Down),
-        _ => Err(IoErrorKind::InvalidArgument),
+        _ => Err(Kind::InvalidArgument),
     }
 }
 
@@ -104,11 +104,11 @@ pub enum DriveMode {
 }
 
 /// Decode ABI drive mode byte.
-pub const fn decode_drive_mode(value: u8) -> Result<DriveMode, IoErrorKind> {
+pub const fn decode_drive_mode(value: u8) -> Result<DriveMode, Kind> {
     match value {
         0 => Ok(DriveMode::PushPull),
         1 => Ok(DriveMode::OpenDrain),
-        _ => Err(IoErrorKind::InvalidArgument),
+        _ => Err(Kind::InvalidArgument),
     }
 }
 
@@ -120,33 +120,33 @@ pub enum Level {
 }
 
 /// Decode ABI level byte (0 low, 1 high).
-pub const fn decode_level(value: u8) -> Result<Level, IoErrorKind> {
+pub const fn decode_level(value: u8) -> Result<Level, Kind> {
     match value {
         0 => Ok(Level::Low),
         1 => Ok(Level::High),
-        _ => Err(IoErrorKind::InvalidArgument),
+        _ => Err(Kind::InvalidArgument),
     }
 }
 
 /// Decode level from a plain write buffer byte.
 ///
 /// Accepts binary `0` and `1`, as well as ASCII `b'0'` and `b'1'` for shell convenience.
-pub const fn decode_write_level(byte: u8) -> Result<Level, IoErrorKind> {
+pub const fn decode_write_level(byte: u8) -> Result<Level, Kind> {
     match byte {
         0 | b'0' => Ok(Level::Low),
         1 | b'1' => Ok(Level::High),
-        _ => Err(IoErrorKind::InvalidArgument),
+        _ => Err(Kind::InvalidArgument),
     }
 }
 
 /// Decode a plain write buffer: one level byte, optionally followed or preceded by ASCII
 /// whitespace (as written by `echo`). `Ok(None)` means whitespace only (nothing to apply).
-pub fn decode_write_buffer(buffer: &[u8]) -> Result<Option<Level>, IoErrorKind> {
+pub fn decode_write_buffer(buffer: &[u8]) -> Result<Option<Level>, Kind> {
     let mut levels = buffer.iter().filter(|byte| !byte.is_ascii_whitespace());
     match (levels.next(), levels.next()) {
         (None, _) => Ok(None),
         (Some(&byte), None) => decode_write_level(byte).map(Some),
-        _ => Err(IoErrorKind::InvalidArgument),
+        _ => Err(Kind::InvalidArgument),
     }
 }
 
@@ -164,9 +164,9 @@ pub struct DecodedConfiguration {
 }
 
 /// Validate a `ConfigureAbi` request.
-pub fn validate_configure(request: &ConfigureAbi) -> Result<DecodedConfiguration, IoErrorKind> {
+pub fn validate_configure(request: &ConfigureAbi) -> Result<DecodedConfiguration, Kind> {
     if request.version != ABI_VERSION || request.reserved != 0 {
-        return Err(IoErrorKind::InvalidArgument);
+        return Err(Kind::InvalidArgument);
     }
 
     let pull = decode_pull(request.pull)?;
@@ -191,11 +191,11 @@ pub fn validate_configure(request: &ConfigureAbi) -> Result<DecodedConfiguration
 }
 
 /// Validate a `VersionAbi` request.
-pub const fn validate_version(request: &VersionAbi) -> Result<(), IoErrorKind> {
+pub const fn validate_version(request: &VersionAbi) -> Result<(), Kind> {
     if request.version == ABI_VERSION && request.reserved == 0 {
         Ok(())
     } else {
-        Err(IoErrorKind::InvalidArgument)
+        Err(Kind::InvalidArgument)
     }
 }
 
@@ -239,9 +239,9 @@ mod tests {
         assert_eq!(pin_index(1, 15), Ok(47));
 
         // Out of range
-        assert_eq!(pin_index(0, 32), Err(IoErrorKind::InvalidArgument));
-        assert_eq!(pin_index(1, 16), Err(IoErrorKind::InvalidArgument));
-        assert_eq!(pin_index(2, 0), Err(IoErrorKind::InvalidArgument));
+        assert_eq!(pin_index(0, 32), Err(Kind::InvalidArgument));
+        assert_eq!(pin_index(1, 16), Err(Kind::InvalidArgument));
+        assert_eq!(pin_index(2, 0), Err(Kind::InvalidArgument));
     }
 
     #[test]
@@ -253,9 +253,9 @@ mod tests {
         assert_eq!(port_and_pin(47), Ok((1, 15)));
 
         // Out of range
-        assert_eq!(port_and_pin(48), Err(IoErrorKind::InvalidArgument));
-        assert_eq!(port_and_pin(100), Err(IoErrorKind::InvalidArgument));
-        assert_eq!(port_and_pin(255), Err(IoErrorKind::InvalidArgument));
+        assert_eq!(port_and_pin(48), Err(Kind::InvalidArgument));
+        assert_eq!(port_and_pin(100), Err(Kind::InvalidArgument));
+        assert_eq!(port_and_pin(255), Err(Kind::InvalidArgument));
     }
 
     #[test]
@@ -278,29 +278,29 @@ mod tests {
         assert!(is_pin_reserved(48, mask)); // out of bounds is reserved
 
         assert_eq!(validate_pin(0, mask), Ok(()));
-        assert_eq!(validate_pin(13, mask), Err(IoErrorKind::PermissionDenied));
-        assert_eq!(validate_pin(22, mask), Err(IoErrorKind::PermissionDenied));
-        assert_eq!(validate_pin(48, mask), Err(IoErrorKind::InvalidArgument));
+        assert_eq!(validate_pin(13, mask), Err(Kind::PermissionDenied));
+        assert_eq!(validate_pin(22, mask), Err(Kind::PermissionDenied));
+        assert_eq!(validate_pin(48, mask), Err(Kind::InvalidArgument));
     }
 
     #[test]
     fn test_decode_enums() {
         assert_eq!(decode_direction(0), Ok(Direction::Input));
         assert_eq!(decode_direction(1), Ok(Direction::Output));
-        assert_eq!(decode_direction(2), Err(IoErrorKind::InvalidArgument));
+        assert_eq!(decode_direction(2), Err(Kind::InvalidArgument));
 
         assert_eq!(decode_pull(0), Ok(Pull::Disabled));
         assert_eq!(decode_pull(1), Ok(Pull::Up));
         assert_eq!(decode_pull(2), Ok(Pull::Down));
-        assert_eq!(decode_pull(3), Err(IoErrorKind::InvalidArgument));
+        assert_eq!(decode_pull(3), Err(Kind::InvalidArgument));
 
         assert_eq!(decode_drive_mode(0), Ok(DriveMode::PushPull));
         assert_eq!(decode_drive_mode(1), Ok(DriveMode::OpenDrain));
-        assert_eq!(decode_drive_mode(2), Err(IoErrorKind::InvalidArgument));
+        assert_eq!(decode_drive_mode(2), Err(Kind::InvalidArgument));
 
         assert_eq!(decode_level(0), Ok(Level::Low));
         assert_eq!(decode_level(1), Ok(Level::High));
-        assert_eq!(decode_level(2), Err(IoErrorKind::InvalidArgument));
+        assert_eq!(decode_level(2), Err(Kind::InvalidArgument));
     }
 
     #[test]
@@ -310,9 +310,9 @@ mod tests {
         assert_eq!(decode_write_level(b'0'), Ok(Level::Low));
         assert_eq!(decode_write_level(b'1'), Ok(Level::High));
 
-        assert_eq!(decode_write_level(2), Err(IoErrorKind::InvalidArgument));
-        assert_eq!(decode_write_level(0xFF), Err(IoErrorKind::InvalidArgument));
-        assert_eq!(decode_write_level(b'x'), Err(IoErrorKind::InvalidArgument));
+        assert_eq!(decode_write_level(2), Err(Kind::InvalidArgument));
+        assert_eq!(decode_write_level(0xFF), Err(Kind::InvalidArgument));
+        assert_eq!(decode_write_level(b'x'), Err(Kind::InvalidArgument));
     }
 
     #[test]
@@ -323,14 +323,8 @@ mod tests {
         assert_eq!(decode_write_buffer(b" 1\r\n"), Ok(Some(Level::High)));
         assert_eq!(decode_write_buffer(b"\n"), Ok(None));
         assert_eq!(decode_write_buffer(b""), Ok(None));
-        assert_eq!(
-            decode_write_buffer(b"10"),
-            Err(IoErrorKind::InvalidArgument)
-        );
-        assert_eq!(
-            decode_write_buffer(b"-n 1"),
-            Err(IoErrorKind::InvalidArgument)
-        );
+        assert_eq!(decode_write_buffer(b"10"), Err(Kind::InvalidArgument));
+        assert_eq!(decode_write_buffer(b"-n 1"), Err(Kind::InvalidArgument));
     }
 
     #[test]
@@ -400,50 +394,35 @@ mod tests {
             version: ABI_VERSION + 1,
             ..input_req
         };
-        assert_eq!(
-            validate_configure(&bad_ver),
-            Err(IoErrorKind::InvalidArgument)
-        );
+        assert_eq!(validate_configure(&bad_ver), Err(Kind::InvalidArgument));
 
         // Non-zero reserved
         let bad_res = ConfigureAbi {
             reserved: 1,
             ..input_req
         };
-        assert_eq!(
-            validate_configure(&bad_res),
-            Err(IoErrorKind::InvalidArgument)
-        );
+        assert_eq!(validate_configure(&bad_res), Err(Kind::InvalidArgument));
 
         // Invalid pull
         let bad_pull = ConfigureAbi {
             pull: 3,
             ..input_req
         };
-        assert_eq!(
-            validate_configure(&bad_pull),
-            Err(IoErrorKind::InvalidArgument)
-        );
+        assert_eq!(validate_configure(&bad_pull), Err(Kind::InvalidArgument));
 
         // Invalid drive mode on output
         let bad_drive = ConfigureAbi {
             drive_mode: 2,
             ..output_req
         };
-        assert_eq!(
-            validate_configure(&bad_drive),
-            Err(IoErrorKind::InvalidArgument)
-        );
+        assert_eq!(validate_configure(&bad_drive), Err(Kind::InvalidArgument));
 
         // Invalid initial level on output
         let bad_level = ConfigureAbi {
             initial_level: 2,
             ..output_req
         };
-        assert_eq!(
-            validate_configure(&bad_level),
-            Err(IoErrorKind::InvalidArgument)
-        );
+        assert_eq!(validate_configure(&bad_level), Err(Kind::InvalidArgument));
     }
 
     #[test]
@@ -458,19 +437,13 @@ mod tests {
             version: 0,
             reserved: 0,
         };
-        assert_eq!(
-            validate_version(&bad_ver),
-            Err(IoErrorKind::InvalidArgument)
-        );
+        assert_eq!(validate_version(&bad_ver), Err(Kind::InvalidArgument));
 
         let bad_res = VersionAbi {
             version: ABI_VERSION,
             reserved: 1,
         };
-        assert_eq!(
-            validate_version(&bad_res),
-            Err(IoErrorKind::InvalidArgument)
-        );
+        assert_eq!(validate_version(&bad_res), Err(Kind::InvalidArgument));
     }
 
     #[test]

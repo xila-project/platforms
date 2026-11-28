@@ -41,7 +41,7 @@ fn vfs_open_compute_read_and_close_follow_the_character_device_contract() {
     let mut output = [0; 3];
     assert_eq!(
         BaseOperations::read_sync(&device, &mut context, &mut output, 0),
-        Err(file_system::IoErrorKind::DeviceUnavailable)
+        Err(io_error::Kind::DeviceUnavailable)
     );
     let mut input_info = neural_network::TensorInfo::default();
     BaseOperations::control_sync(
@@ -65,7 +65,7 @@ fn vfs_open_compute_read_and_close_follow_the_character_device_contract() {
             shared::AnyByLayout::NONE,
             shared::AnyByLayout::NONE,
         ),
-        Err(file_system::IoErrorKind::InvalidArgument)
+        Err(io_error::Kind::InvalidArgument)
     );
     assert_eq!(
         BaseOperations::write_sync(&device, &mut context, &input, 0),
@@ -82,7 +82,7 @@ fn vfs_open_compute_read_and_close_follow_the_character_device_contract() {
     assert!(BaseOperations::read_sync(&device, &mut context, &mut output, 0).unwrap() > 0);
     assert!(matches!(
         BaseOperations::clone_context(&device, &context),
-        Err(file_system::IoErrorKind::Unsupported)
+        Err(io_error::Kind::Unsupported)
     ));
     BaseOperations::close(&device, &mut context).unwrap();
     assert!(context.get_private_data().is_none());
@@ -179,7 +179,7 @@ fn heap_model_and_open_contexts_outlive_the_device() {
         assert!(device.read_sync(&mut first, &mut output, 0).unwrap() > 0);
         assert_eq!(
             device.read_sync(&mut second, &mut output, 0),
-            Err(file_system::IoErrorKind::DeviceUnavailable)
+            Err(io_error::Kind::DeviceUnavailable)
         );
         assert_eq!(
             device.control_sync(
@@ -188,11 +188,11 @@ fn heap_model_and_open_contexts_outlive_the_device() {
                 shared::AnyByLayout::NONE,
                 shared::AnyByLayout::NONE
             ),
-            Err(file_system::IoErrorKind::InvalidArgument)
+            Err(io_error::Kind::InvalidArgument)
         );
         assert_eq!(
             device.read_sync(&mut first, &mut output, 0),
-            Err(file_system::IoErrorKind::DeviceUnavailable)
+            Err(io_error::Kind::DeviceUnavailable)
         );
     }
     device.close(&mut first).unwrap();
@@ -212,7 +212,7 @@ fn context_from_another_device_is_rejected() {
     first.open(&mut context).unwrap();
     assert_eq!(
         second.write_sync(&mut context, &[0], 0),
-        Err(file_system::IoErrorKind::BadDescriptor)
+        Err(io_error::Kind::BadDescriptor)
     );
     first.close(&mut context).unwrap();
 }
@@ -228,6 +228,6 @@ fn malformed_and_unaligned_rom_models_are_rejected() {
     assert_eq!(
         drivers_shared::devices::neural_network::from_rom(&UNALIGNED.0[1..], nanoglia::Target::Cpu)
             .err(),
-        Some(file_system::IoErrorKind::InvalidArgument)
+        Some(io_error::Kind::InvalidArgument)
     );
 }

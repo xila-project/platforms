@@ -27,8 +27,8 @@ impl<'a> DirectBaseOperations for ScreenDevice<'a> {
         _cx: &mut core::task::Context<'_>,
         _: &mut [u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
-        file_system::ready(|| Err(file_system::IoErrorKind::Unsupported))
+    ) -> core::task::Poll<io_error::Result<usize>> {
+        file_system::ready(|| Err(io_error::Kind::Unsupported))
     }
 
     fn write(
@@ -36,10 +36,10 @@ impl<'a> DirectBaseOperations for ScreenDevice<'a> {
         _cx: &mut core::task::Context<'_>,
         buffer: &[u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         file_system::ready(|| {
             let data: &[RenderingColor] =
-                align_slice_to(buffer).ok_or(file_system::IoErrorKind::InvalidArgument)?;
+                align_slice_to(buffer).ok_or(io_error::Kind::InvalidArgument)?;
 
             task::block_on(self.0.draw(data)).unwrap();
 
@@ -53,7 +53,7 @@ impl<'a> DirectBaseOperations for ScreenDevice<'a> {
         command: ControlCommandIdentifier,
         input: &AnyByLayout,
         output: &mut AnyByLayout,
-    ) -> core::task::Poll<file_system::Result<()>> {
+    ) -> core::task::Poll<io_error::Result<()>> {
         file_system::ready(|| {
             match command {
                 SET_DRAWING_AREA::IDENTIFIER => {
@@ -73,15 +73,13 @@ impl<'a> DirectBaseOperations for ScreenDevice<'a> {
                 }
                 WRITE_SCREENSHOT_TO_PATH::IDENTIFIER => {
                     let request = WRITE_SCREENSHOT_TO_PATH::cast_input(input)?;
-                    let path = request
-                        .path()
-                        .ok_or(file_system::IoErrorKind::InvalidArgument)?;
+                    let path = request.path().ok_or(io_error::Kind::InvalidArgument)?;
                     let dimensions =
                         task::block_on(super::screenshot::write_png(std::path::Path::new(path)))
-                            .map_err(|_| file_system::IoErrorKind::InputOutput)?;
+                            .map_err(|_| io_error::Kind::InputOutput)?;
                     *WRITE_SCREENSHOT_TO_PATH::cast_output(output)? = dimensions;
                 }
-                _ => return Err(file_system::IoErrorKind::Unsupported),
+                _ => return Err(io_error::Kind::Unsupported),
             }
 
             Ok(())

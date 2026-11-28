@@ -16,7 +16,8 @@ use alloc::boxed::Box;
 use embassy_sync::once_lock::OnceLock;
 use esp_hal::peripherals::{FROM_CPU_INTR0, TIMG0, WIFI};
 use esp_radio::wifi::Interface;
-use file_system::{AccessFlags, DirectCharacterDevice, IoErrorKind, Result};
+use file_system::{AccessFlags, DirectCharacterDevice};
+use io_error::{Kind, Result};
 use network::{Manager, SET_HARDWARE_ADDRESS};
 use virtual_file_system::{File, VirtualFileSystem};
 
@@ -54,7 +55,7 @@ pub async fn initialize(
             log::information!("Wi-Fi: station profile loaded");
             Some(profile)
         }
-        Err(IoErrorKind::NotFound) => None,
+        Err(Kind::NotFound) => None,
         Err(error) => {
             log::warning!("Wi-Fi: station profile rejected ({error})");
             None
@@ -62,9 +63,9 @@ pub async fn initialize(
     };
 
     let Hardware::Station(peripherals) = hardware else {
-        return Err(IoErrorKind::DeviceUnavailable);
+        return Err(Kind::DeviceUnavailable);
     };
-    let interface = Interface::try_station().ok_or(IoErrorKind::AlreadyExists)?;
+    let interface = Interface::try_station().ok_or(Kind::AlreadyExists)?;
     let address = interface.mac_address();
     let manager = Box::leak(Box::new(network::initialize(
         task_manager,
@@ -104,7 +105,7 @@ pub async fn initialize(
         }),
     )
     .await
-    .map_err(|_| IoErrorKind::InputOutput)?;
+    .map_err(|_| Kind::InputOutput)?;
     log::information!("Wi-Fi: wlan0 registered");
     Ok(manager)
 }

@@ -41,9 +41,10 @@ use cap_std::{
 };
 use file_system::{
     AccessFlags, AttributeFlags, AttributeOperations, Attributes, BaseOperations, Context,
-    CreateFlags, DirectoryOperations, Entry, FileOperations, FileSystemOperations, Flags,
-    IoErrorKind, Kind, MountOperations, Path, Permissions, Position, Result, Size, Time,
+    CreateFlags, DirectoryOperations, Entry, FileOperations, FileSystemOperations, Flags, Kind,
+    MountOperations, Path, Permissions, Position, Size, Time,
 };
+use io_error::Result;
 
 /// Options controlling a host directory mount.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -105,7 +106,7 @@ impl DirectoryHandle {
         if self.entries.is_none() {
             self.entries = Some(self.directory.entries().map_err(map_io_error)?);
         }
-        self.entries.as_mut().ok_or(IoErrorKind::InputOutput)
+        self.entries.as_mut().ok_or(io_error::Kind::InputOutput)
     }
 }
 
@@ -128,10 +129,10 @@ impl HostFileSystem {
     fn root(&self) -> Result<Arc<Dir>> {
         self.root
             .lock()
-            .map_err(|_| IoErrorKind::InputOutput)?
+            .map_err(|_| io_error::Kind::InputOutput)?
             .as_ref()
             .cloned()
-            .ok_or(IoErrorKind::DeviceUnavailable)
+            .ok_or(io_error::Kind::DeviceUnavailable)
     }
 
     fn relative_path(path: &Path) -> Result<PathBuf> {
@@ -143,7 +144,7 @@ impl HostFileSystem {
                 Component::CurDir => {}
                 Component::Normal(part) => result.push(part),
                 Component::ParentDir | Component::Prefix(_) => {
-                    return Err(IoErrorKind::InvalidPath);
+                    return Err(io_error::Kind::InvalidPath);
                 }
             }
         }
@@ -156,7 +157,7 @@ impl HostFileSystem {
 
     fn writable(&self) -> Result<()> {
         if self.options.read_only {
-            Err(IoErrorKind::ReadOnlyFileSystem)
+            Err(io_error::Kind::ReadOnlyFileSystem)
         } else {
             Ok(())
         }
@@ -170,13 +171,13 @@ impl HostFileSystem {
             return Ok(None);
         }
         if mask != AttributeFlags::Size {
-            return Err(IoErrorKind::Unsupported);
+            return Err(io_error::Kind::Unsupported);
         }
         attributes
             .get_size()
             .copied()
             .map(Some)
-            .ok_or(IoErrorKind::InvalidArgument)
+            .ok_or(io_error::Kind::InvalidArgument)
     }
 
     /// Attributes that the virtual file system passes directly to native
@@ -189,7 +190,7 @@ impl HostFileSystem {
     /// Create a regular file beneath `directory` and apply `Size` when set.
     ///
     /// Other fields in `attributes` are rejected with
-    /// [`IoErrorKind::Unsupported`] (xila-project/platforms#240). The host has
+    /// [`io_error::Kind::Unsupported`] (xila-project/platforms#240). The host has
     /// no Xila attribute storage, `User`, `Group` and `Permissions` are
     /// synthetic in [`HostFileSystemOptions`], and `writable_attributes()`
     /// reports only `AttributeFlags::Size`.
@@ -226,7 +227,7 @@ impl HostFileSystem {
         attributes: &Attributes,
     ) -> Result<()> {
         if !attributes.get_mask().is_empty() {
-            return Err(IoErrorKind::Unsupported);
+            return Err(io_error::Kind::Unsupported);
         }
         directory.create_dir(relative).map_err(map_io_error)
     }
@@ -241,7 +242,7 @@ impl HostFileSystem {
     /// native symbolic link creation without intersecting
     /// `writable_attributes()`. Other fields (including `Size`, timestamps,
     /// `Inode` and `Links`) cannot be honored on a host symbolic link and
-    /// return [`IoErrorKind::Unsupported`].
+    /// return [`io_error::Kind::Unsupported`].
     fn create_symlink_at(
         directory: &Dir,
         target: &Path,
@@ -253,13 +254,13 @@ impl HostFileSystem {
             .difference(Self::SYMLINK_CREATION_ATTRIBUTES)
             .is_empty()
         {
-            return Err(IoErrorKind::Unsupported);
+            return Err(io_error::Kind::Unsupported);
         }
         if attributes
             .get_kind()
             .is_some_and(|kind| *kind != Kind::SymbolicLink)
         {
-            return Err(IoErrorKind::InvalidArgument);
+            return Err(io_error::Kind::InvalidArgument);
         }
         let target = symlink_target(target)?;
         directory.symlink(target, link).map_err(map_io_error)
@@ -271,7 +272,7 @@ impl HostFileSystem {
         context
             .get_private_data_of_type::<DirectoryHandle>()
             .map(|handle| &handle.directory)
-            .ok_or(IoErrorKind::InvalidState)
+            .ok_or(io_error::Kind::InvalidState)
     }
 
     /// Open the child directory `name` of the pinned `parent` without
@@ -322,20 +323,20 @@ impl HostFileSystem {
         .map_err(|error| match error {
             // RESOLVE_BENEATH reports a path leaving the mounted root as EXDEV: it is an
             // escape from the mounted root, not a cross-device operation.
-            rustix::io::Errno::XDEV => IoErrorKind::PathEscapesRoot,
+            rustix::io::Errno::XDEV => io_error::Kind::PathEscapesRoot,
             error => map_io_error(error.into()),
         })?;
         let pinned = cap_std::fs::File::from_std(std::fs::File::from(pinned));
         let metadata = pinned.metadata().map_err(map_io_error)?;
         if !metadata.is_file() {
             return Err(if metadata.is_dir() {
-                IoErrorKind::IsADirectory
+                io_error::Kind::IsADirectory
             } else if metadata.file_type().is_symlink() {
                 // `O_PATH | O_NOFOLLOW` pins a final link itself; report it
                 // like `O_NOFOLLOW` does.
-                IoErrorKind::SymlinkLoop
+                io_error::Kind::SymlinkLoop
             } else {
-                IoErrorKind::Unsupported
+                io_error::Kind::Unsupported
             });
         }
 
@@ -343,7 +344,7 @@ impl HostFileSystem {
             (true, true) => rustix::fs::OFlags::RDWR,
             (false, true) => rustix::fs::OFlags::WRONLY,
             (true, false) => rustix::fs::OFlags::RDONLY,
-            (false, false) => return Err(IoErrorKind::InvalidFlags),
+            (false, false) => return Err(io_error::Kind::InvalidFlags),
         };
         let mut flags = access | rustix::fs::OFlags::CLOEXEC | rustix::fs::OFlags::NONBLOCK;
         if truncate {
@@ -392,9 +393,9 @@ impl HostFileSystem {
         let metadata = file.metadata().map_err(map_io_error)?;
         if !metadata.is_file() {
             return Err(if metadata.is_dir() {
-                IoErrorKind::IsADirectory
+                io_error::Kind::IsADirectory
             } else {
-                IoErrorKind::Unsupported
+                io_error::Kind::Unsupported
             });
         }
         Ok(file)
@@ -411,13 +412,13 @@ impl HostFileSystem {
         let create = flags.get_create();
         let write = access.contains(AccessFlags::Write);
         if !access.contains(AccessFlags::Read) && !write {
-            return Err(IoErrorKind::InvalidFlags);
+            return Err(io_error::Kind::InvalidFlags);
         }
         if create.contains(CreateFlags::Exclusive) && !create.contains(CreateFlags::Create) {
-            return Err(IoErrorKind::InvalidFlags);
+            return Err(io_error::Kind::InvalidFlags);
         }
         if create.contains(CreateFlags::Create) && !write {
-            return Err(IoErrorKind::InvalidFlags);
+            return Err(io_error::Kind::InvalidFlags);
         }
         if write {
             self.writable()?;
@@ -425,7 +426,7 @@ impl HostFileSystem {
         let read = access.contains(AccessFlags::Read);
         let truncate = create.contains(CreateFlags::Truncate);
         if truncate && !write {
-            return Err(IoErrorKind::InvalidFlags);
+            return Err(io_error::Kind::InvalidFlags);
         }
         #[cfg(target_os = "linux")]
         let file = if create.contains(CreateFlags::Exclusive) {
@@ -433,9 +434,9 @@ impl HostFileSystem {
         } else {
             match self.open_regular_file(directory, relative, read, write, truncate) {
                 Ok(file) => file,
-                Err(IoErrorKind::NotFound) if create.contains(CreateFlags::Create) => {
+                Err(io_error::Kind::NotFound) if create.contains(CreateFlags::Create) => {
                     match self.open_new_regular_file(directory, relative, read, write) {
-                        Err(IoErrorKind::AlreadyExists) => {
+                        Err(io_error::Kind::AlreadyExists) => {
                             self.open_regular_file(directory, relative, read, write, truncate)?
                         }
                         result => result?,
@@ -457,9 +458,9 @@ impl HostFileSystem {
             let metadata = file.metadata().map_err(map_io_error)?;
             if !metadata.is_file() {
                 return Err(if metadata.is_dir() {
-                    IoErrorKind::IsADirectory
+                    io_error::Kind::IsADirectory
                 } else {
-                    IoErrorKind::Unsupported
+                    io_error::Kind::Unsupported
                 });
             }
             file
@@ -471,7 +472,7 @@ impl HostFileSystem {
         let path = Self::relative_path(path)?;
         let metadata = self.root()?.symlink_metadata(&path).map_err(map_io_error)?;
         if !metadata.is_file() && !metadata.is_dir() && !metadata.file_type().is_symlink() {
-            return Err(IoErrorKind::Unsupported);
+            return Err(io_error::Kind::Unsupported);
         }
         Ok(metadata)
     }
@@ -562,7 +563,7 @@ impl HostFileSystem {
 #[cfg(target_os = "linux")]
 fn entry_name(name: &str) -> Result<&StdPath> {
     if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\0']) {
-        return Err(IoErrorKind::InvalidPath);
+        return Err(io_error::Kind::InvalidPath);
     }
     Ok(StdPath::new(name))
 }
@@ -573,7 +574,7 @@ fn entry_name(name: &str) -> Result<&StdPath> {
 fn entry_metadata(parent: &Dir, name: &StdPath) -> Result<cap_std::fs::Metadata> {
     let metadata = parent.symlink_metadata(name).map_err(map_io_error)?;
     if !metadata.is_file() && !metadata.is_dir() && !metadata.file_type().is_symlink() {
-        return Err(IoErrorKind::Unsupported);
+        return Err(io_error::Kind::Unsupported);
     }
     Ok(metadata)
 }
@@ -581,16 +582,16 @@ fn entry_metadata(parent: &Dir, name: &StdPath) -> Result<cap_std::fs::Metadata>
 /// Check a link target before storing it on the host.
 fn symlink_target(target: &Path) -> Result<PathBuf> {
     if target.get_length() > 4096 {
-        return Err(IoErrorKind::NameTooLong);
+        return Err(io_error::Kind::NameTooLong);
     }
     if !target.is_valid() || target.is_empty() {
-        return Err(IoErrorKind::InvalidPath);
+        return Err(io_error::Kind::InvalidPath);
     }
     if target.is_absolute() {
         // The VFS converts absolute Xila targets into relative namespace
         // paths before calling this native adapter. An unadapted absolute
         // target is ambiguous with a host-absolute link and is rejected.
-        return Err(IoErrorKind::Unsupported);
+        return Err(io_error::Kind::Unsupported);
     }
     Ok(StdPath::new(target.as_str()).to_path_buf())
 }
@@ -600,11 +601,14 @@ fn copy_symlink_target(target: &StdPath, buffer: &mut [u8]) -> Result<usize> {
     if target.is_absolute() {
         // An absolute target in a pre-existing host tree belongs to the
         // host namespace and cannot safely be exposed as an Xila target.
-        return Err(IoErrorKind::CorruptData);
+        return Err(io_error::Kind::CorruptData);
     }
-    let target = target.to_str().ok_or(IoErrorKind::CorruptData)?.as_bytes();
+    let target = target
+        .to_str()
+        .ok_or(io_error::Kind::CorruptData)?
+        .as_bytes();
     if target.len() > buffer.len() {
-        return Err(IoErrorKind::NameTooLong);
+        return Err(io_error::Kind::NameTooLong);
     }
     buffer[..target.len()].copy_from_slice(target);
     Ok(target.len())
@@ -658,11 +662,11 @@ fn system_time(value: SystemTime) -> Option<Time> {
         .map(Time::from)
 }
 
-fn map_io_error(error: std::io::Error) -> IoErrorKind {
+fn map_io_error(error: std::io::Error) -> io_error::Kind {
     // cap-std reports a path that leaves the mounted root as a `PermissionDenied` error without
     // an OS error code, which a genuine EACCES from the host always carries.
     if error.kind() == std::io::ErrorKind::PermissionDenied && error.raw_os_error().is_none() {
-        return IoErrorKind::PathEscapesRoot;
+        return io_error::Kind::PathEscapesRoot;
     }
     #[cfg(unix)]
     if let Some(code) = error.raw_os_error()
@@ -676,59 +680,59 @@ fn map_io_error(error: std::io::Error) -> IoErrorKind {
 /// Map a host `errno` to the I/O kind that keeps its meaning. Returns `None` for values the
 /// portable `std::io::ErrorKind` mapping already handles.
 #[cfg(unix)]
-fn map_errno(code: i32) -> Option<IoErrorKind> {
+fn map_errno(code: i32) -> Option<io_error::Kind> {
     use libc::*;
     Some(match code {
-        ELOOP => IoErrorKind::SymlinkLoop,
-        EXDEV => IoErrorKind::CrossDevice,
-        ENOSYS => IoErrorKind::NotImplemented,
+        ELOOP => io_error::Kind::SymlinkLoop,
+        EXDEV => io_error::Kind::CrossDevice,
+        ENOSYS => io_error::Kind::NotImplemented,
         // EOPNOTSUPP is the same value as ENOTSUP on Linux.
-        ENOTSUP => IoErrorKind::Unsupported,
-        EMFILE => IoErrorKind::ProcessFileLimit,
-        ENFILE => IoErrorKind::SystemFileLimit,
-        ENAMETOOLONG => IoErrorKind::NameTooLong,
-        EBADF => IoErrorKind::BadDescriptor,
-        EINVAL => IoErrorKind::InvalidArgument,
-        ESPIPE => IoErrorKind::InvalidSeek,
-        EROFS => IoErrorKind::ReadOnlyFileSystem,
-        EPERM => IoErrorKind::OperationNotPermitted,
-        ESTALE => IoErrorKind::StaleHandle,
-        ENOSPC | EDQUOT => IoErrorKind::NoSpace,
-        ENOMEM => IoErrorKind::OutOfMemory,
-        EINTR => IoErrorKind::Interrupted,
+        ENOTSUP => io_error::Kind::Unsupported,
+        EMFILE => io_error::Kind::ProcessFileLimit,
+        ENFILE => io_error::Kind::SystemFileLimit,
+        ENAMETOOLONG => io_error::Kind::NameTooLong,
+        EBADF => io_error::Kind::BadDescriptor,
+        EINVAL => io_error::Kind::InvalidArgument,
+        ESPIPE => io_error::Kind::InvalidSeek,
+        EROFS => io_error::Kind::ReadOnlyFileSystem,
+        EPERM => io_error::Kind::OperationNotPermitted,
+        ESTALE => io_error::Kind::StaleHandle,
+        ENOSPC | EDQUOT => io_error::Kind::NoSpace,
+        ENOMEM => io_error::Kind::OutOfMemory,
+        EINTR => io_error::Kind::Interrupted,
         // EWOULDBLOCK is the same value as EAGAIN on Linux.
-        EAGAIN => IoErrorKind::WouldBlock,
-        EBUSY | ETXTBSY => IoErrorKind::ResourceBusy,
-        ENODEV | ENXIO => IoErrorKind::DeviceUnavailable,
-        EFBIG => IoErrorKind::FileTooLarge,
-        ETIMEDOUT => IoErrorKind::TimedOut,
+        EAGAIN => io_error::Kind::WouldBlock,
+        EBUSY | ETXTBSY => io_error::Kind::ResourceBusy,
+        ENODEV | ENXIO => io_error::Kind::DeviceUnavailable,
+        EFBIG => io_error::Kind::FileTooLarge,
+        ETIMEDOUT => io_error::Kind::TimedOut,
         _ => return None,
     })
 }
 
-fn map_io_error_kind(kind: std::io::ErrorKind) -> IoErrorKind {
+fn map_io_error_kind(kind: std::io::ErrorKind) -> io_error::Kind {
     use std::io::ErrorKind as Io;
     match kind {
-        Io::NotFound => IoErrorKind::NotFound,
-        Io::AlreadyExists => IoErrorKind::AlreadyExists,
-        Io::PermissionDenied => IoErrorKind::PermissionDenied,
-        Io::ReadOnlyFilesystem => IoErrorKind::ReadOnlyFileSystem,
-        Io::NotADirectory => IoErrorKind::NotADirectory,
-        Io::IsADirectory => IoErrorKind::IsADirectory,
-        Io::DirectoryNotEmpty => IoErrorKind::DirectoryNotEmpty,
-        Io::InvalidInput | Io::InvalidFilename => IoErrorKind::InvalidPath,
-        Io::InvalidData => IoErrorKind::InvalidData,
-        Io::WouldBlock => IoErrorKind::WouldBlock,
-        Io::ResourceBusy | Io::ExecutableFileBusy => IoErrorKind::ResourceBusy,
-        Io::Unsupported => IoErrorKind::Unsupported,
-        Io::CrossesDevices => IoErrorKind::CrossDevice,
-        Io::NotSeekable => IoErrorKind::InvalidSeek,
-        Io::Interrupted => IoErrorKind::Interrupted,
-        Io::OutOfMemory => IoErrorKind::OutOfMemory,
-        Io::StorageFull | Io::QuotaExceeded => IoErrorKind::NoSpace,
-        Io::FileTooLarge => IoErrorKind::FileTooLarge,
-        Io::TimedOut => IoErrorKind::TimedOut,
-        _ => IoErrorKind::InputOutput,
+        Io::NotFound => io_error::Kind::NotFound,
+        Io::AlreadyExists => io_error::Kind::AlreadyExists,
+        Io::PermissionDenied => io_error::Kind::PermissionDenied,
+        Io::ReadOnlyFilesystem => io_error::Kind::ReadOnlyFileSystem,
+        Io::NotADirectory => io_error::Kind::NotADirectory,
+        Io::IsADirectory => io_error::Kind::IsADirectory,
+        Io::DirectoryNotEmpty => io_error::Kind::DirectoryNotEmpty,
+        Io::InvalidInput | Io::InvalidFilename => io_error::Kind::InvalidPath,
+        Io::InvalidData => io_error::Kind::InvalidData,
+        Io::WouldBlock => io_error::Kind::WouldBlock,
+        Io::ResourceBusy | Io::ExecutableFileBusy => io_error::Kind::ResourceBusy,
+        Io::Unsupported => io_error::Kind::Unsupported,
+        Io::CrossesDevices => io_error::Kind::CrossDevice,
+        Io::NotSeekable => io_error::Kind::InvalidSeek,
+        Io::Interrupted => io_error::Kind::Interrupted,
+        Io::OutOfMemory => io_error::Kind::OutOfMemory,
+        Io::StorageFull | Io::QuotaExceeded => io_error::Kind::NoSpace,
+        Io::FileTooLarge => io_error::Kind::FileTooLarge,
+        Io::TimedOut => io_error::Kind::TimedOut,
+        _ => io_error::Kind::InputOutput,
     }
 }
 
@@ -843,7 +847,7 @@ impl FileSystemOperations for HostFileSystem {
         let new_parent = Self::entry_parent(new_parent)?;
         let metadata = entry_metadata(existing_parent, existing_name)?;
         if metadata.is_dir() {
-            return Err(IoErrorKind::IsADirectory);
+            return Err(io_error::Kind::IsADirectory);
         }
         // `linkat` without `AT_SYMLINK_FOLLOW` links the entry itself.
         existing_parent
@@ -926,7 +930,7 @@ impl FileSystemOperations for HostFileSystem {
         let directory = root.open_dir(&relative).map_err(map_io_error)?;
         let metadata = directory.dir_metadata().map_err(map_io_error)?;
         if !metadata.is_dir() {
-            return Err(IoErrorKind::NotADirectory);
+            return Err(io_error::Kind::NotADirectory);
         }
         context.set_private_data(Box::new(DirectoryHandle::new(directory)));
         Ok(())
@@ -957,7 +961,7 @@ impl FileSystemOperations for HostFileSystem {
         let root = self.root()?;
         let metadata = root.symlink_metadata(&path).map_err(map_io_error)?;
         if !metadata.file_type().is_symlink() && !metadata.is_file() && !metadata.is_dir() {
-            return Err(IoErrorKind::Unsupported);
+            return Err(io_error::Kind::Unsupported);
         }
         if metadata.is_dir() && !metadata.file_type().is_symlink() {
             root.remove_dir(&path).map_err(map_io_error)
@@ -973,7 +977,7 @@ impl FileSystemOperations for HostFileSystem {
         let root = self.root()?;
         let metadata = root.symlink_metadata(&source).map_err(map_io_error)?;
         if !metadata.file_type().is_symlink() && !metadata.is_file() && !metadata.is_dir() {
-            return Err(IoErrorKind::Unsupported);
+            return Err(io_error::Kind::Unsupported);
         }
         root.rename(&source, &root, &destination)
             .map_err(map_io_error)
@@ -1005,8 +1009,8 @@ impl BaseOperations for HostFileSystem {
         file_system::ready(|| {
             let handle = context
                 .get_private_data_of_type::<FileHandle>()
-                .ok_or(IoErrorKind::InvalidState)?;
-            let mut file = handle.0.lock().map_err(|_| IoErrorKind::InputOutput)?;
+                .ok_or(io_error::Kind::InvalidState)?;
+            let mut file = handle.0.lock().map_err(|_| io_error::Kind::InputOutput)?;
             file.seek(SeekFrom::Start(absolute_position))
                 .map_err(map_io_error)?;
             file.read(buffer).map_err(map_io_error)
@@ -1024,8 +1028,8 @@ impl BaseOperations for HostFileSystem {
             self.writable()?;
             let handle = context
                 .get_private_data_of_type::<FileHandle>()
-                .ok_or(IoErrorKind::InvalidState)?;
-            let mut file = handle.0.lock().map_err(|_| IoErrorKind::InputOutput)?;
+                .ok_or(io_error::Kind::InvalidState)?;
+            let mut file = handle.0.lock().map_err(|_| io_error::Kind::InputOutput)?;
             file.seek(SeekFrom::Start(absolute_position))
                 .map_err(map_io_error)?;
             file.write(buffer).map_err(map_io_error)
@@ -1040,13 +1044,13 @@ impl BaseOperations for HostFileSystem {
     ) -> Result<Size> {
         let file = context
             .get_private_data_of_type::<FileHandle>()
-            .ok_or(IoErrorKind::InvalidState)?;
-        let mut file = file.0.lock().map_err(|_| IoErrorKind::InputOutput)?;
+            .ok_or(io_error::Kind::InvalidState)?;
+        let mut file = file.0.lock().map_err(|_| io_error::Kind::InputOutput)?;
         let target = match position {
             Position::Start(value) => *value,
             Position::Current(offset) => current
                 .checked_add_signed(*offset)
-                .ok_or(IoErrorKind::InvalidArgument)?,
+                .ok_or(io_error::Kind::InvalidArgument)?,
             Position::End(offset) => file.seek(SeekFrom::End(*offset)).map_err(map_io_error)?,
         };
         if !matches!(position, Position::End(_)) {
@@ -1063,10 +1067,10 @@ impl BaseOperations for HostFileSystem {
         file_system::ready(|| {
             let file = context
                 .get_private_data_of_type::<FileHandle>()
-                .ok_or(IoErrorKind::InvalidState)?;
+                .ok_or(io_error::Kind::InvalidState)?;
             file.0
                 .lock()
-                .map_err(|_| IoErrorKind::InputOutput)?
+                .map_err(|_| io_error::Kind::InputOutput)?
                 .sync_all()
                 .map_err(map_io_error)
         })
@@ -1078,7 +1082,7 @@ impl BaseOperations for HostFileSystem {
         }
         let handle = context
             .get_private_data_of_type::<DirectoryHandle>()
-            .ok_or(IoErrorKind::InvalidState)?;
+            .ok_or(io_error::Kind::InvalidState)?;
         let directory = handle.directory.try_clone().map_err(map_io_error)?;
         let mut clone = DirectoryHandle::new(directory);
         if handle.position > 0 {
@@ -1097,7 +1101,7 @@ impl BaseOperations for HostFileSystem {
         if context.take_private_data_of_type::<FileHandle>().is_some() {
             Ok(())
         } else {
-            Err(IoErrorKind::InvalidState)
+            Err(io_error::Kind::InvalidState)
         }
     }
 }
@@ -1112,13 +1116,13 @@ impl AttributeOperations for HostFileSystem {
         let metadata = if let Some(file) = context.get_private_data_of_type::<FileHandle>() {
             file.0
                 .lock()
-                .map_err(|_| IoErrorKind::InputOutput)?
+                .map_err(|_| io_error::Kind::InputOutput)?
                 .metadata()
                 .map_err(map_io_error)?
         } else if let Some(directory) = context.get_private_data_of_type::<DirectoryHandle>() {
             directory.directory.dir_metadata().map_err(map_io_error)?
         } else {
-            return Err(IoErrorKind::InvalidState);
+            return Err(io_error::Kind::InvalidState);
         };
         self.populate_attributes(&metadata, attributes);
         Ok(())
@@ -1130,23 +1134,25 @@ impl AttributeOperations for HostFileSystem {
             return Ok(());
         }
         if mask != AttributeFlags::Size {
-            return Err(IoErrorKind::Unsupported);
+            return Err(io_error::Kind::Unsupported);
         }
         self.writable()?;
-        let size = *attributes.get_size().ok_or(IoErrorKind::InvalidArgument)?;
+        let size = *attributes
+            .get_size()
+            .ok_or(io_error::Kind::InvalidArgument)?;
         let Some(file) = context.get_private_data_of_type::<FileHandle>() else {
             return if context
                 .get_private_data_of_type::<DirectoryHandle>()
                 .is_some()
             {
-                Err(IoErrorKind::IsADirectory)
+                Err(io_error::Kind::IsADirectory)
             } else {
-                Err(IoErrorKind::InvalidState)
+                Err(io_error::Kind::InvalidState)
             };
         };
         file.0
             .lock()
-            .map_err(|_| IoErrorKind::InputOutput)?
+            .map_err(|_| io_error::Kind::InputOutput)?
             .set_len(size)
             .map_err(map_io_error)
     }
@@ -1158,7 +1164,7 @@ impl DirectoryOperations for HostFileSystem {
             let (entry, position, symlink_metadata) = {
                 let handle = context
                     .get_private_data_mutable_of_type::<DirectoryHandle>()
-                    .ok_or(IoErrorKind::InvalidState)?;
+                    .ok_or(io_error::Kind::InvalidState)?;
                 let entry = handle.entries()?.next().transpose().map_err(map_io_error)?;
                 let mut symlink_metadata = None;
                 if let Some(entry) = entry.as_ref() {
@@ -1190,7 +1196,7 @@ impl DirectoryOperations for HostFileSystem {
                 continue;
             };
             let (inode, size, modification) = if kind.is_symlink() {
-                let metadata = symlink_metadata.ok_or(IoErrorKind::InputOutput)?;
+                let metadata = symlink_metadata.ok_or(io_error::Kind::InputOutput)?;
                 (position, metadata.len(), modification_time(&metadata))
             } else {
                 let metadata = entry.metadata().map_err(map_io_error)?;
@@ -1208,13 +1214,13 @@ impl DirectoryOperations for HostFileSystem {
         context
             .get_private_data_of_type::<DirectoryHandle>()
             .map(|handle| handle.position)
-            .ok_or(IoErrorKind::InvalidState)
+            .ok_or(io_error::Kind::InvalidState)
     }
 
     fn set_position(&self, context: &mut Context, position: Size) -> Result<()> {
         let handle = context
             .get_private_data_mutable_of_type::<DirectoryHandle>()
-            .ok_or(IoErrorKind::InvalidState)?;
+            .ok_or(io_error::Kind::InvalidState)?;
         handle.entries = None;
         handle.position = 0;
         if position == 0 {
@@ -1243,7 +1249,7 @@ impl DirectoryOperations for HostFileSystem {
         {
             Ok(())
         } else {
-            Err(IoErrorKind::InvalidState)
+            Err(io_error::Kind::InvalidState)
         }
     }
 }
@@ -1253,12 +1259,12 @@ impl MountOperations for HostFileSystem {
         if self
             .root
             .lock()
-            .map_err(|_| IoErrorKind::InputOutput)?
+            .map_err(|_| io_error::Kind::InputOutput)?
             .is_some()
         {
             Ok(())
         } else {
-            Err(IoErrorKind::DeviceUnavailable)
+            Err(io_error::Kind::DeviceUnavailable)
         }
     }
 
@@ -1268,10 +1274,10 @@ impl MountOperations for HostFileSystem {
         // while existing contexts remain usable until they are closed.
         self.root
             .lock()
-            .map_err(|_| IoErrorKind::InputOutput)?
+            .map_err(|_| io_error::Kind::InputOutput)?
             .take()
             .map(drop)
-            .ok_or(IoErrorKind::DeviceUnavailable)
+            .ok_or(io_error::Kind::DeviceUnavailable)
     }
 }
 
@@ -1288,39 +1294,39 @@ mod tests {
         use libc::*;
 
         for (errno, expected) in [
-            (ENOENT, IoErrorKind::NotFound),
-            (EACCES, IoErrorKind::PermissionDenied),
-            (EPERM, IoErrorKind::OperationNotPermitted),
-            (EROFS, IoErrorKind::ReadOnlyFileSystem),
-            (EEXIST, IoErrorKind::AlreadyExists),
-            (ENOTDIR, IoErrorKind::NotADirectory),
-            (EISDIR, IoErrorKind::IsADirectory),
-            (ENOTEMPTY, IoErrorKind::DirectoryNotEmpty),
-            (ELOOP, IoErrorKind::SymlinkLoop),
-            (EXDEV, IoErrorKind::CrossDevice),
-            (ENOSYS, IoErrorKind::NotImplemented),
-            (ENOTSUP, IoErrorKind::Unsupported),
-            (EOPNOTSUPP, IoErrorKind::Unsupported),
-            (ESPIPE, IoErrorKind::InvalidSeek),
-            (EMFILE, IoErrorKind::ProcessFileLimit),
-            (ENFILE, IoErrorKind::SystemFileLimit),
-            (ENAMETOOLONG, IoErrorKind::NameTooLong),
-            (ENOSPC, IoErrorKind::NoSpace),
-            (EDQUOT, IoErrorKind::NoSpace),
-            (EBUSY, IoErrorKind::ResourceBusy),
-            (ETXTBSY, IoErrorKind::ResourceBusy),
-            (EAGAIN, IoErrorKind::WouldBlock),
-            (EWOULDBLOCK, IoErrorKind::WouldBlock),
-            (EINTR, IoErrorKind::Interrupted),
-            (EIO, IoErrorKind::InputOutput),
-            (ESTALE, IoErrorKind::StaleHandle),
-            (EINVAL, IoErrorKind::InvalidArgument),
-            (EBADF, IoErrorKind::BadDescriptor),
-            (ENOMEM, IoErrorKind::OutOfMemory),
-            (EFBIG, IoErrorKind::FileTooLarge),
-            (ENODEV, IoErrorKind::DeviceUnavailable),
-            (ETIMEDOUT, IoErrorKind::TimedOut),
-            (i32::MAX, IoErrorKind::InputOutput),
+            (ENOENT, io_error::Kind::NotFound),
+            (EACCES, io_error::Kind::PermissionDenied),
+            (EPERM, io_error::Kind::OperationNotPermitted),
+            (EROFS, io_error::Kind::ReadOnlyFileSystem),
+            (EEXIST, io_error::Kind::AlreadyExists),
+            (ENOTDIR, io_error::Kind::NotADirectory),
+            (EISDIR, io_error::Kind::IsADirectory),
+            (ENOTEMPTY, io_error::Kind::DirectoryNotEmpty),
+            (ELOOP, io_error::Kind::SymlinkLoop),
+            (EXDEV, io_error::Kind::CrossDevice),
+            (ENOSYS, io_error::Kind::NotImplemented),
+            (ENOTSUP, io_error::Kind::Unsupported),
+            (EOPNOTSUPP, io_error::Kind::Unsupported),
+            (ESPIPE, io_error::Kind::InvalidSeek),
+            (EMFILE, io_error::Kind::ProcessFileLimit),
+            (ENFILE, io_error::Kind::SystemFileLimit),
+            (ENAMETOOLONG, io_error::Kind::NameTooLong),
+            (ENOSPC, io_error::Kind::NoSpace),
+            (EDQUOT, io_error::Kind::NoSpace),
+            (EBUSY, io_error::Kind::ResourceBusy),
+            (ETXTBSY, io_error::Kind::ResourceBusy),
+            (EAGAIN, io_error::Kind::WouldBlock),
+            (EWOULDBLOCK, io_error::Kind::WouldBlock),
+            (EINTR, io_error::Kind::Interrupted),
+            (EIO, io_error::Kind::InputOutput),
+            (ESTALE, io_error::Kind::StaleHandle),
+            (EINVAL, io_error::Kind::InvalidArgument),
+            (EBADF, io_error::Kind::BadDescriptor),
+            (ENOMEM, io_error::Kind::OutOfMemory),
+            (EFBIG, io_error::Kind::FileTooLarge),
+            (ENODEV, io_error::Kind::DeviceUnavailable),
+            (ETIMEDOUT, io_error::Kind::TimedOut),
+            (i32::MAX, io_error::Kind::InputOutput),
         ] {
             assert_eq!(
                 map_io_error(std::io::Error::from_raw_os_error(errno)),
@@ -1336,11 +1342,11 @@ mod tests {
             std::io::ErrorKind::PermissionDenied,
             "a path led outside of the filesystem",
         );
-        assert_eq!(map_io_error(escape), IoErrorKind::PathEscapesRoot);
+        assert_eq!(map_io_error(escape), io_error::Kind::PathEscapesRoot);
         #[cfg(unix)]
         assert_eq!(
             map_io_error(std::io::Error::from_raw_os_error(libc::EACCES)),
-            IoErrorKind::PermissionDenied
+            io_error::Kind::PermissionDenied
         );
     }
 
@@ -1349,19 +1355,19 @@ mod tests {
         use std::io::ErrorKind as Io;
 
         for (kind, expected) in [
-            (Io::InvalidInput, IoErrorKind::InvalidPath),
-            (Io::InvalidData, IoErrorKind::InvalidData),
-            (Io::ReadOnlyFilesystem, IoErrorKind::ReadOnlyFileSystem),
-            (Io::StorageFull, IoErrorKind::NoSpace),
-            (Io::FileTooLarge, IoErrorKind::FileTooLarge),
-            (Io::Unsupported, IoErrorKind::Unsupported),
-            (Io::CrossesDevices, IoErrorKind::CrossDevice),
-            (Io::WouldBlock, IoErrorKind::WouldBlock),
-            (Io::ResourceBusy, IoErrorKind::ResourceBusy),
-            (Io::ExecutableFileBusy, IoErrorKind::ResourceBusy),
-            (Io::TimedOut, IoErrorKind::TimedOut),
-            (Io::Interrupted, IoErrorKind::Interrupted),
-            (Io::Other, IoErrorKind::InputOutput),
+            (Io::InvalidInput, io_error::Kind::InvalidPath),
+            (Io::InvalidData, io_error::Kind::InvalidData),
+            (Io::ReadOnlyFilesystem, io_error::Kind::ReadOnlyFileSystem),
+            (Io::StorageFull, io_error::Kind::NoSpace),
+            (Io::FileTooLarge, io_error::Kind::FileTooLarge),
+            (Io::Unsupported, io_error::Kind::Unsupported),
+            (Io::CrossesDevices, io_error::Kind::CrossDevice),
+            (Io::WouldBlock, io_error::Kind::WouldBlock),
+            (Io::ResourceBusy, io_error::Kind::ResourceBusy),
+            (Io::ExecutableFileBusy, io_error::Kind::ResourceBusy),
+            (Io::TimedOut, io_error::Kind::TimedOut),
+            (Io::Interrupted, io_error::Kind::Interrupted),
+            (Io::Other, io_error::Kind::InputOutput),
         ] {
             assert_eq!(map_io_error(kind.into()), expected, "{kind:?}");
         }
@@ -1390,7 +1396,7 @@ mod tests {
         let filesystem = HostFileSystem::open(&root, HostFileSystemOptions::default()).unwrap();
         assert_eq!(
             HostFileSystem::relative_path(Path::new("/../outside/secret")),
-            Err(IoErrorKind::InvalidPath)
+            Err(io_error::Kind::InvalidPath)
         );
         let mut context = Context::new_empty();
         assert_eq!(
@@ -1399,7 +1405,7 @@ mod tests {
                 Path::new("/../secret"),
                 AccessFlags::Read.into()
             ),
-            Err(IoErrorKind::InvalidPath)
+            Err(io_error::Kind::InvalidPath)
         );
         #[cfg(unix)]
         assert!(
@@ -1413,7 +1419,7 @@ mod tests {
         );
         assert_eq!(
             filesystem.rename(Path::new("/../secret"), Path::new("/inside")),
-            Err(IoErrorKind::InvalidPath)
+            Err(io_error::Kind::InvalidPath)
         );
         let _ = fs::remove_dir_all(root);
         let _ = fs::remove_dir_all(outside);
@@ -1456,7 +1462,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             readonly.create_file(Path::new("/blocked"), &Attributes::new()),
-            Err(IoErrorKind::ReadOnlyFileSystem)
+            Err(io_error::Kind::ReadOnlyFileSystem)
         );
         let mut attrs = Attributes::new().set_mask(AttributeFlags::Size);
         FileSystemOperations::get_attributes(&readonly, Path::new("/file"), &mut attrs).unwrap();
@@ -1464,15 +1470,15 @@ mod tests {
         assert!(root.join("file").exists());
         assert_eq!(
             readonly.create_directory(Path::new("/blocked-dir"), &Attributes::new()),
-            Err(IoErrorKind::ReadOnlyFileSystem)
+            Err(io_error::Kind::ReadOnlyFileSystem)
         );
         assert_eq!(
             readonly.remove(Path::new("/file")),
-            Err(IoErrorKind::ReadOnlyFileSystem)
+            Err(io_error::Kind::ReadOnlyFileSystem)
         );
         assert_eq!(
             readonly.rename(Path::new("/file"), Path::new("/renamed")),
-            Err(IoErrorKind::ReadOnlyFileSystem)
+            Err(io_error::Kind::ReadOnlyFileSystem)
         );
         assert_eq!(
             FileSystemOperations::set_attributes(
@@ -1480,7 +1486,7 @@ mod tests {
                 Path::new("/file"),
                 &Attributes::new().set_size(1),
             ),
-            Err(IoErrorKind::ReadOnlyFileSystem)
+            Err(io_error::Kind::ReadOnlyFileSystem)
         );
         let mut read_write_context = Context::new_empty();
         filesystem
@@ -1492,7 +1498,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             BaseOperations::write_sync(&readonly, &mut read_write_context, b"x", 0),
-            Err(IoErrorKind::ReadOnlyFileSystem)
+            Err(io_error::Kind::ReadOnlyFileSystem)
         );
         assert_eq!(
             AttributeOperations::set_attributes(
@@ -1500,7 +1506,7 @@ mod tests {
                 &mut read_write_context,
                 &Attributes::new().set_size(1),
             ),
-            Err(IoErrorKind::ReadOnlyFileSystem)
+            Err(io_error::Kind::ReadOnlyFileSystem)
         );
         BaseOperations::close(&filesystem, &mut read_write_context).unwrap();
         let _ = fs::remove_dir_all(root);
@@ -1623,7 +1629,7 @@ mod tests {
         MountOperations::unmount(&filesystem).unwrap();
         assert_eq!(
             filesystem.create_file(Path::new("/after-unmount"), &Attributes::new()),
-            Err(IoErrorKind::DeviceUnavailable)
+            Err(io_error::Kind::DeviceUnavailable)
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -1658,7 +1664,7 @@ mod tests {
         );
         assert_eq!(
             filesystem.create_file(Path::new("/new-path"), &Attributes::new()),
-            Err(IoErrorKind::DeviceUnavailable)
+            Err(io_error::Kind::DeviceUnavailable)
         );
         DirectoryOperations::set_position(&filesystem, &mut directory_context, 0).unwrap();
         let mut attributes = Attributes::new().set_mask(AttributeFlags::Kind);
@@ -1679,7 +1685,7 @@ mod tests {
         let mut context = Context::new_empty();
         assert_eq!(
             filesystem.lookup_file(&mut context, Path::new("/pipe"), AccessFlags::Read.into()),
-            Err(IoErrorKind::Unsupported)
+            Err(io_error::Kind::Unsupported)
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -1700,7 +1706,7 @@ mod tests {
         attributes
             .get_kind()
             .copied()
-            .ok_or(IoErrorKind::InputOutput)
+            .ok_or(io_error::Kind::InputOutput)
     }
 
     #[test]
@@ -1730,7 +1736,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             filesystem.create_directory_entry(&root_context, "directory", &Attributes::new()),
-            Err(IoErrorKind::AlreadyExists)
+            Err(io_error::Kind::AlreadyExists)
         );
         assert!(root.join("directory").is_dir());
 
@@ -1743,7 +1749,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             filesystem.create_file_entry(&directory, "file", &Attributes::new()),
-            Err(IoErrorKind::AlreadyExists)
+            Err(io_error::Kind::AlreadyExists)
         );
         assert!(root.join("directory/file").is_file());
 
@@ -1770,11 +1776,11 @@ mod tests {
         let mut missing = Context::new_empty();
         assert_eq!(
             filesystem.lookup_directory_entry(&root_context, "missing", &mut missing),
-            Err(IoErrorKind::NotFound)
+            Err(io_error::Kind::NotFound)
         );
         assert_eq!(
             filesystem.lookup_directory_entry(&directory, "file", &mut missing),
-            Err(IoErrorKind::NotADirectory)
+            Err(io_error::Kind::NotADirectory)
         );
         DirectoryOperations::close(&filesystem, &mut directory).unwrap();
         DirectoryOperations::close(&filesystem, &mut root_context).unwrap();
@@ -1831,7 +1837,7 @@ mod tests {
                 &mut directory,
                 AccessFlags::Read.into()
             ),
-            Err(IoErrorKind::IsADirectory)
+            Err(io_error::Kind::IsADirectory)
         );
 
         let mut attributes = Attributes::new().set_mask(
@@ -1858,7 +1864,7 @@ mod tests {
         );
         assert_eq!(
             entry_kind(&filesystem, &root_context, "missing"),
-            Err(IoErrorKind::NotFound)
+            Err(io_error::Kind::NotFound)
         );
 
         filesystem
@@ -1874,7 +1880,7 @@ mod tests {
                 "file",
                 &Attributes::new().set_user(users::UserIdentifier::new(1))
             ),
-            Err(IoErrorKind::Unsupported)
+            Err(io_error::Kind::Unsupported)
         );
         assert_eq!(
             filesystem.set_entry_attributes(
@@ -1882,7 +1888,7 @@ mod tests {
                 "directory",
                 &Attributes::new().set_size(0)
             ),
-            Err(IoErrorKind::IsADirectory)
+            Err(io_error::Kind::IsADirectory)
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -1913,7 +1919,7 @@ mod tests {
         assert_eq!(fs::read(root.join("destination/moved")).unwrap(), b"data");
         assert_eq!(
             filesystem.rename_entry(&source, "file", &destination, "again"),
-            Err(IoErrorKind::NotFound)
+            Err(io_error::Kind::NotFound)
         );
 
         filesystem
@@ -1926,7 +1932,7 @@ mod tests {
         assert_eq!(attributes.get_links(), Some(&2));
         assert_eq!(
             filesystem.link_entry(&source, "directory", &destination, "linked"),
-            Err(IoErrorKind::IsADirectory)
+            Err(io_error::Kind::IsADirectory)
         );
 
         filesystem.remove_entry(&source, "hard").unwrap();
@@ -1936,11 +1942,11 @@ mod tests {
         fs::write(root.join("destination/inner"), b"").unwrap();
         assert_eq!(
             filesystem.remove_entry(&root_context, "destination"),
-            Err(IoErrorKind::DirectoryNotEmpty)
+            Err(io_error::Kind::DirectoryNotEmpty)
         );
         assert_eq!(
             filesystem.remove_entry(&source, "missing"),
-            Err(IoErrorKind::NotFound)
+            Err(io_error::Kind::NotFound)
         );
         DirectoryOperations::close(&filesystem, &mut source).unwrap();
         DirectoryOperations::close(&filesystem, &mut destination).unwrap();
@@ -1989,7 +1995,7 @@ mod tests {
                 "absolute-link",
                 &Attributes::new()
             ),
-            Err(IoErrorKind::Unsupported)
+            Err(io_error::Kind::Unsupported)
         );
         assert_eq!(
             filesystem.create_symlink_entry(
@@ -1998,7 +2004,7 @@ mod tests {
                 "file-link",
                 &Attributes::new()
             ),
-            Err(IoErrorKind::AlreadyExists)
+            Err(io_error::Kind::AlreadyExists)
         );
 
         let mut buffer = [0; 64];
@@ -2014,15 +2020,15 @@ mod tests {
         assert_eq!(&buffer[..length], b"../outside-relative");
         assert_eq!(
             filesystem.read_symlink_entry(&root_context, "absolute", &mut buffer),
-            Err(IoErrorKind::CorruptData)
+            Err(io_error::Kind::CorruptData)
         );
         assert_eq!(
             filesystem.read_symlink_entry(&root_context, "file-link", &mut [0; 2]),
-            Err(IoErrorKind::NameTooLong)
+            Err(io_error::Kind::NameTooLong)
         );
         assert_eq!(
             filesystem.read_symlink_entry(&root_context, "file", &mut buffer),
-            Err(IoErrorKind::InvalidArgument)
+            Err(io_error::Kind::InvalidArgument)
         );
 
         let mut attributes =
@@ -2037,7 +2043,7 @@ mod tests {
             let mut context = Context::new_empty();
             assert_eq!(
                 filesystem.lookup_directory_entry(&root_context, link, &mut context),
-                Err(IoErrorKind::NotADirectory),
+                Err(io_error::Kind::NotADirectory),
                 "{link}"
             );
         }
@@ -2050,7 +2056,7 @@ mod tests {
                     &mut context,
                     AccessFlags::Read.into()
                 ),
-                Err(IoErrorKind::SymlinkLoop),
+                Err(io_error::Kind::SymlinkLoop),
                 "{link}"
             );
             assert_eq!(
@@ -2059,7 +2065,7 @@ mod tests {
                     link,
                     &Attributes::new().set_size(0)
                 ),
-                Err(IoErrorKind::SymlinkLoop),
+                Err(io_error::Kind::SymlinkLoop),
                 "{link}"
             );
         }
@@ -2075,11 +2081,11 @@ mod tests {
                     None,
                 ),
             ),
-            Err(IoErrorKind::AlreadyExists)
+            Err(io_error::Kind::AlreadyExists)
         );
         assert_eq!(
             filesystem.create_file_entry(&root_context, "secret", &Attributes::new()),
-            Err(IoErrorKind::AlreadyExists)
+            Err(io_error::Kind::AlreadyExists)
         );
         assert_eq!(fs::read(outside.join("secret")).unwrap(), b"secret");
 
@@ -2134,7 +2140,7 @@ mod tests {
             let mut buffer = [0; 16];
             assert_eq!(
                 filesystem.lookup_directory_entry(&root_context, name, &mut context),
-                Err(IoErrorKind::InvalidPath),
+                Err(io_error::Kind::InvalidPath),
                 "{name:?}"
             );
             assert_eq!(
@@ -2144,31 +2150,31 @@ mod tests {
                     &mut context,
                     AccessFlags::Read.into()
                 ),
-                Err(IoErrorKind::InvalidPath)
+                Err(io_error::Kind::InvalidPath)
             );
             assert_eq!(
                 filesystem.create_directory_entry(&root_context, name, &Attributes::new()),
-                Err(IoErrorKind::InvalidPath)
+                Err(io_error::Kind::InvalidPath)
             );
             assert_eq!(
                 filesystem.create_file_entry(&root_context, name, &Attributes::new()),
-                Err(IoErrorKind::InvalidPath)
+                Err(io_error::Kind::InvalidPath)
             );
             assert_eq!(
                 filesystem.remove_entry(&root_context, name),
-                Err(IoErrorKind::InvalidPath)
+                Err(io_error::Kind::InvalidPath)
             );
             assert_eq!(
                 filesystem.rename_entry(&root_context, name, &root_context, "new"),
-                Err(IoErrorKind::InvalidPath)
+                Err(io_error::Kind::InvalidPath)
             );
             assert_eq!(
                 filesystem.rename_entry(&root_context, "directory", &root_context, name),
-                Err(IoErrorKind::InvalidPath)
+                Err(io_error::Kind::InvalidPath)
             );
             assert_eq!(
                 filesystem.link_entry(&root_context, name, &root_context, "new"),
-                Err(IoErrorKind::InvalidPath)
+                Err(io_error::Kind::InvalidPath)
             );
             assert_eq!(
                 filesystem.create_symlink_entry(
@@ -2177,15 +2183,15 @@ mod tests {
                     name,
                     &Attributes::new()
                 ),
-                Err(IoErrorKind::InvalidPath)
+                Err(io_error::Kind::InvalidPath)
             );
             assert_eq!(
                 filesystem.read_symlink_entry(&root_context, name, &mut buffer),
-                Err(IoErrorKind::InvalidPath)
+                Err(io_error::Kind::InvalidPath)
             );
             assert_eq!(
                 filesystem.get_entry_attributes(&root_context, name, &mut attributes),
-                Err(IoErrorKind::InvalidPath)
+                Err(io_error::Kind::InvalidPath)
             );
             assert_eq!(
                 filesystem.set_entry_attributes(
@@ -2193,7 +2199,7 @@ mod tests {
                     name,
                     &Attributes::new().set_size(0)
                 ),
-                Err(IoErrorKind::InvalidPath)
+                Err(io_error::Kind::InvalidPath)
             );
         }
         // A file context is not a parent directory.
@@ -2207,7 +2213,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             filesystem.create_file_entry(&file, "child", &Attributes::new()),
-            Err(IoErrorKind::InvalidState)
+            Err(io_error::Kind::InvalidState)
         );
         BaseOperations::close(&filesystem, &mut file).unwrap();
         assert!(root.join("directory").is_dir());
@@ -2228,7 +2234,7 @@ mod tests {
         )
         .unwrap();
         let root_context = open_root_entry(&filesystem);
-        let read_only = Err(IoErrorKind::ReadOnlyFileSystem);
+        let read_only = Err(io_error::Kind::ReadOnlyFileSystem);
         assert_eq!(
             filesystem.create_directory_entry(&root_context, "new", &Attributes::new()),
             read_only
@@ -2315,7 +2321,7 @@ mod tests {
         let mut replaced = Context::new_empty();
         assert_eq!(
             filesystem.lookup_directory_entry(&root_context, "parent", &mut replaced),
-            Err(IoErrorKind::NotADirectory)
+            Err(io_error::Kind::NotADirectory)
         );
         DirectoryOperations::close(&filesystem, &mut parent).unwrap();
         fs::remove_file(root.join("parent")).unwrap();
@@ -2445,7 +2451,7 @@ mod tests {
             let file_path = format!("/{file_name}");
             assert_eq!(
                 filesystem.create_file(Path::new(&file_path), attributes),
-                Err(IoErrorKind::Unsupported),
+                Err(io_error::Kind::Unsupported),
                 "file attribute mask {:?}",
                 attributes.get_mask()
             );
@@ -2455,7 +2461,7 @@ mod tests {
             let directory_path = format!("/{directory_name}");
             assert_eq!(
                 filesystem.create_directory(Path::new(&directory_path), attributes),
-                Err(IoErrorKind::Unsupported),
+                Err(io_error::Kind::Unsupported),
                 "directory attribute mask {:?}",
                 attributes.get_mask()
             );
@@ -2464,7 +2470,7 @@ mod tests {
 
         assert_eq!(
             filesystem.create_directory(Path::new("/sized-dir"), &Attributes::new().set_size(4)),
-            Err(IoErrorKind::Unsupported)
+            Err(io_error::Kind::Unsupported)
         );
         assert!(!root.join("sized-dir").exists());
 
@@ -2519,7 +2525,7 @@ mod tests {
             let file_name = format!("rejected-entry-file-{index}");
             assert_eq!(
                 filesystem.create_file_entry(&root_context, &file_name, attributes),
-                Err(IoErrorKind::Unsupported),
+                Err(io_error::Kind::Unsupported),
                 "file entry attribute mask {:?}",
                 attributes.get_mask()
             );
@@ -2528,7 +2534,7 @@ mod tests {
             let directory_name = format!("rejected-entry-dir-{index}");
             assert_eq!(
                 filesystem.create_directory_entry(&root_context, &directory_name, attributes),
-                Err(IoErrorKind::Unsupported),
+                Err(io_error::Kind::Unsupported),
                 "directory entry attribute mask {:?}",
                 attributes.get_mask()
             );
@@ -2541,7 +2547,7 @@ mod tests {
                 "sized-dir",
                 &Attributes::new().set_size(7),
             ),
-            Err(IoErrorKind::Unsupported)
+            Err(io_error::Kind::Unsupported)
         );
         assert!(!root.join("sized-dir").exists());
 
@@ -2594,7 +2600,7 @@ mod tests {
                 Path::new("/bad-kind"),
                 &Attributes::new().set_kind(Kind::File),
             ),
-            Err(IoErrorKind::InvalidArgument)
+            Err(io_error::Kind::InvalidArgument)
         );
         assert!(fs::symlink_metadata(root.join("bad-kind")).is_err());
 
@@ -2614,7 +2620,7 @@ mod tests {
             let link_path = format!("/{link_name}");
             assert_eq!(
                 filesystem.create_symlink(Path::new("target"), Path::new(&link_path), attributes),
-                Err(IoErrorKind::Unsupported),
+                Err(io_error::Kind::Unsupported),
                 "symlink attribute mask {:?}",
                 attributes.get_mask()
             );
@@ -2643,7 +2649,7 @@ mod tests {
                     "entry-bad-kind",
                     &Attributes::new().set_kind(Kind::Directory),
                 ),
-                Err(IoErrorKind::InvalidArgument)
+                Err(io_error::Kind::InvalidArgument)
             );
             assert_eq!(
                 filesystem.create_symlink_entry(
@@ -2652,7 +2658,7 @@ mod tests {
                     "entry-sized",
                     &Attributes::new().set_size(4),
                 ),
-                Err(IoErrorKind::Unsupported)
+                Err(io_error::Kind::Unsupported)
             );
             assert!(fs::symlink_metadata(root.join("entry-sized")).is_err());
         }

@@ -4,11 +4,12 @@ use std::{
 };
 
 use file_system::{
-    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectBlockDevice, IoErrorKind,
+    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectBlockDevice,
     MountOperations, Path, Position, Size,
     block_device::{GET_BLOCK_COUNT, GET_BLOCK_SIZE},
     mount::MutexMountWrapper,
 };
+use io_error::Kind;
 use shared::AnyByLayout;
 use synchronization::blocking_mutex::raw::CriticalSectionRawMutex;
 
@@ -50,7 +51,7 @@ impl DirectBaseOperations for FileDriveDevice {
         _cx: &mut core::task::Context<'_>,
         buffer: &mut [u8],
         position: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         file_system::ready(|| {
             let mut inner = self.0.try_get()?;
 
@@ -64,7 +65,7 @@ impl DirectBaseOperations for FileDriveDevice {
         _cx: &mut core::task::Context<'_>,
         buffer: &[u8],
         position: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         file_system::ready(|| {
             let mut inner = self.0.try_get()?;
 
@@ -79,7 +80,7 @@ impl DirectBaseOperations for FileDriveDevice {
         pattern: &[u8],
         count: usize,
         absolute_position: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         file_system::ready(|| {
             let mut inner = self.0.try_get()?;
 
@@ -95,7 +96,7 @@ impl DirectBaseOperations for FileDriveDevice {
         })
     }
 
-    fn set_position(&self, _: Size, position: &Position) -> file_system::Result<Size> {
+    fn set_position(&self, _: Size, position: &Position) -> io_error::Result<Size> {
         let position = match position {
             Position::Start(position) => SeekFrom::Start(*position),
             Position::End(position) => SeekFrom::End(*position),
@@ -104,19 +105,16 @@ impl DirectBaseOperations for FileDriveDevice {
 
         self.0
             .try_get()
-            .map_err(|_| IoErrorKind::WouldBlock)?
+            .map_err(|_| Kind::WouldBlock)?
             .seek(position)
             .map_err(map_error)
     }
 
-    fn flush(
-        &self,
-        _cx: &mut core::task::Context<'_>,
-    ) -> core::task::Poll<file_system::Result<()>> {
+    fn flush(&self, _cx: &mut core::task::Context<'_>) -> core::task::Poll<io_error::Result<()>> {
         file_system::ready(|| {
             self.0
                 .try_get()
-                .map_err(|_| IoErrorKind::WouldBlock)?
+                .map_err(|_| Kind::WouldBlock)?
                 .sync_all()
                 .map_err(map_error)
         })
@@ -128,7 +126,7 @@ impl DirectBaseOperations for FileDriveDevice {
         command: ControlCommandIdentifier,
         _: &AnyByLayout,
         output: &mut AnyByLayout,
-    ) -> core::task::Poll<file_system::Result<()>> {
+    ) -> core::task::Poll<io_error::Result<()>> {
         file_system::ready(|| {
             match command {
                 GET_BLOCK_SIZE::IDENTIFIER => {
@@ -143,7 +141,7 @@ impl DirectBaseOperations for FileDriveDevice {
                     let file_size = self
                         .0
                         .try_get()
-                        .map_err(|_| IoErrorKind::WouldBlock)?
+                        .map_err(|_| Kind::WouldBlock)?
                         .metadata()
                         .map_err(map_error)?
                         .len();
@@ -152,14 +150,14 @@ impl DirectBaseOperations for FileDriveDevice {
 
                     Ok(())
                 }
-                _ => Err(IoErrorKind::Unsupported),
+                _ => Err(Kind::Unsupported),
             }
         })
     }
 }
 
 impl MountOperations for FileDriveDevice {
-    fn unmount(&self) -> file_system::Result<()> {
+    fn unmount(&self) -> io_error::Result<()> {
         self.0.unmount()
     }
 }

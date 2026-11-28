@@ -1,25 +1,25 @@
-use file_system::{IoErrorKind, Result};
+use io_error::Result;
 use network::{ResolveError, TcpSocket};
 use shared::HttpRequestParser;
 
 /// Keep the failure kind of a DNS lookup. An unreachable network or host is a transport failure,
 /// never a missing file: `ResolveError` carries its own typed `Kind`.
-pub fn map_resolve_error(error: ResolveError) -> IoErrorKind {
+pub fn map_resolve_error(error: ResolveError) -> io_error::Kind {
     error.kind()
 }
 
 /// Map an embedded-io error kind (from the TLS layer or a socket adapter) back to an I/O kind.
-pub(super) fn map_http_io_error(error: impl embedded_io::Error) -> IoErrorKind {
+pub(super) fn map_http_io_error(error: impl embedded_io::Error) -> io_error::Kind {
     use embedded_io::ErrorKind;
     match error.kind() {
-        ErrorKind::TimedOut => IoErrorKind::TimedOut,
-        ErrorKind::ConnectionRefused => IoErrorKind::ConnectionRefused,
-        ErrorKind::ConnectionReset => IoErrorKind::ConnectionReset,
-        ErrorKind::ConnectionAborted => IoErrorKind::ConnectionAborted,
-        ErrorKind::NotConnected => IoErrorKind::NotConnected,
-        ErrorKind::BrokenPipe => IoErrorKind::BrokenPipe,
-        ErrorKind::PermissionDenied => IoErrorKind::PermissionDenied,
-        _ => IoErrorKind::InputOutput,
+        ErrorKind::TimedOut => io_error::Kind::TimedOut,
+        ErrorKind::ConnectionRefused => io_error::Kind::ConnectionRefused,
+        ErrorKind::ConnectionReset => io_error::Kind::ConnectionReset,
+        ErrorKind::ConnectionAborted => io_error::Kind::ConnectionAborted,
+        ErrorKind::NotConnected => io_error::Kind::NotConnected,
+        ErrorKind::BrokenPipe => io_error::Kind::BrokenPipe,
+        ErrorKind::PermissionDenied => io_error::Kind::PermissionDenied,
+        _ => io_error::Kind::InputOutput,
     }
 }
 
@@ -50,7 +50,7 @@ pub fn split_host_port(host_value: &str, default_port: u16) -> (&str, u16) {
 pub fn compute_request_length(buffer: &[u8], parser: HttpRequestParser<'_>) -> Result<usize> {
     let trimmed_tail = match buffer.iter().rposition(|byte| *byte != 0) {
         Some(position) => position + 1,
-        None => return Err(IoErrorKind::InvalidArgument),
+        None => return Err(io_error::Kind::InvalidArgument),
     };
 
     let headers_end = buffer
@@ -74,10 +74,10 @@ pub fn compute_request_length(buffer: &[u8], parser: HttpRequestParser<'_>) -> R
 
     let total_length = headers_end
         .checked_add(body_length)
-        .ok_or(IoErrorKind::InvalidArgument)?;
+        .ok_or(io_error::Kind::InvalidArgument)?;
 
     if total_length == 0 || total_length > buffer.len() {
-        return Err(IoErrorKind::InvalidArgument);
+        return Err(io_error::Kind::InvalidArgument);
     }
 
     Ok(total_length)
@@ -88,17 +88,17 @@ pub(super) struct TcpSocketAdapter {
 }
 
 impl embedded_io::ErrorType for TcpSocketAdapter {
-    type Error = IoErrorKind;
+    type Error = io_error::Kind;
 }
 
 impl embedded_io_async::Read for TcpSocketAdapter {
-    async fn read(&mut self, buffer: &mut [u8]) -> core::result::Result<usize, IoErrorKind> {
+    async fn read(&mut self, buffer: &mut [u8]) -> core::result::Result<usize, io_error::Kind> {
         self.socket.read(buffer).await
     }
 }
 
 impl embedded_io_async::Write for TcpSocketAdapter {
-    async fn write(&mut self, buffer: &[u8]) -> core::result::Result<usize, IoErrorKind> {
+    async fn write(&mut self, buffer: &[u8]) -> core::result::Result<usize, io_error::Kind> {
         self.socket.write(buffer).await
     }
 
@@ -122,7 +122,7 @@ pub(super) async fn create_tcp_connection(
         .await
         .map_err(map_resolve_error)?;
     // A DNS response with no usable addresses is a connection failure.
-    let mut last_error = IoErrorKind::HostUnreachable;
+    let mut last_error = io_error::Kind::HostUnreachable;
     for address in addresses {
         let mut socket = manager.new_tcp_socket(4096, 4096, None).await?;
         socket
@@ -142,7 +142,7 @@ pub(super) async fn create_tcp_connection(
                 return Ok(TcpSocketAdapter { socket });
             }
             embassy_futures::select::Either::First(Err(e)) => last_error = e,
-            embassy_futures::select::Either::Second(_) => last_error = IoErrorKind::TimedOut,
+            embassy_futures::select::Either::Second(_) => last_error = io_error::Kind::TimedOut,
         }
         socket.close_forced().await;
     }
@@ -188,44 +188,44 @@ mod tests {
     #[test]
     fn resolver_failures_keep_their_transport_meaning() {
         for (error, expected) in [
-            (ResolveError::NoInterface, IoErrorKind::DeviceUnavailable),
-            (ResolveError::NetworkDown, IoErrorKind::NetworkDown),
+            (ResolveError::NoInterface, io_error::Kind::DeviceUnavailable),
+            (ResolveError::NetworkDown, io_error::Kind::NetworkDown),
             (
                 ResolveError::NetworkUnreachable,
-                IoErrorKind::NetworkUnreachable,
+                io_error::Kind::NetworkUnreachable,
             ),
-            (ResolveError::TimedOut, IoErrorKind::TimedOut),
-            (ResolveError::NameTooLong, IoErrorKind::NameTooLong),
-            (ResolveError::InvalidName, IoErrorKind::InvalidDnsName),
-            (ResolveError::NoAnswer, IoErrorKind::NameNotResolved),
+            (ResolveError::TimedOut, io_error::Kind::TimedOut),
+            (ResolveError::NameTooLong, io_error::Kind::NameTooLong),
+            (ResolveError::InvalidName, io_error::Kind::InvalidDnsName),
+            (ResolveError::NoAnswer, io_error::Kind::NameNotResolved),
         ] {
             let kind = map_resolve_error(error);
             assert_eq!(kind, expected, "{error:?}");
-            assert_ne!(kind, IoErrorKind::NotFound, "{error:?}");
+            assert_ne!(kind, io_error::Kind::NotFound, "{error:?}");
         }
     }
 
     #[test]
     fn transport_kinds_survive_the_embedded_io_adapter() {
         assert_eq!(
-            map_http_io_error(IoErrorKind::TimedOut),
-            IoErrorKind::TimedOut
+            map_http_io_error(io_error::Kind::TimedOut),
+            io_error::Kind::TimedOut
         );
         assert_eq!(
-            map_http_io_error(IoErrorKind::ConnectionRefused),
-            IoErrorKind::ConnectionRefused
+            map_http_io_error(io_error::Kind::ConnectionRefused),
+            io_error::Kind::ConnectionRefused
         );
         assert_eq!(
-            map_http_io_error(IoErrorKind::ConnectionReset),
-            IoErrorKind::ConnectionReset
+            map_http_io_error(io_error::Kind::ConnectionReset),
+            io_error::Kind::ConnectionReset
         );
         assert_eq!(
             map_http_io_error(embedded_tls::TlsError::Io(embedded_io::ErrorKind::TimedOut)),
-            IoErrorKind::TimedOut
+            io_error::Kind::TimedOut
         );
         assert_eq!(
             map_http_io_error(embedded_tls::TlsError::IoError),
-            IoErrorKind::InputOutput
+            io_error::Kind::InputOutput
         );
     }
 

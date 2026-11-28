@@ -8,8 +8,9 @@ use device::screen::{Area, GET_RESOLUTION, Point, SET_DRAWING_AREA, WAS_RESIZED}
 use embedded_hal::digital::OutputPin;
 use file_system::{
     ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice,
-    IoErrorKind, MountOperations, Result, Size,
+    MountOperations, Size,
 };
+use io_error::{Kind, Result};
 use mipidsi::{
     Display,
     interface::{Interface, InterfacePixelFormat},
@@ -22,7 +23,7 @@ const BYTES_PER_PIXEL: usize = 2;
 
 /// A cell that one caller at a time may use, without a critical section, so
 /// that interrupts keep running during long transfers. A second, concurrent
-/// caller gets [`IoErrorKind::ResourceBusy`].
+/// caller gets [`Kind::ResourceBusy`].
 struct Exclusive<T> {
     busy: AtomicBool,
     value: UnsafeCell<T>,
@@ -41,7 +42,7 @@ impl<T> Exclusive<T> {
 
     fn with<R>(&self, function: impl FnOnce(&mut T) -> Result<R>) -> Result<R> {
         if self.busy.swap(true, Ordering::Acquire) {
-            return Err(IoErrorKind::ResourceBusy);
+            return Err(Kind::ResourceBusy);
         }
         // SAFETY: `busy` was clear, so this is the only reference until it is
         // cleared again below.
@@ -118,7 +119,7 @@ where
         {
             Ok(())
         } else {
-            Err(IoErrorKind::InvalidArgument)
+            Err(Kind::InvalidArgument)
         }
     }
 }
@@ -132,7 +133,7 @@ where
     ResetPin: OutputPin + Send,
 {
     fn read(&self, _: &mut Context<'_>, _: &mut [u8], _: Size) -> Poll<Result<usize>> {
-        Poll::Ready(Err(IoErrorKind::Unsupported))
+        Poll::Ready(Err(Kind::Unsupported))
     }
 
     fn write(&self, _: &mut Context<'_>, buffer: &[u8], _: Size) -> Poll<Result<usize>> {
@@ -146,7 +147,7 @@ where
                     usize::from(state.area.get_width()) * usize::from(state.area.get_height());
                 let data = buffer
                     .get(..pixels * BYTES_PER_PIXEL)
-                    .ok_or(IoErrorKind::InvalidArgument)?;
+                    .ok_or(Kind::InvalidArgument)?;
                 // `check_area` keeps the corners inside the screen, so they
                 // are non-negative.
                 let result = state.display.set_pixels_raw(
@@ -192,7 +193,7 @@ where
                 *WAS_RESIZED::cast_output(output)? = 0;
                 Ok(())
             }
-            _ => Err(IoErrorKind::Unsupported),
+            _ => Err(Kind::Unsupported),
         })
     }
 }
@@ -270,7 +271,7 @@ impl<Bus: super::AsynchronousDisplayBus, ResetPin> AsynchronousScreenDevice<Bus,
         {
             Ok(())
         } else {
-            Err(IoErrorKind::InvalidArgument)
+            Err(Kind::InvalidArgument)
         }
     }
 
@@ -337,7 +338,7 @@ where
     ResetPin: Send + Sync,
 {
     fn read(&self, _: &mut Context<'_>, _: &mut [u8], _: Size) -> Poll<Result<usize>> {
-        Poll::Ready(Err(IoErrorKind::Unsupported))
+        Poll::Ready(Err(Kind::Unsupported))
     }
 
     fn write(&self, _: &mut Context<'_>, buffer: &[u8], _: Size) -> Poll<Result<usize>> {
@@ -351,7 +352,7 @@ where
                     usize::from(state.area.get_width()) * usize::from(state.area.get_height());
                 let data = buffer
                     .get(..pixels * BYTES_PER_PIXEL)
-                    .ok_or(IoErrorKind::InvalidArgument)?;
+                    .ok_or(Kind::InvalidArgument)?;
                 // SAFETY: `wait_for_transfer` runs immediately below before
                 // returning, so `data` outlives the transfer.
                 let result = unsafe {
@@ -403,7 +404,7 @@ where
                 *WAS_RESIZED::cast_output(output)? = 0;
                 Ok(())
             }
-            _ => Err(IoErrorKind::Unsupported),
+            _ => Err(Kind::Unsupported),
         })
     }
 }

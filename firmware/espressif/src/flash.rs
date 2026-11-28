@@ -5,10 +5,11 @@ use core::{
 
 use embedded_storage::nor_flash::{NorFlash, ReadNorFlash};
 use esp_storage::FlashStorage;
+use xila::io_error::{Kind, Result};
 use xila::{
     file_system::{
         self, ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectBlockDevice,
-        IoErrorKind, MountOperations, Result, Size,
+        MountOperations, Size,
         block_device::{ERASE, GET_BLOCK_COUNT, GET_BLOCK_SIZE},
     },
     shared::AnyByLayout,
@@ -44,7 +45,7 @@ impl LittleFsPartition {
     fn address(&self, position: Size, length: Size) -> Result<u32> {
         let partition_length = Size::from(self.partition.length);
         if position > partition_length || length > partition_length - position {
-            return Err(IoErrorKind::InvalidArgument);
+            return Err(Kind::InvalidArgument);
         }
         Ok(self.partition.offset + position as u32)
     }
@@ -58,7 +59,7 @@ impl DirectBaseOperations for LittleFsPartition {
             if !((address as usize).is_multiple_of(alignment)
                 && buffer.len().is_multiple_of(alignment))
             {
-                return Err(IoErrorKind::InputOutput);
+                return Err(Kind::InputOutput);
             }
             self.flash.lock(|flash| -> Result<()> {
                 let mut flash = flash.borrow_mut();
@@ -67,7 +68,7 @@ impl DirectBaseOperations for LittleFsPartition {
                     let offset = address + (index * TRANSFER_SIZE) as u32;
                     let scratch = &mut transfer.0[..chunk.len()];
                     ReadNorFlash::read(&mut *flash, offset, scratch)
-                        .map_err(|_| IoErrorKind::InputOutput)?;
+                        .map_err(|_| Kind::InputOutput)?;
                     chunk.copy_from_slice(scratch);
                 }
                 Ok(())
@@ -83,7 +84,7 @@ impl DirectBaseOperations for LittleFsPartition {
             if !((address as usize).is_multiple_of(alignment)
                 && buffer.len().is_multiple_of(alignment))
             {
-                return Err(IoErrorKind::InputOutput);
+                return Err(Kind::InputOutput);
             }
             self.flash.lock(|flash| -> Result<()> {
                 let mut flash = flash.borrow_mut();
@@ -92,8 +93,7 @@ impl DirectBaseOperations for LittleFsPartition {
                     let offset = address + (index * TRANSFER_SIZE) as u32;
                     let scratch = &mut transfer.0[..chunk.len()];
                     scratch.copy_from_slice(chunk);
-                    NorFlash::write(&mut *flash, offset, scratch)
-                        .map_err(|_| IoErrorKind::InputOutput)?;
+                    NorFlash::write(&mut *flash, offset, scratch).map_err(|_| Kind::InputOutput)?;
                 }
                 Ok(())
             })?;
@@ -123,9 +123,9 @@ impl DirectBaseOperations for LittleFsPartition {
                 let end = start + range.size as u32;
                 self.flash
                     .lock(|flash| NorFlash::erase(&mut *flash.borrow_mut(), start, end))
-                    .map_err(|_| IoErrorKind::InputOutput)
+                    .map_err(|_| Kind::InputOutput)
             }
-            _ => Err(IoErrorKind::Unsupported),
+            _ => Err(Kind::Unsupported),
         })
     }
 }

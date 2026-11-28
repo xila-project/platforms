@@ -5,6 +5,7 @@ edition = "2024"
 rust-version.workspace = true
 
 [dependencies]
+io_error.workspace = true
 neural_network = { workspace = true, optional = true }
 drivers_neural_network = { workspace = true, optional = true }
 nanoglia = { workspace = true, optional = true, features = [

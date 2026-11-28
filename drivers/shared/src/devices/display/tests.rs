@@ -11,9 +11,10 @@ use device::screen::{
 };
 use embedded_hal::delay::DelayNs;
 use file_system::{
-    ControlCommand, DirectBaseOperations, DirectCharacterDevice, IoErrorKind, MountOperations,
-    Operation, Position, Size,
+    ControlCommand, DirectBaseOperations, DirectCharacterDevice, MountOperations, Operation,
+    Position, Size,
 };
+use io_error::Kind;
 use mipidsi::{
     Builder, NoResetPin,
     interface::Interface,
@@ -354,7 +355,7 @@ fn screen(
 fn set_area(
     screen: &MipidsiScreenDevice<ParallelInterface<RecordingBus>, ST7796, NoResetPin>,
     area: Area,
-) -> file_system::Result<()> {
+) -> io_error::Result<()> {
     let mut area = area;
     screen.control_sync(
         SET_DRAWING_AREA::IDENTIFIER,
@@ -396,7 +397,7 @@ fn screen_rejects_areas_outside_the_screen() {
         Area::new(Point::new(-1, 0), Point::new(10, 10)),
         Area::new(Point::new(20, 0), Point::new(10, 10)),
     ] {
-        assert_eq!(set_area(&screen, area), Err(IoErrorKind::InvalidArgument));
+        assert_eq!(set_area(&screen, area), Err(Kind::InvalidArgument));
     }
 }
 
@@ -404,10 +405,7 @@ fn screen_rejects_areas_outside_the_screen() {
 fn screen_rejects_a_short_buffer() {
     let screen = screen(RecordingBus::default());
     set_area(&screen, Area::new(Point::new(0, 0), Point::new(9, 9))).unwrap();
-    assert_eq!(
-        screen.write_sync(&[0; 10], 0),
-        Err(IoErrorKind::InvalidArgument)
-    );
+    assert_eq!(screen.write_sync(&[0; 10], 0), Err(Kind::InvalidArgument));
 }
 
 #[test]
@@ -757,7 +755,7 @@ impl embedded_hal::pwm::SetDutyCycle for RecordingPwm {
     }
 }
 
-fn brightness(screen: &dyn DirectBaseOperations) -> Result<u8, IoErrorKind> {
+fn brightness(screen: &dyn DirectBaseOperations) -> Result<u8, Kind> {
     let mut level = 0u8;
     screen.control_sync(
         GET_BRIGHTNESS::IDENTIFIER,
@@ -767,7 +765,7 @@ fn brightness(screen: &dyn DirectBaseOperations) -> Result<u8, IoErrorKind> {
     Ok(level)
 }
 
-fn set_brightness(screen: &dyn DirectBaseOperations, mut level: u8) -> Result<(), IoErrorKind> {
+fn set_brightness(screen: &dyn DirectBaseOperations, mut level: u8) -> Result<(), Kind> {
     screen.control_sync(
         SET_BRIGHTNESS::IDENTIFIER,
         AnyByLayout::from_mutable(&mut level),
@@ -780,8 +778,8 @@ fn backlight_follows_the_brightness_level_and_starts_fully_on() {
     let inner: &'static dyn DirectCharacterDevice =
         Box::leak(Box::new(screen(RecordingBus::default())));
     // The panel alone has no brightness control.
-    assert_eq!(brightness(inner), Err(IoErrorKind::Unsupported));
-    assert_eq!(set_brightness(inner, 10), Err(IoErrorKind::Unsupported));
+    assert_eq!(brightness(inner), Err(Kind::Unsupported));
+    assert_eq!(set_brightness(inner, 10), Err(Kind::Unsupported));
 
     let pwm = RecordingPwm::default();
     let screen = BacklightScreenDevice::new(inner, pwm.clone()).unwrap();
@@ -839,16 +837,11 @@ unsafe impl Send for MockScreen {}
 unsafe impl Sync for MockScreen {}
 
 impl DirectBaseOperations for MockScreen {
-    fn read(&self, _: &mut Context<'_>, _: &mut [u8], _: Size) -> Poll<file_system::Result<usize>> {
+    fn read(&self, _: &mut Context<'_>, _: &mut [u8], _: Size) -> Poll<io_error::Result<usize>> {
         Poll::Ready(Ok(0))
     }
 
-    fn write(
-        &self,
-        _: &mut Context<'_>,
-        buffer: &[u8],
-        _: Size,
-    ) -> Poll<file_system::Result<usize>> {
+    fn write(&self, _: &mut Context<'_>, buffer: &[u8], _: Size) -> Poll<io_error::Result<usize>> {
         Poll::Ready(Ok(buffer.len()))
     }
 
@@ -858,7 +851,7 @@ impl DirectBaseOperations for MockScreen {
         buffer: &mut [u8],
         absolute_position: Size,
         delimiter: &[u8],
-    ) -> Poll<file_system::Result<usize>> {
+    ) -> Poll<io_error::Result<usize>> {
         self.calls.borrow_mut().read_untils.push((
             buffer.len(),
             absolute_position,
@@ -873,7 +866,7 @@ impl DirectBaseOperations for MockScreen {
         pattern: &[u8],
         count: usize,
         absolute_position: Size,
-    ) -> Poll<file_system::Result<usize>> {
+    ) -> Poll<io_error::Result<usize>> {
         self.calls
             .borrow_mut()
             .patterns
@@ -886,7 +879,7 @@ impl DirectBaseOperations for MockScreen {
         _: &mut Context<'_>,
         buffers: &[&[u8]],
         absolute_position: Size,
-    ) -> Poll<file_system::Result<usize>> {
+    ) -> Poll<io_error::Result<usize>> {
         self.calls.borrow_mut().vectored.push((
             buffers.iter().map(|buffer| buffer.to_vec()).collect(),
             absolute_position,
@@ -898,17 +891,17 @@ impl DirectBaseOperations for MockScreen {
         self.calls.borrow_mut().cancellations.push(operation);
     }
 
-    fn open(&self) -> file_system::Result<()> {
+    fn open(&self) -> io_error::Result<()> {
         self.calls.borrow_mut().opens += 1;
         Ok(())
     }
 
-    fn close(&self) -> file_system::Result<()> {
+    fn close(&self) -> io_error::Result<()> {
         self.calls.borrow_mut().closes += 1;
         Ok(())
     }
 
-    fn set_position(&self, current: Size, position: &Position) -> file_system::Result<Size> {
+    fn set_position(&self, current: Size, position: &Position) -> io_error::Result<Size> {
         self.calls.borrow_mut().positions.push((current, *position));
         // A value the trait default would not compute.
         Ok(42)

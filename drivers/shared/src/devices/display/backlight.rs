@@ -9,8 +9,9 @@ use device::screen::{BRIGHTNESS_FULL, GET_BRIGHTNESS, SET_BRIGHTNESS};
 use embedded_hal::pwm::SetDutyCycle;
 use file_system::{
     ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice,
-    IoErrorKind, MountOperations, Operation, Position, Result, Size,
+    MountOperations, Operation, Position, Size,
 };
+use io_error::{Kind, Result};
 use shared::AnyByLayout;
 
 /// A screen device whose backlight is dimmed by a PWM output.
@@ -48,7 +49,7 @@ impl<Backlight: SetDutyCycle> BacklightScreenDevice<Backlight> {
             let mut backlight = self.backlight.borrow_ref_mut(section);
             backlight
                 .set_duty_cycle_fraction(u16::from(level), u16::from(BRIGHTNESS_FULL))
-                .map_err(|_| IoErrorKind::InputOutput)?;
+                .map_err(|_| Kind::InputOutput)?;
             // Stored under the critical section so the level always matches
             // the last duty cycle written.
             self.level.store(level, Ordering::Relaxed);

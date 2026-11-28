@@ -6,7 +6,7 @@ testing::instantiate_global_allocator!();
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use drivers_shared::devices::{SECTOR_SIZE, SectorBlockDevice, SectorStorage};
-use file_system::{IoErrorKind, Result};
+use io_error::{Kind, Result};
 
 /// Sectors in memory that count the sectors written.
 struct MemoryStorage {
@@ -22,7 +22,7 @@ impl SectorStorage for MemoryStorage {
     fn read_sector(&mut self, index: u32, sector: &mut [u8; SECTOR_SIZE]) -> Result<()> {
         let start = index as usize * SECTOR_SIZE;
         let source = self.data.get(start..start + SECTOR_SIZE);
-        sector.copy_from_slice(source.ok_or(IoErrorKind::InvalidArgument)?);
+        sector.copy_from_slice(source.ok_or(Kind::InvalidArgument)?);
         Ok(())
     }
 

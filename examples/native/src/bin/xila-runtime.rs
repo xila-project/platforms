@@ -569,7 +569,7 @@ async fn ensure_vfs_directory(
         let current_path = PathOwned::new(current.clone())
             .ok_or_else(|| format!("invalid Xila mount path: {current}"))?;
         match vfs.create_directory(task, &current_path).await {
-            Ok(()) | Err(xila::virtual_file_system::IoErrorKind::AlreadyExists) => {}
+            Ok(()) | Err(xila::io_error::Kind::AlreadyExists) => {}
             Err(error) => return Err(format!("cannot create mount point {current}: {error:?}")),
         }
     }

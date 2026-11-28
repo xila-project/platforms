@@ -44,7 +44,7 @@ pub use restart::Restart;
 
 use xila::{
     executable::{self, ExecutableContext, Standard},
-    file_system::{IoErrorKind, Kind, Permission, Statistics},
+    file_system::{Kind, Permission, Statistics},
     log, task,
     users::{self, GroupIdentifier, UserIdentifier},
     virtual_file_system::{File, VirtualFileSystem},
@@ -75,7 +75,7 @@ pub enum Error {
     /// A file could not be read.
     Read {
         path: String,
-        error: IoErrorKind,
+        error: xila::io_error::Kind,
     },
     /// The file is not a regular file, or is too large.
     NotAFile(String),
@@ -101,7 +101,7 @@ pub enum Error {
     MissingFile(String),
     /// The session task could not take the application's identity.
     Identity(task::Error),
-    Home(IoErrorKind),
+    Home(xila::io_error::Kind),
     Terminal(executable::Error),
     Start(executable::Error),
 }
@@ -160,7 +160,7 @@ pub async fn load(
         .await
     {
         Ok(statistics) => statistics,
-        Err(IoErrorKind::NotFound) => return Ok(None),
+        Err(xila::io_error::Kind::NotFound) => return Ok(None),
         Err(error) => {
             return Err(Error::Read {
                 path: CONFIGURATION_PATH.into(),
@@ -201,7 +201,7 @@ pub async fn load(
 
     let statistics = match virtual_file_system.get_statistics(&command.as_str()).await {
         Ok(statistics) if statistics.kind != Kind::Directory => statistics,
-        Ok(_) | Err(IoErrorKind::NotFound) => return Err(Error::MissingCommand(command)),
+        Ok(_) | Err(xila::io_error::Kind::NotFound) => return Err(Error::MissingCommand(command)),
         Err(error) => {
             return Err(Error::Read {
                 path: command,
@@ -215,7 +215,7 @@ pub async fn load(
     for path in bundle_files {
         match virtual_file_system.get_statistics(&path.as_str()).await {
             Ok(statistics) if statistics.kind == Kind::File => {}
-            Ok(_) | Err(IoErrorKind::NotFound) => return Err(Error::MissingFile(path)),
+            Ok(_) | Err(xila::io_error::Kind::NotFound) => return Err(Error::MissingFile(path)),
             Err(error) => return Err(Error::Read { path, error }),
         }
     }
@@ -257,7 +257,7 @@ async fn read_shortcut(
             .await
         {
             Ok(statistics) => statistics,
-            Err(IoErrorKind::NotFound) => continue,
+            Err(xila::io_error::Kind::NotFound) => continue,
             Err(error) => {
                 return Err(Error::Read {
                     path: location.path,

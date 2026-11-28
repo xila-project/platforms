@@ -6,12 +6,12 @@ use virtual_file_system::VirtualFileSystem;
 
 #[derive(Debug)]
 pub enum Error {
-    VirtualFileSystemError(file_system::IoErrorKind),
+    VirtualFileSystemError(io_error::Kind),
     IoError(io::Error),
 }
 
-impl From<file_system::IoErrorKind> for Error {
-    fn from(error: file_system::IoErrorKind) -> Self {
+impl From<io_error::Kind> for Error {
+    fn from(error: io_error::Kind) -> Self {
         Error::VirtualFileSystemError(error)
     }
 }

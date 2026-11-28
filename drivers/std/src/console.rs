@@ -88,7 +88,7 @@ impl InputReader {
         &self,
         cx: &mut core::task::Context<'_>,
         buffer: &mut [u8],
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         if buffer.is_empty() {
             return core::task::Poll::Ready(Ok(0));
         }
@@ -122,7 +122,7 @@ impl DirectBaseOperations for StandardInDevice {
         cx: &mut core::task::Context<'_>,
         buffer: &mut [u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         InputReader::get().poll_read(cx, buffer)
     }
 
@@ -131,14 +131,11 @@ impl DirectBaseOperations for StandardInDevice {
         _cx: &mut core::task::Context<'_>,
         _: &[u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
-        file_system::ready(|| Err(file_system::IoErrorKind::Unsupported))
+    ) -> core::task::Poll<io_error::Result<usize>> {
+        file_system::ready(|| Err(io_error::Kind::Unsupported))
     }
 
-    fn flush(
-        &self,
-        _cx: &mut core::task::Context<'_>,
-    ) -> core::task::Poll<file_system::Result<()>> {
+    fn flush(&self, _cx: &mut core::task::Context<'_>) -> core::task::Poll<io_error::Result<()>> {
         file_system::ready(|| Ok(()))
     }
 
@@ -148,7 +145,7 @@ impl DirectBaseOperations for StandardInDevice {
         command: ControlCommandIdentifier,
         input: &AnyByLayout,
         output: &mut AnyByLayout,
-    ) -> core::task::Poll<file_system::Result<()>> {
+    ) -> core::task::Poll<io_error::Result<()>> {
         file_system::ready(|| control(command, input, output))
     }
 }
@@ -165,8 +162,8 @@ impl DirectBaseOperations for StandardOutDevice {
         _cx: &mut core::task::Context<'_>,
         _: &mut [u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
-        file_system::ready(|| Err(file_system::IoErrorKind::Unsupported))
+    ) -> core::task::Poll<io_error::Result<usize>> {
+        file_system::ready(|| Err(io_error::Kind::Unsupported))
     }
 
     fn write(
@@ -174,14 +171,11 @@ impl DirectBaseOperations for StandardOutDevice {
         _cx: &mut core::task::Context<'_>,
         buffer: &[u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         file_system::ready(|| Ok(stdout().write(buffer).map_err(map_error)? as _))
     }
 
-    fn flush(
-        &self,
-        _cx: &mut core::task::Context<'_>,
-    ) -> core::task::Poll<file_system::Result<()>> {
+    fn flush(&self, _cx: &mut core::task::Context<'_>) -> core::task::Poll<io_error::Result<()>> {
         file_system::ready(|| stdout().flush().map_err(map_error))
     }
 
@@ -191,7 +185,7 @@ impl DirectBaseOperations for StandardOutDevice {
         command: ControlCommandIdentifier,
         input: &AnyByLayout,
         output: &mut AnyByLayout,
-    ) -> core::task::Poll<file_system::Result<()>> {
+    ) -> core::task::Poll<io_error::Result<()>> {
         file_system::ready(|| control(command, input, output))
     }
 }
@@ -208,8 +202,8 @@ impl DirectBaseOperations for StandardErrorDevice {
         _cx: &mut core::task::Context<'_>,
         _: &mut [u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
-        file_system::ready(|| Err(file_system::IoErrorKind::Unsupported))
+    ) -> core::task::Poll<io_error::Result<usize>> {
+        file_system::ready(|| Err(io_error::Kind::Unsupported))
     }
 
     fn write(
@@ -217,14 +211,11 @@ impl DirectBaseOperations for StandardErrorDevice {
         _cx: &mut core::task::Context<'_>,
         buffer: &[u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         file_system::ready(|| Ok(stderr().write(buffer).map_err(map_error)? as _))
     }
 
-    fn flush(
-        &self,
-        _cx: &mut core::task::Context<'_>,
-    ) -> core::task::Poll<file_system::Result<()>> {
+    fn flush(&self, _cx: &mut core::task::Context<'_>) -> core::task::Poll<io_error::Result<()>> {
         file_system::ready(|| stderr().flush().map_err(map_error))
     }
 
@@ -234,7 +225,7 @@ impl DirectBaseOperations for StandardErrorDevice {
         command: ControlCommandIdentifier,
         input: &AnyByLayout,
         output: &mut AnyByLayout,
-    ) -> core::task::Poll<file_system::Result<()>> {
+    ) -> core::task::Poll<io_error::Result<()>> {
         file_system::ready(|| control(command, input, output))
     }
 }
@@ -247,7 +238,7 @@ fn control(
     command: ControlCommandIdentifier,
     _: &AnyByLayout,
     output: &mut AnyByLayout,
-) -> file_system::Result<()> {
+) -> io_error::Result<()> {
     match command {
         IS_A_TERMINAL::IDENTIFIER => {
             let output: &mut u8 = IS_A_TERMINAL::cast_output(output)?;
@@ -255,6 +246,6 @@ fn control(
 
             Ok(())
         }
-        _ => Err(file_system::IoErrorKind::Unsupported),
+        _ => Err(io_error::Kind::Unsupported),
     }
 }
