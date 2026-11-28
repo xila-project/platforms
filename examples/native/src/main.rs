@@ -41,7 +41,6 @@ async fn main(task_manager: &'static xila::task::Manager) {
     use xila::little_fs;
     use xila::log;
     use xila::network::{self, ADD_DNS_SERVER, ADD_IP_ADDRESS, ADD_ROUTE};
-    use xila::task;
     use xila::time;
     use xila::users;
     use xila::virtual_file_system;
