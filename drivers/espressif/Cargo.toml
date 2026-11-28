@@ -60,6 +60,7 @@ task = { workspace = true, optional = true }
 virtual_file_system = { workspace = true, optional = true }
 
 [dev-dependencies]
+io_error.workspace = true
 file_system = { workspace = true }
 network = { workspace = true }
 # The transport-independent logic of the USB human interface lower half is
