@@ -12,7 +12,7 @@
 //!   flash partition device of the firmware. Core's LittleFS calls the device
 //!   from C callbacks that cannot suspend.
 //! - **Exclusive access.** One operation runs at a time. A second caller gets
-//!   [`IoErrorKind::ResourceBusy`] instead of waiting, and no lock disables
+//!   [`Kind::ResourceBusy`] instead of waiting, and no lock disables
 //!   interrupts while a sector transfers.
 //! - **Erase.** An SD card erases internally, so the `ERASE` command succeeds
 //!   without touching the card. The contents of an erased range are
@@ -38,10 +38,11 @@
 use core::task::{Context, Poll};
 
 use file_system::{
-    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectBlockDevice, IoErrorKind,
-    MountOperations, Result, Size,
+    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectBlockDevice,
+    MountOperations, Size,
     block_device::{ERASE, GET_BLOCK_COUNT, GET_BLOCK_SIZE},
 };
+use io_error::{Kind, Result};
 use shared::AnyByLayout;
 use synchronization::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 
@@ -58,7 +59,7 @@ const SECTORS_PER_BLOCK: u32 = (BLOCK_SIZE / SECTOR_SIZE) as u32;
 /// Storage that transfers one whole sector at a time.
 ///
 /// Both transfer functions are blocking. An implementation reports a failed
-/// transfer as an [`IoErrorKind`]; the device passes it to its caller.
+/// transfer as an [`Kind`]; the device passes it to its caller.
 pub trait SectorStorage: Send {
     /// The number of sectors of the storage.
     fn sector_count(&self) -> u32;
@@ -106,17 +107,14 @@ impl<S: SectorStorage> SectorBlockDevice<S> {
     fn read_bytes(&self, buffer: &mut [u8], position: Size) -> Result<usize> {
         let capacity = self.capacity();
         if position > capacity {
-            return Err(IoErrorKind::InvalidArgument);
+            return Err(Kind::InvalidArgument);
         }
         // Compare in `Size`: on a 32-bit target, the bytes left on a card of
         // 4 GiB or more do not fit in `usize`.
         let length = (buffer.len() as Size).min(capacity - position) as usize;
         let buffer = &mut buffer[..length];
 
-        let mut state = self
-            .state
-            .try_lock()
-            .map_err(|_| IoErrorKind::ResourceBusy)?;
+        let mut state = self.state.try_lock().map_err(|_| Kind::ResourceBusy)?;
         let State { storage, scratch } = &mut *state;
 
         let mut done = 0;
@@ -141,13 +139,10 @@ impl<S: SectorStorage> SectorBlockDevice<S> {
     fn write_bytes(&self, buffer: &[u8], position: Size) -> Result<usize> {
         let capacity = self.capacity();
         if position > capacity || buffer.len() as Size > capacity - position {
-            return Err(IoErrorKind::InvalidArgument);
+            return Err(Kind::InvalidArgument);
         }
 
-        let mut state = self
-            .state
-            .try_lock()
-            .map_err(|_| IoErrorKind::ResourceBusy)?;
+        let mut state = self.state.try_lock().map_err(|_| Kind::ResourceBusy)?;
         let State { storage, scratch } = &mut *state;
 
         let mut done = 0;
@@ -208,11 +203,11 @@ impl<S: SectorStorage> DirectBaseOperations for SectorBlockDevice<S> {
                 let range = ERASE::cast_input(input)?;
                 if range.position > self.capacity() || range.size > self.capacity() - range.position
                 {
-                    return Err(IoErrorKind::InvalidArgument);
+                    return Err(Kind::InvalidArgument);
                 }
                 Ok(())
             }
-            _ => Err(IoErrorKind::Unsupported),
+            _ => Err(Kind::Unsupported),
         })
     }
 }
@@ -253,7 +248,7 @@ mod tests {
 
         fn read_sector(&mut self, index: u32, sector: &mut [u8; SECTOR_SIZE]) -> Result<()> {
             if self.fail_sector == Some(index) {
-                return Err(IoErrorKind::InputOutput);
+                return Err(Kind::InputOutput);
             }
             self.reads.fetch_add(1, Ordering::SeqCst);
             let start = index as usize * SECTOR_SIZE;
@@ -263,7 +258,7 @@ mod tests {
 
         fn write_sector(&mut self, index: u32, sector: &[u8; SECTOR_SIZE]) -> Result<()> {
             if self.fail_sector == Some(index) {
-                return Err(IoErrorKind::InputOutput);
+                return Err(Kind::InputOutput);
             }
             self.writes.fetch_add(1, Ordering::SeqCst);
             let start = index as usize * SECTOR_SIZE;
@@ -336,7 +331,7 @@ mod tests {
         assert_eq!(device.read_sync(&mut back, capacity), Ok(0));
         assert_eq!(
             device.read_sync(&mut back, capacity + 1),
-            Err(IoErrorKind::InvalidArgument)
+            Err(Kind::InvalidArgument)
         );
     }
 
@@ -355,7 +350,7 @@ mod tests {
         }
 
         fn write_sector(&mut self, _: u32, _: &[u8; SECTOR_SIZE]) -> Result<()> {
-            Err(IoErrorKind::PermissionDenied)
+            Err(Kind::PermissionDenied)
         }
     }
 
@@ -381,11 +376,11 @@ mod tests {
         let data = [0xAA; 64];
         assert_eq!(
             device.write_sync(&data, device.capacity() - 10),
-            Err(IoErrorKind::InvalidArgument)
+            Err(Kind::InvalidArgument)
         );
         assert_eq!(
             device.write_sync(&data, device.capacity() + 1),
-            Err(IoErrorKind::InvalidArgument)
+            Err(Kind::InvalidArgument)
         );
         assert_eq!(writes.load(Ordering::SeqCst), 0);
     }
@@ -399,11 +394,11 @@ mod tests {
         let mut back = [0u8; 16];
         assert_eq!(
             device.read_sync(&mut back, 2 * SECTOR_SIZE as Size),
-            Err(IoErrorKind::InputOutput)
+            Err(Kind::InputOutput)
         );
         assert_eq!(
             device.write_sync(&back, 2 * SECTOR_SIZE as Size),
-            Err(IoErrorKind::InputOutput)
+            Err(Kind::InputOutput)
         );
         // Another sector still works.
         assert_eq!(device.write_sync(&back, 0), Ok(16));
@@ -427,7 +422,7 @@ mod tests {
         assert_eq!(device.erase(0, SECTOR_SIZE as Size), Ok(()));
         assert_eq!(
             device.erase(0, device.capacity() + 1),
-            Err(IoErrorKind::InvalidArgument)
+            Err(Kind::InvalidArgument)
         );
 
         let mut back = vec![0; SECTOR_SIZE];
@@ -441,7 +436,7 @@ mod tests {
         let unknown = ControlCommandIdentifier::new_read::<(), u32>(b'Z', 99);
         assert_eq!(
             device.control_sync(unknown, AnyByLayout::NONE, AnyByLayout::NONE),
-            Err(IoErrorKind::Unsupported)
+            Err(Kind::Unsupported)
         );
     }
 }

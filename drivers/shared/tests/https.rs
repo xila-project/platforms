@@ -7,7 +7,8 @@ use network::TcpSocket;
 drivers_std::memory::instantiate_global_allocator!();
 use alloc::{format, vec::Vec};
 use core::{future::poll_fn, time::Duration};
-use file_system::{BaseOperations, Context, IoErrorKind};
+use file_system::{BaseOperations, Context};
+use io_error::Kind;
 use std::{
     io::{BufRead, BufReader, Read, Write},
     process::{Child, Command, Stdio},
@@ -247,7 +248,7 @@ async fn https_device_with_real_tls_server() {
                     }
                     Err(error) => {
                         assert!(truncated, "unexpected {error:?}: {path}");
-                        assert_eq!(error, IoErrorKind::InputOutput);
+                        assert_eq!(error, Kind::InputOutput);
                         break;
                     }
                 }

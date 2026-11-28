@@ -20,8 +20,9 @@
 use alloc::{boxed::Box, string::String, vec};
 use core::time::Duration;
 
+use xila::io_error::Kind;
 use xila::{
-    file_system::{AccessFlags, CreateFlags, Flags, IoErrorKind, Permissions},
+    file_system::{AccessFlags, CreateFlags, Flags, Permissions},
     little_fs, log, task, time,
     virtual_file_system::{File, ItemStatic, VirtualFileSystem, ignore_already_exists_error},
 };
@@ -131,7 +132,7 @@ async fn take_request(
                 }
             }
         }
-        Err(IoErrorKind::NotFound) => return Request::None,
+        Err(Kind::NotFound) => return Request::None,
         Err(error) => {
             log::warning!("Xila: SD card: cannot open {path}: {error}");
             return Request::None;

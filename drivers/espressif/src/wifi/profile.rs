@@ -1,6 +1,6 @@
 use core::{fmt::Write, net::Ipv4Addr};
 
-use file_system::{IoErrorKind, Result};
+use io_error::{Kind, Result};
 use network::{WifiAuthentication, WifiClientConfiguration, WifiSsid};
 
 pub(super) const MAXIMUM_SIZE: usize = 160;
@@ -94,15 +94,15 @@ mod policy_tests {
 impl Profile {
     pub fn parse(contents: &[u8]) -> Result<Self> {
         if contents.len() > MAXIMUM_SIZE {
-            return Err(IoErrorKind::InvalidData);
+            return Err(Kind::InvalidData);
         }
         let mut lines = contents
             .strip_suffix(b"\n")
             .unwrap_or(contents)
             .split(|byte| *byte == b'\n')
             .map(|line| line.strip_suffix(b"\r").unwrap_or(line));
-        let ssid = lines.next().ok_or(IoErrorKind::InvalidData)?;
-        let password = lines.next().ok_or(IoErrorKind::InvalidData)?;
+        let ssid = lines.next().ok_or(Kind::InvalidData)?;
+        let password = lines.next().ok_or(Kind::InvalidData)?;
         let authentication = if password.is_empty() {
             WifiAuthentication::OPEN
         } else {
@@ -111,11 +111,11 @@ impl Profile {
         let station = WifiClientConfiguration::new(ssid, authentication, password)?;
         validate_station(&station)?;
         let address = if let Some(address) = lines.next() {
-            let address = core::str::from_utf8(address).map_err(|_| IoErrorKind::InvalidData)?;
-            let (address, prefix) = address.split_once('/').ok_or(IoErrorKind::InvalidData)?;
-            let prefix = prefix.parse::<u8>().map_err(|_| IoErrorKind::InvalidData)?;
+            let address = core::str::from_utf8(address).map_err(|_| Kind::InvalidData)?;
+            let (address, prefix) = address.split_once('/').ok_or(Kind::InvalidData)?;
+            let prefix = prefix.parse::<u8>().map_err(|_| Kind::InvalidData)?;
             if prefix > 32 {
-                return Err(IoErrorKind::InvalidData);
+                return Err(Kind::InvalidData);
             }
             let address = StaticAddress {
                 address: parse_address(Some(address.as_bytes()))?,
@@ -124,7 +124,7 @@ impl Profile {
                 name_server: parse_address(lines.next())?,
             };
             if lines.next().is_some() {
-                return Err(IoErrorKind::InvalidData);
+                return Err(Kind::InvalidData);
             }
             Some(address)
         } else {
@@ -152,7 +152,7 @@ impl Profile {
                 "{}/{}\n{}\n{}",
                 address.address, address.prefix, address.gateway, address.name_server,
             )
-            .map_err(|_| IoErrorKind::InvalidData)?;
+            .map_err(|_| Kind::InvalidData)?;
         }
         Ok(writer.length)
     }
@@ -167,25 +167,23 @@ pub(super) fn validate_station(station: &WifiClientConfiguration) -> Result<()> 
             .iter()
             .any(|byte| matches!(byte, 0 | b'\r' | b'\n'))
     {
-        return Err(IoErrorKind::InvalidArgument);
+        return Err(Kind::InvalidArgument);
     }
     if !matches!(
         station.authentication,
         WifiAuthentication::OPEN | WifiAuthentication::WPA2_PERSONAL
     ) {
-        return Err(IoErrorKind::Unsupported);
+        return Err(Kind::Unsupported);
     }
     Ok(())
 }
 
 fn parse_address(line: Option<&[u8]>) -> Result<Ipv4Addr> {
-    let line = core::str::from_utf8(line.ok_or(IoErrorKind::InvalidData)?)
-        .map_err(|_| IoErrorKind::InvalidData)?;
-    let address = line
-        .parse::<Ipv4Addr>()
-        .map_err(|_| IoErrorKind::InvalidData)?;
+    let line =
+        core::str::from_utf8(line.ok_or(Kind::InvalidData)?).map_err(|_| Kind::InvalidData)?;
+    let address = line.parse::<Ipv4Addr>().map_err(|_| Kind::InvalidData)?;
     if address.is_unspecified() || address.is_multicast() || address.is_broadcast() {
-        return Err(IoErrorKind::InvalidData);
+        return Err(Kind::InvalidData);
     }
     Ok(address)
 }
@@ -200,7 +198,7 @@ impl BufferWriter<'_> {
         let end = self.length + bytes.len();
         self.buffer
             .get_mut(self.length..end)
-            .ok_or(IoErrorKind::InvalidData)?
+            .ok_or(Kind::InvalidData)?
             .copy_from_slice(bytes);
         self.length = end;
         Ok(())

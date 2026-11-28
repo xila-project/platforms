@@ -1,4 +1,5 @@
-use file_system::{AccessFlags, CreateFlags, Flags, IoErrorKind, Kind, Permissions, Result};
+use file_system::{AccessFlags, CreateFlags, Flags, Kind, Permissions};
+use io_error::Result;
 use network::{
     ADD_DNS_SERVER, ADD_IP_ADDRESS, ADD_ROUTE, GET_DHCP_STATE, GET_DNS_SERVER,
     GET_DNS_SERVER_COUNT, GET_IP_ADDRESS, GET_IP_ADDRESS_COUNT, GET_ROUTE, GET_ROUTE_COUNT,
@@ -25,7 +26,7 @@ pub(super) async fn load(file_system: &VirtualFileSystem, task: TaskIdentifier) 
             || !statistics.permissions.get_group().is_empty()
             || !statistics.permissions.get_others().is_empty()
         {
-            return Err(IoErrorKind::PermissionDenied);
+            return Err(io_error::Kind::PermissionDenied);
         }
         let mut length = 0;
         while length < contents.0.len() {
@@ -35,7 +36,7 @@ pub(super) async fn load(file_system: &VirtualFileSystem, task: TaskIdentifier) 
             }
             length += received;
         }
-        Err(IoErrorKind::InvalidData)
+        Err(io_error::Kind::InvalidData)
     }
     .await;
     let closed = file.close(file_system).await;
@@ -51,7 +52,7 @@ pub(super) async fn save(
     let mut contents = SecretBuffer([0; MAXIMUM_SIZE]);
     let length = Profile::encode(station, address, &mut contents.0)?;
     match file_system.remove(task, &TEMPORARY).await {
-        Ok(()) | Err(IoErrorKind::NotFound) => (),
+        Ok(()) | Err(io_error::Kind::NotFound) => (),
         Err(error) => return Err(error),
     }
     let mut file = File::open(
@@ -71,7 +72,7 @@ pub(super) async fn save(
         while written < length {
             let count = file.write(&contents.0[written..length]).await?;
             if count == 0 {
-                return Err(IoErrorKind::WriteZero);
+                return Err(io_error::Kind::WriteZero);
             }
             written += count;
         }
@@ -173,7 +174,7 @@ pub(super) async fn switch_to_dhcp(
         }
         let dhcp_state = interface.control(GET_DHCP_STATE, &()).await?;
         // An unknown flag byte is invalid, as in the shell commands.
-        if !bool::try_from(dhcp_state).map_err(|_| IoErrorKind::InvalidArgument)? {
+        if !bool::try_from(dhcp_state).map_err(|_| io_error::Kind::InvalidArgument)? {
             apply_address(None, &mut interface).await?;
         }
         Ok(())

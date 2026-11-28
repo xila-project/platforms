@@ -15,11 +15,9 @@ use drivers_shared::devices::{
     touch::TouchSensor,
 };
 use esp_hal::time::Instant;
+use xila::io_error::{Kind, Result};
 use xila::{
-    file_system::{
-        self, DirectBaseOperations, DirectCharacterDevice, IoErrorKind, MountOperations, Result,
-        Size,
-    },
+    file_system::{self, DirectBaseOperations, DirectCharacterDevice, MountOperations, Size},
     graphics::{
         self, Area, InputData, InputKind, Point, RenderingColor, RenderingMode, State, lvgl,
     },
@@ -247,9 +245,7 @@ impl<T: TouchSensor> TouchInputDevice<T> {
 impl<T: TouchSensor + Send> DirectBaseOperations for TouchInputDevice<T> {
     fn read(&self, _: &mut Context<'_>, buffer: &mut [u8], _: Size) -> Poll<Result<usize>> {
         file_system::ready(|| {
-            let data: &mut InputData = buffer
-                .try_into()
-                .map_err(|_| IoErrorKind::InvalidArgument)?;
+            let data: &mut InputData = buffer.try_into().map_err(|_| Kind::InvalidArgument)?;
             // Core's input callback panics on a read error, so wait for a
             // concurrent reader rather than report the device busy.
             self.state.with(|(sensor, last)| {
@@ -272,7 +268,7 @@ impl<T: TouchSensor + Send> DirectBaseOperations for TouchInputDevice<T> {
     }
 
     fn write(&self, _: &mut Context<'_>, _: &[u8], _: Size) -> Poll<Result<usize>> {
-        Poll::Ready(Err(IoErrorKind::Unsupported))
+        Poll::Ready(Err(Kind::Unsupported))
     }
 }
 

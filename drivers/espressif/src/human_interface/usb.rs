@@ -28,7 +28,7 @@ use embassy_usb::{Builder, Handler, UsbDevice};
 use esp_hal::peripherals::USB_FS;
 use esp_hal::usb::otg::embassy_usb_device::{Config as OtgConfig, Driver as OtgDriver};
 use esp_hal::usb::otg::{Usb, UsbFsDm, UsbFsDp};
-use file_system::IoErrorKind;
+use io_error::Kind;
 use peripherals::human_interface::{
     Error, HumanInterfaceController, REPORT_DESCRIPTOR, REPORT_IDENTIFIER_CONSUMER,
     REPORT_IDENTIFIER_KEYBOARD, REPORT_IDENTIFIER_MOUSE, REPORT_IDENTIFIER_SYSTEM,
@@ -300,9 +300,9 @@ impl UsbHumanInterface {
         data_plus: impl UsbFsDp + 'static,
         data_minus: impl UsbFsDm + 'static,
         config: UsbHumanInterfaceConfig,
-    ) -> Result<Self, IoErrorKind> {
+    ) -> Result<Self, Kind> {
         if INITIALIZED.swap(true, Ordering::SeqCst) {
-            return Err(IoErrorKind::ResourceBusy);
+            return Err(Kind::ResourceBusy);
         }
 
         let usb = Usb::new_fs(peripheral, data_plus, data_minus);

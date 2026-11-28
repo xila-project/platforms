@@ -1,6 +1,7 @@
 use core::time::Duration;
 use drivers_native::wifi::*;
-use file_system::{ControlCommand, DirectBaseOperations, IoErrorKind};
+use file_system::{ControlCommand, DirectBaseOperations};
+use io_error::Kind;
 use network::*;
 use shared::AnyByLayout;
 
@@ -8,7 +9,7 @@ fn control<C: ControlCommand>(
     controller: &MockWifiController,
     _: C,
     input: &C::Input,
-) -> file_system::Result<C::Output>
+) -> io_error::Result<C::Output>
 where
     C::Output: Default,
 {
@@ -68,7 +69,7 @@ fn controls_schedule_work_and_cancel_without_runner_threads() {
     .unwrap();
     assert_eq!(
         control(&controller, CONNECT_WIFI_CLIENT, &config),
-        Err(IoErrorKind::AlreadyInProgress)
+        Err(Kind::AlreadyInProgress)
     );
     control(&controller, SET_WIFI_RADIO_STATE, &WifiRadioState::OFF).unwrap();
     assert!(!bool::try_from(control(&controller, IS_LINK_UP, &()).unwrap()).unwrap());
@@ -95,7 +96,7 @@ fn controls_schedule_work_and_cancel_without_runner_threads() {
             START_WIFI_SCAN,
             &WifiScanConfiguration::default()
         ),
-        Err(IoErrorKind::InputOutput)
+        Err(Kind::InputOutput)
     );
 }
 
@@ -266,7 +267,7 @@ fn malformed_payloads_do_not_start_operations() {
     let (controller, _runner) = mock();
     assert_eq!(
         control(&controller, SET_WIFI_RADIO_STATE, &WifiRadioState(255)),
-        Err(IoErrorKind::InvalidArgument)
+        Err(Kind::InvalidArgument)
     );
     assert_eq!(
         control(
@@ -277,7 +278,7 @@ fn malformed_payloads_do_not_start_operations() {
                 ..Default::default()
             }
         ),
-        Err(IoErrorKind::InvalidArgument)
+        Err(Kind::InvalidArgument)
     );
     let mut configuration = WifiClientConfiguration::new(
         b"Xila demo",
@@ -288,13 +289,13 @@ fn malformed_payloads_do_not_start_operations() {
     configuration.credential.length = 255;
     assert_eq!(
         control(&controller, CONNECT_WIFI_CLIENT, &configuration),
-        Err(IoErrorKind::InvalidArgument)
+        Err(Kind::InvalidArgument)
     );
     configuration.credential.length = 9;
     configuration.authentication = WifiAuthentication(127);
     assert_eq!(
         control(&controller, CONNECT_WIFI_CLIENT, &configuration),
-        Err(IoErrorKind::Unsupported)
+        Err(Kind::Unsupported)
     );
     assert_eq!(
         control(&controller, GET_WIFI_CONNECTION_STATE, &()).unwrap(),

@@ -36,8 +36,9 @@ use esp_hal::{
 };
 use file_system::{
     ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice,
-    IoErrorKind, MountOperations, Operation, Result, Size, character_device::IS_A_TERMINAL,
+    MountOperations, Operation, Size, character_device::IS_A_TERMINAL,
 };
+use io_error::{Kind, Result};
 use shared::AnyByLayout;
 
 const INPUT_CAPACITY: usize = 256;
@@ -104,7 +105,7 @@ fn terminal_control(
             *IS_A_TERMINAL::cast_output(output)? = 1;
             Poll::Ready(Ok(()))
         }
-        _ => Poll::Ready(Err(IoErrorKind::Unsupported)),
+        _ => Poll::Ready(Err(Kind::Unsupported)),
     }
 }
 
@@ -128,7 +129,7 @@ impl DirectBaseOperations for StandardInputDevice {
     }
 
     fn write(&self, _: &mut Context<'_>, _: &[u8], _: Size) -> Poll<Result<usize>> {
-        Poll::Ready(Err(IoErrorKind::Unsupported))
+        Poll::Ready(Err(Kind::Unsupported))
     }
 
     fn flush(&self, _: &mut Context<'_>) -> Poll<Result<()>> {
@@ -161,7 +162,7 @@ pub struct StandardOutputDevice;
 
 impl DirectBaseOperations for StandardOutputDevice {
     fn read(&self, _: &mut Context<'_>, _: &mut [u8], _: Size) -> Poll<Result<usize>> {
-        Poll::Ready(Err(IoErrorKind::Unsupported))
+        Poll::Ready(Err(Kind::Unsupported))
     }
 
     fn write(&self, context: &mut Context<'_>, buffer: &[u8], _: Size) -> Poll<Result<usize>> {

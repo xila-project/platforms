@@ -10,11 +10,12 @@ compile_error!("The browser drive requires a single browser thread");
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, Ordering};
 use file_system::{
-    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectBlockDevice, IoErrorKind,
+    ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectBlockDevice,
     MountOperations, Path, Position, Size,
     block_device::{GET_BLOCK_COUNT, GET_BLOCK_SIZE},
     mount::MutexMountWrapper,
 };
+use io_error::Kind;
 use js_sys::Uint8Array;
 use shared::AnyByLayout;
 use synchronization::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex, signal::Signal};
@@ -103,19 +104,19 @@ impl Drop for Lease {
     }
 }
 
-fn map_error(value: JsValue) -> IoErrorKind {
+fn map_error(value: JsValue) -> Kind {
     match value
         .dyn_ref::<DomException>()
         .map(DomException::name)
         .as_deref()
     {
-        Some("QuotaExceededError") => IoErrorKind::NoSpace,
-        Some("NotAllowedError" | "SecurityError") => IoErrorKind::PermissionDenied,
-        Some("NotFoundError") => IoErrorKind::NotFound,
-        Some("NoModificationAllowedError" | "InvalidStateError") => IoErrorKind::ResourceBusy,
-        Some("NotSupportedError") => IoErrorKind::Unsupported,
-        Some("TypeMismatchError") => IoErrorKind::CorruptData,
-        _ => IoErrorKind::InputOutput,
+        Some("QuotaExceededError") => Kind::NoSpace,
+        Some("NotAllowedError" | "SecurityError") => Kind::PermissionDenied,
+        Some("NotFoundError") => Kind::NotFound,
+        Some("NoModificationAllowedError" | "InvalidStateError") => Kind::ResourceBusy,
+        Some("NotSupportedError") => Kind::Unsupported,
+        Some("TypeMismatchError") => Kind::CorruptData,
+        _ => Kind::InputOutput,
     }
 }
 
@@ -143,7 +144,7 @@ struct State {
 }
 
 impl State {
-    async fn sync(&self) -> file_system::Result<()> {
+    async fn sync(&self) -> io_error::Result<()> {
         let _save = self.saving.lock().await;
         let (handle, snapshot, generation) = {
             let inner = self.inner.try_get()?;
@@ -196,9 +197,9 @@ impl State {
 pub struct DriveDevice(Arc<State>, bool);
 
 impl DriveDevice {
-    fn validate_size(size: usize) -> file_system::Result<()> {
+    fn validate_size(size: usize) -> io_error::Result<()> {
         if size == 0 || !size.is_multiple_of(BLOCK_SIZE as usize) || size > isize::MAX as usize {
-            return Err(IoErrorKind::InvalidArgument);
+            return Err(Kind::InvalidArgument);
         }
         Ok(())
     }
@@ -216,7 +217,7 @@ impl DriveDevice {
 
     /// Load a fresh image into memory without opening browser storage or
     /// acquiring a Web Lock. Each drive has its own independent cache.
-    pub async fn new_memory_from_seed(size: usize, seed_url: &str) -> file_system::Result<Self> {
+    pub async fn new_memory_from_seed(size: usize, seed_url: &str) -> io_error::Result<Self> {
         Self::validate_size(size)?;
         let data = Uint8Array::new_with_length(size as u32);
         import_seed(seed_url, &data).await.map_err(map_error)?;
@@ -224,7 +225,7 @@ impl DriveDevice {
     }
 
     /// Hash the bytes in a fresh memory drive before mounting or modifying it.
-    pub async fn seed_fingerprint(&self) -> file_system::Result<alloc::string::String> {
+    pub async fn seed_fingerprint(&self) -> io_error::Result<alloc::string::String> {
         let data = self.0.inner.try_get()?.data.clone();
         fingerprint_seed(&data).await.map_err(map_error)
     }
@@ -232,7 +233,7 @@ impl DriveDevice {
     /// Open a persistent disk, using this memory image for a new disk or an
     /// explicitly requested rebuild. A rebuild replaces the committed image
     /// only when the caller successfully saves the replacement with `sync`.
-    pub async fn into_persistent(self, name: &Path, rebuild: bool) -> file_system::Result<Self> {
+    pub async fn into_persistent(self, name: &Path, rebuild: bool) -> io_error::Result<Self> {
         let data = self.0.inner.try_get()?.data.clone();
         Self::open_persistent(name, data.length() as usize, Some(data), rebuild).await
     }
@@ -240,7 +241,7 @@ impl DriveDevice {
     /// Open a fixed-size OPFS disk. `name` must be a single filename and `size`
     /// a nonzero multiple of 512. A nonempty image must already have this size.
     /// Opening does not erase or resize an existing disk.
-    pub async fn new(name: &Path, size: usize) -> file_system::Result<Self> {
+    pub async fn new(name: &Path, size: usize) -> io_error::Result<Self> {
         Self::validate_size(size)?;
         Self::open_persistent(name, size, None, false).await
     }
@@ -250,17 +251,17 @@ impl DriveDevice {
         size: usize,
         seed: Option<Uint8Array>,
         rebuild: bool,
-    ) -> file_system::Result<Self> {
+    ) -> io_error::Result<Self> {
         let name = name.as_str();
         if name.is_empty() || matches!(name, "." | "..") || name.contains(['/', '\\', '\0']) {
-            return Err(IoErrorKind::InvalidPath);
+            return Err(Kind::InvalidPath);
         }
 
         let lease = Lease(reserve_drive(name).map_err(map_error)?);
         JsFuture::from(lease.0.ready()).await.map_err(map_error)?;
 
         let storage = web_sys::window()
-            .ok_or(IoErrorKind::Unsupported)?
+            .ok_or(Kind::Unsupported)?
             .navigator()
             .storage();
         let directory = JsFuture::from(storage.get_directory())
@@ -285,7 +286,7 @@ impl DriveDevice {
             seed.unwrap_or_else(|| Uint8Array::new_with_length(size as u32))
         } else {
             if file.size() != size as f64 {
-                return Err(IoErrorKind::InvalidArgument);
+                return Err(Kind::InvalidArgument);
             }
             Uint8Array::new(
                 &JsFuture::from(file.array_buffer())
@@ -309,7 +310,7 @@ impl DriveDevice {
     /// Import a reference image into an uncommitted cache only for an absent
     /// or zero-byte disk. The caller must validate/mount it before `sync`.
     /// Existing disks never fetch a reference image.
-    pub async fn new_seeded(name: &Path, size: usize, seed_url: &str) -> file_system::Result<Self> {
+    pub async fn new_seeded(name: &Path, size: usize, seed_url: &str) -> io_error::Result<Self> {
         let drive = Self::new(name, size).await?;
         if drive.is_new() {
             let data = drive.0.inner.try_get()?.data.clone();
@@ -322,12 +323,8 @@ impl DriveDevice {
     /// Intended for startup failures before the filesystem becomes usable.
     /// Unlike `unmount`, this explicitly discards unsaved changes. A running
     /// save must finish first; this never races an OPFS commit.
-    pub fn discard_unsaved(&self) -> file_system::Result<()> {
-        let _save = self
-            .0
-            .saving
-            .try_lock()
-            .map_err(|_| IoErrorKind::ResourceBusy)?;
+    pub fn discard_unsaved(&self) -> io_error::Result<()> {
+        let _save = self.0.saving.try_lock().map_err(|_| Kind::ResourceBusy)?;
         self.0.inner.unmount()
     }
 
@@ -342,12 +339,11 @@ impl DriveDevice {
     /// running if the waiting future is cancelled, retaining the lease and save
     /// mutex until completion. Dropping the device does not save dirty data.
     /// On a memory drive this does nothing.
-    pub async fn sync(&self) -> file_system::Result<()> {
+    pub async fn sync(&self) -> io_error::Result<()> {
         if self.0.inner.try_get()?.persistence.is_none() {
             return Ok(());
         }
-        let completion =
-            Arc::new(Signal::<CriticalSectionRawMutex, file_system::Result<()>>::new());
+        let completion = Arc::new(Signal::<CriticalSectionRawMutex, io_error::Result<()>>::new());
         let state = self.0.clone();
         let result = completion.clone();
         spawn_local(async move {
@@ -374,13 +370,13 @@ impl DirectBaseOperations for DriveDevice {
         _cx: &mut core::task::Context<'_>,
         buffer: &mut [u8],
         position: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         file_system::ready(|| {
             let inner = self.0.inner.try_get()?;
-            let position = u32::try_from(position).map_err(|_| IoErrorKind::InvalidArgument)?;
+            let position = u32::try_from(position).map_err(|_| Kind::InvalidArgument)?;
             let size = inner.data.length();
             if position > size {
-                return Err(IoErrorKind::InvalidArgument);
+                return Err(Kind::InvalidArgument);
             }
             let count = buffer.len().min((size - position) as usize);
             inner
@@ -396,16 +392,16 @@ impl DirectBaseOperations for DriveDevice {
         _cx: &mut core::task::Context<'_>,
         buffer: &[u8],
         position: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         file_system::ready(|| {
             if !self.0.accepting_writes.load(Ordering::Acquire) {
-                return Err(IoErrorKind::ResourceBusy);
+                return Err(Kind::ResourceBusy);
             }
             let mut inner = self.0.inner.try_get()?;
-            let position = u32::try_from(position).map_err(|_| IoErrorKind::InvalidArgument)?;
+            let position = u32::try_from(position).map_err(|_| Kind::InvalidArgument)?;
             let size = inner.data.length();
             if position > size {
-                return Err(IoErrorKind::InvalidArgument);
+                return Err(Kind::InvalidArgument);
             }
             let count = buffer.len().min((size - position) as usize);
             if count != 0 {
@@ -421,16 +417,13 @@ impl DirectBaseOperations for DriveDevice {
         })
     }
 
-    fn set_position(&self, current: Size, position: &Position) -> file_system::Result<Size> {
+    fn set_position(&self, current: Size, position: &Position) -> io_error::Result<Size> {
         let inner = self.0.inner.try_get()?;
         file_system::block_device::set_position(current, position, inner.data.length() as Size)
     }
 
     /// Cache-only flush. OPFS durability requires awaiting `sync()`.
-    fn flush(
-        &self,
-        _cx: &mut core::task::Context<'_>,
-    ) -> core::task::Poll<file_system::Result<()>> {
+    fn flush(&self, _cx: &mut core::task::Context<'_>) -> core::task::Poll<io_error::Result<()>> {
         file_system::ready(|| {
             let _inner = self.0.inner.try_get()?;
             Ok(())
@@ -443,7 +436,7 @@ impl DirectBaseOperations for DriveDevice {
         command: ControlCommandIdentifier,
         _: &AnyByLayout,
         output: &mut AnyByLayout,
-    ) -> core::task::Poll<file_system::Result<()>> {
+    ) -> core::task::Poll<io_error::Result<()>> {
         file_system::ready(|| {
             let inner = self.0.inner.try_get()?;
             match command {
@@ -452,7 +445,7 @@ impl DirectBaseOperations for DriveDevice {
                     *GET_BLOCK_COUNT::cast_output(output)? =
                         (inner.data.length() / BLOCK_SIZE) as Size;
                 }
-                _ => return Err(IoErrorKind::Unsupported),
+                _ => return Err(Kind::Unsupported),
             }
             Ok(())
         })
@@ -461,12 +454,8 @@ impl DirectBaseOperations for DriveDevice {
 
 impl MountOperations for DriveDevice {
     /// Unmount only a clean cache when no save is running. Await `sync()` first.
-    fn unmount(&self) -> file_system::Result<()> {
-        let _save = self
-            .0
-            .saving
-            .try_lock()
-            .map_err(|_| IoErrorKind::ResourceBusy)?;
+    fn unmount(&self) -> io_error::Result<()> {
+        let _save = self.0.saving.try_lock().map_err(|_| Kind::ResourceBusy)?;
         {
             let inner = self.0.inner.try_get()?;
             if inner
@@ -474,7 +463,7 @@ impl MountOperations for DriveDevice {
                 .as_ref()
                 .is_some_and(|persistence| persistence.generation != persistence.saved_generation)
             {
-                return Err(IoErrorKind::ResourceBusy);
+                return Err(Kind::ResourceBusy);
             }
         }
         self.0.inner.unmount()

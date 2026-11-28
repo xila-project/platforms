@@ -31,12 +31,12 @@ impl<const N: usize> DirectBaseOperations for KeyboardDevice<CriticalSectionRawM
         _cx: &mut core::task::Context<'_>,
         buffer: &mut [u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         file_system::ready(|| {
             // - Cast
             let data: &mut InputData = buffer
                 .try_into()
-                .map_err(|_| file_system::IoErrorKind::InvalidArgument)?;
+                .map_err(|_| io_error::Kind::InvalidArgument)?;
 
             let size = if let Ok((key, state)) = self.receiver.try_receive() {
                 data.set_key(key);
@@ -57,23 +57,22 @@ impl<const N: usize> DirectBaseOperations for KeyboardDevice<CriticalSectionRawM
         _cx: &mut core::task::Context<'_>,
         buffer: &[u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         file_system::ready(|| {
             if buffer.len() != 5 {
-                return Err(file_system::IoErrorKind::InvalidArgument);
+                return Err(io_error::Kind::InvalidArgument);
             }
             let key_code = u32::from_le_bytes(buffer[..4].try_into().unwrap());
             let key = Key::from(key_code);
             if u32::from(key) != key_code
                 || matches!(key, Key::Character(character) if !(b' '..=b'~').contains(&character))
             {
-                return Err(file_system::IoErrorKind::InvalidArgument);
+                return Err(io_error::Kind::InvalidArgument);
             }
-            let state = State::try_from(buffer[4])
-                .map_err(|_| file_system::IoErrorKind::InvalidArgument)?;
+            let state = State::try_from(buffer[4]).map_err(|_| io_error::Kind::InvalidArgument)?;
             self.sender
                 .try_send((key, state))
-                .map_err(|_| file_system::IoErrorKind::WouldBlock)?;
+                .map_err(|_| io_error::Kind::WouldBlock)?;
             Ok(buffer.len())
         })
     }

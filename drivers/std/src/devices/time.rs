@@ -1,7 +1,6 @@
 use core::time::Duration;
-use file_system::{
-    DirectBaseOperations, DirectCharacterDevice, IoErrorKind, MountOperations, Result, Size,
-};
+use file_system::{DirectBaseOperations, DirectCharacterDevice, MountOperations, Size};
+use io_error::{Kind, Result};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct TimeDevice;
@@ -15,12 +14,12 @@ impl DirectBaseOperations for TimeDevice {
     ) -> core::task::Poll<Result<usize>> {
         file_system::ready(|| {
             if buffer.len() < size_of::<Duration>() {
-                return Err(IoErrorKind::InvalidArgument);
+                return Err(Kind::InvalidArgument);
             }
 
             let duration = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .map_err(|_| IoErrorKind::InputOutput)?;
+                .map_err(|_| Kind::InputOutput)?;
 
             let duration: Duration = Duration::new(duration.as_secs(), duration.subsec_nanos());
 
@@ -43,7 +42,7 @@ impl DirectBaseOperations for TimeDevice {
         _: &[u8],
         _: Size,
     ) -> core::task::Poll<Result<usize>> {
-        file_system::ready(|| Err(IoErrorKind::Unsupported))
+        file_system::ready(|| Err(Kind::Unsupported))
     }
 }
 

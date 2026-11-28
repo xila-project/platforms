@@ -2,7 +2,7 @@ use esp_hal::{
     peripherals::{ADC1, RNG},
     rng::{Trng, TrngSource},
 };
-use file_system::IoErrorKind;
+use io_error::Kind;
 use static_cell::StaticCell;
 
 use super::RandomDevice;
@@ -18,7 +18,7 @@ impl RandomDevice {
         ENTROPY_SOURCE.init_with(|| TrngSource::new(random, converter));
 
         Self::from_entropy_source(|buffer| {
-            let random = Trng::try_new().map_err(|_| IoErrorKind::DeviceUnavailable)?;
+            let random = Trng::try_new().map_err(|_| Kind::DeviceUnavailable)?;
             random.read(buffer);
             Ok(())
         })

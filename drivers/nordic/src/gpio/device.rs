@@ -7,8 +7,9 @@ use core::task::Poll;
 use embassy_nrf::gpio::{AnyPin, Flex, OutputDrive, Pull as NrfPull};
 use file_system::{
     ControlCommand, ControlCommandIdentifier, DirectBaseOperations, DirectCharacterDevice,
-    IoErrorKind, MountOperations, Result, Size, mount::MutexMountWrapper,
+    MountOperations, Size, mount::MutexMountWrapper,
 };
+use io_error::{Kind, Result};
 use shared::AnyByLayout;
 use synchronization::blocking_mutex::raw::CriticalSectionRawMutex;
 
@@ -34,7 +35,7 @@ impl GpioPinDevice {
     /// Create a new `GpioPinDevice` for the given pin index (0..47).
     ///
     /// The pin starts unconfigured (high impedance).
-    /// Returns `IoErrorKind::PermissionDenied` if the pin is marked reserved, or `IoErrorKind::InvalidArgument`
+    /// Returns `Kind::PermissionDenied` if the pin is marked reserved, or `Kind::InvalidArgument`
     /// if the pin index is >= 48.
     pub fn new(pin_index: u8, reserved_mask: u64) -> Result<Self> {
         validate_pin(pin_index, reserved_mask)?;
@@ -61,7 +62,7 @@ impl GpioPinDevice {
         output: Option<(DriveMode, Level)>,
     ) -> Result<()> {
         if is_pin_reserved(self.pin_index, self.reserved_mask) {
-            return Err(IoErrorKind::PermissionDenied);
+            return Err(Kind::PermissionDenied);
         }
 
         let mut inner = self.inner.try_get()?;
@@ -81,7 +82,7 @@ impl GpioPinDevice {
                 flex.set_as_input(nrf_pull);
             }
             Direction::Output => {
-                let (drive_mode, initial_level) = output.ok_or(IoErrorKind::InvalidArgument)?;
+                let (drive_mode, initial_level) = output.ok_or(Kind::InvalidArgument)?;
                 match initial_level {
                     Level::Low => flex.set_low(),
                     Level::High => flex.set_high(),
@@ -140,7 +141,7 @@ impl DirectBaseOperations for GpioPinDevice {
             }
 
             let direction = inner.direction;
-            let flex = inner.flex.as_mut().ok_or(IoErrorKind::DeviceUnavailable)?;
+            let flex = inner.flex.as_mut().ok_or(Kind::DeviceUnavailable)?;
             let level = match direction {
                 Direction::Input => flex.is_high(),
                 Direction::Output => flex.is_set_high(),
@@ -166,7 +167,7 @@ impl DirectBaseOperations for GpioPinDevice {
 
             // If explicitly configured as input via control, reject writes.
             if inner.flex.is_some() && inner.direction != Direction::Output {
-                return Err(IoErrorKind::Unsupported);
+                return Err(Kind::Unsupported);
             }
 
             // If unconfigured, auto-configure as push-pull output with the requested level.
@@ -180,7 +181,7 @@ impl DirectBaseOperations for GpioPinDevice {
                 return Ok(buffer.len());
             }
 
-            let flex = inner.flex.as_mut().ok_or(IoErrorKind::DeviceUnavailable)?;
+            let flex = inner.flex.as_mut().ok_or(Kind::DeviceUnavailable)?;
             match level {
                 Level::Low => flex.set_low(),
                 Level::High => flex.set_high(),
@@ -212,7 +213,7 @@ impl DirectBaseOperations for GpioPinDevice {
                 validate_version(request)?;
                 *GET_CAPABILITIES::cast_output(output)? = get_capabilities();
             } else {
-                return Err(IoErrorKind::Unsupported);
+                return Err(Kind::Unsupported);
             }
             Ok(())
         })

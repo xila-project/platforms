@@ -10,6 +10,7 @@ audio = ["dep:audio", "dep:nanoaudio-web"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 file_system = { workspace = true }
+io_error.workspace = true
 drivers_shared = { workspace = true, features = ["input-queue"] }
 time = { workspace = true }
 audio = { workspace = true, optional = true }

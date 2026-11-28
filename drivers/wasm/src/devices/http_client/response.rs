@@ -1,6 +1,6 @@
 //! Framing of a `fetch` response as the raw HTTP/1.1 head the guests parse.
 use alloc::{string::String, vec::Vec};
-use file_system::{IoErrorKind, Result};
+use io_error::{Kind, Result};
 
 /// Same limit as the native devices' response buffer.
 pub(super) const MAX_HEAD_SIZE: usize = 8192;
@@ -27,7 +27,7 @@ pub(super) fn build_head(
     let push = |head: &mut Vec<u8>, parts: &[&[u8]]| -> Result<()> {
         let length: usize = parts.iter().map(|part| part.len()).sum::<usize>() + 2;
         if head.len() + length + 2 > MAX_HEAD_SIZE {
-            return Err(IoErrorKind::FileTooLarge);
+            return Err(Kind::FileTooLarge);
         }
         for part in parts {
             head.extend_from_slice(part);

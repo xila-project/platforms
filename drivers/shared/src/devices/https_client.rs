@@ -11,9 +11,9 @@ use core::time::Duration;
 use embassy_futures::select::{Either, select};
 use embedded_tls::{Aes128GcmSha256, TlsConfig, TlsConnection, TlsContext, UnsecureProvider};
 use file_system::{
-    BaseOperations, CharacterDevice, Context, DirectCharacterDevice, IoErrorKind, MountOperations,
-    Result, Size,
+    BaseOperations, CharacterDevice, Context, DirectCharacterDevice, MountOperations, Size,
 };
+use io_error::{Kind, Result};
 use rand_core::{TryCryptoRng, TryRng};
 use shared::HttpRequestParser;
 use synchronization::Arc;
@@ -27,7 +27,7 @@ struct RandomNumberGenerator<T: DirectCharacterDevice + 'static>(&'static T);
 impl<T: DirectCharacterDevice + 'static> TryCryptoRng for RandomNumberGenerator<T> {}
 
 impl<T: DirectCharacterDevice + 'static> TryRng for RandomNumberGenerator<T> {
-    type Error = IoErrorKind;
+    type Error = Kind;
 
     fn try_next_u32(&mut self) -> Result<u32> {
         let mut bytes = [0u8; 4];
@@ -47,7 +47,7 @@ impl<T: DirectCharacterDevice + 'static> TryRng for RandomNumberGenerator<T> {
         }
         if self.0.read_sync(dest, 0)? != dest.len() {
             // Never report success with missing entropy from a short read.
-            return Err(IoErrorKind::InputOutput);
+            return Err(Kind::InputOutput);
         }
         Ok(())
     }
@@ -87,7 +87,7 @@ impl<T: DirectCharacterDevice + 'static> rand_core_06::RngCore for TlsRandomNumb
 /// That domain reserves small codes for operating system errno values, so the stable I/O kind ID
 /// travels as a custom code (`Error::CUSTOM_START + id`) and can be decoded again with
 /// `tls_random_kind`.
-fn tls_random_error(kind: IoErrorKind) -> rand_core_06::Error {
+fn tls_random_error(kind: Kind) -> rand_core_06::Error {
     let code = rand_core_06::Error::CUSTOM_START + u32::from(kind.id());
     // `CUSTOM_START` is non-zero, so this always succeeds.
     core::num::NonZeroU32::new(code)
@@ -96,12 +96,12 @@ fn tls_random_error(kind: IoErrorKind) -> rand_core_06::Error {
 }
 
 #[cfg(test)]
-fn tls_random_kind(error: &rand_core_06::Error) -> Option<IoErrorKind> {
+fn tls_random_kind(error: &rand_core_06::Error) -> Option<Kind> {
     let id = error
         .code()?
         .get()
         .checked_sub(rand_core_06::Error::CUSTOM_START)?;
-    IoErrorKind::try_from(u16::try_from(id).ok()?).ok()
+    Kind::try_from(u16::try_from(id).ok()?).ok()
 }
 
 struct ResponseTls<'a, 'b>(&'a mut TlsConnection<'b, TcpSocketAdapter, Aes128GcmSha256>);
@@ -132,13 +132,13 @@ async fn run_request<T: DirectCharacterDevice + 'static>(
     };
     let operation = async {
         let parser = HttpRequestParser::from_buffer(&request);
-        let (method, _) = parser.get_request().ok_or(IoErrorKind::InvalidArgument)?;
+        let (method, _) = parser.get_request().ok_or(Kind::InvalidArgument)?;
         let head_request = method == "HEAD";
         let host = parser
             .get_headers()
             .find(|(n, _)| n.eq_ignore_ascii_case("Host"))
             .map(|(_, v)| v)
-            .ok_or(IoErrorKind::InvalidArgument)?;
+            .ok_or(Kind::InvalidArgument)?;
         let (host, port) = split_host_port(host, DEFAULT_HTTPS_PORT);
         let socket = create_tcp_connection(manager, host, port).await?;
         // Allocate directly on the heap; no 16 KiB arrays in the worker future.
@@ -156,7 +156,7 @@ async fn run_request<T: DirectCharacterDevice + 'static>(
         .await
         {
             Either::First(result) => result.map_err(map_http_io_error)?,
-            Either::Second(_) => return Err(IoErrorKind::TimedOut),
+            Either::Second(_) => return Err(Kind::TimedOut),
         }
         match select(
             send_request(&mut tls, &request),
@@ -165,7 +165,7 @@ async fn run_request<T: DirectCharacterDevice + 'static>(
         .await
         {
             Either::First(result) => result?,
-            Either::Second(_) => return Err(IoErrorKind::TimedOut),
+            Either::Second(_) => return Err(Kind::TimedOut),
         }
         drop(configuration);
         drop(request);
@@ -180,7 +180,7 @@ async fn run_request<T: DirectCharacterDevice + 'static>(
     };
     let result = match select(operation, exchange.cancelled.wait()).await {
         Either::First(result) => result,
-        Either::Second(_) => Err(IoErrorKind::InvalidState),
+        Either::Second(_) => Err(Kind::InvalidState),
     };
     exchange.finish(generation, buffer, result).await;
 }
@@ -224,7 +224,7 @@ impl<T: DirectCharacterDevice + 'static> BaseOperations for HttpsClientDevice<T>
     ) -> core::task::Poll<Result<usize>> {
         context
             .get_private_data_mutable_of_type::<ClientContext>()
-            .ok_or(IoErrorKind::InvalidState)?
+            .ok_or(Kind::InvalidState)?
             .poll_read(cx, buffer)
     }
     fn write(
@@ -237,7 +237,7 @@ impl<T: DirectCharacterDevice + 'static> BaseOperations for HttpsClientDevice<T>
         file_system::ready(|| {
             let client = context
                 .get_private_data_mutable_of_type::<ClientContext>()
-                .ok_or(IoErrorKind::InvalidState)?;
+                .ok_or(Kind::InvalidState)?;
             let generation = client.exchange.begin()?;
             let request = buffer.to_vec();
             let exchange = client.exchange.clone();
@@ -253,12 +253,12 @@ impl<T: DirectCharacterDevice + 'static> BaseOperations for HttpsClientDevice<T>
             ))
             .is_err()
             {
-                task::block_on(client.exchange.finish(
-                    generation,
-                    None,
-                    Err(IoErrorKind::ResourceBusy),
-                ));
-                return Err(IoErrorKind::ResourceBusy);
+                task::block_on(
+                    client
+                        .exchange
+                        .finish(generation, None, Err(Kind::ResourceBusy)),
+                );
+                return Err(Kind::ResourceBusy);
             }
             Ok(buffer.len())
         })
@@ -266,7 +266,7 @@ impl<T: DirectCharacterDevice + 'static> BaseOperations for HttpsClientDevice<T>
     fn clone_context(&self, context: &Context) -> Result<Context> {
         let client = context
             .get_private_data_of_type::<ClientContext>()
-            .ok_or(IoErrorKind::InvalidState)?;
+            .ok_or(Kind::InvalidState)?;
         Ok(Context::new(Some(client.clone_context())))
     }
     fn cancel_operation(&self, context: &mut Context, operation: file_system::Operation) {
@@ -298,7 +298,7 @@ mod tests {
         ) -> core::task::Poll<Result<usize>> {
             file_system::ready(|| {
                 if self.fail {
-                    return Err(IoErrorKind::InputOutput);
+                    return Err(Kind::InputOutput);
                 }
                 let count = buffer.len().min(self.limit);
                 for (index, byte) in buffer[..count].iter_mut().enumerate() {
@@ -314,11 +314,11 @@ mod tests {
             _: &[u8],
             _: Size,
         ) -> core::task::Poll<Result<usize>> {
-            file_system::ready(|| Err(IoErrorKind::Unsupported))
+            file_system::ready(|| Err(Kind::Unsupported))
         }
 
         fn set_position(&self, _: Size, _: &file_system::Position) -> Result<Size> {
-            Err(IoErrorKind::Unsupported)
+            Err(Kind::Unsupported)
         }
     }
 
@@ -341,7 +341,7 @@ mod tests {
     #[test]
     fn random_generator_provides_fallible_rand_core_010_values() {
         use rand_core::TryRng;
-        fn accepts_crypto_rng(_: impl rand_core::TryCryptoRng<Error = IoErrorKind>) {}
+        fn accepts_crypto_rng(_: impl rand_core::TryCryptoRng<Error = Kind>) {}
         accepts_crypto_rng(RandomNumberGenerator(&COMPLETE_RANDOM));
         let mut rng = RandomNumberGenerator(&COMPLETE_RANDOM);
         assert_eq!(rng.try_next_u32(), Ok(0x0403_0201));
@@ -356,12 +356,9 @@ mod tests {
         use rand_core::TryRng;
         for device in [&SHORT_RANDOM, &FAILED_RANDOM] {
             let mut rng = RandomNumberGenerator(device);
-            assert_eq!(rng.try_next_u32(), Err(IoErrorKind::InputOutput));
-            assert_eq!(rng.try_next_u64(), Err(IoErrorKind::InputOutput));
-            assert_eq!(
-                rng.try_fill_bytes(&mut [0; 3]),
-                Err(IoErrorKind::InputOutput)
-            );
+            assert_eq!(rng.try_next_u32(), Err(Kind::InputOutput));
+            assert_eq!(rng.try_next_u64(), Err(Kind::InputOutput));
+            assert_eq!(rng.try_fill_bytes(&mut [0; 3]), Err(Kind::InputOutput));
         }
         // Empty requests do not need entropy and must not touch a failing device.
         assert_eq!(
@@ -385,10 +382,10 @@ mod tests {
         assert_eq!(bytes, [1, 2, 3]);
         let mut rng = TlsRandomNumberGenerator(RandomNumberGenerator(&FAILED_RANDOM));
         let error = rng.try_fill_bytes(&mut [0; 3]).unwrap_err();
-        assert_eq!(tls_random_kind(&error), Some(IoErrorKind::InputOutput));
+        assert_eq!(tls_random_kind(&error), Some(Kind::InputOutput));
         assert_eq!(
             error.code().map(|code| code.get()),
-            Some(rand_core_06::Error::CUSTOM_START + u32::from(IoErrorKind::InputOutput.id()))
+            Some(rand_core_06::Error::CUSTOM_START + u32::from(Kind::InputOutput.id()))
         );
     }
 

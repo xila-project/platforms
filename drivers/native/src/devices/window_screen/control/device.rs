@@ -21,27 +21,27 @@ struct ResponseAccumulator {
 }
 
 impl ResponseAccumulator {
-    fn push(&mut self, bytes: &[u8]) -> file_system::Result<bool> {
+    fn push(&mut self, bytes: &[u8]) -> io_error::Result<bool> {
         let max_response = debug_protocol::MAX_RESPONSE_BYTES
             .checked_add(debug_protocol::MAX_SCREENSHOT_BYTES)
-            .ok_or(file_system::IoErrorKind::InvalidArgument)?;
+            .ok_or(io_error::Kind::InvalidArgument)?;
         if self.bytes.len().saturating_add(bytes.len()) > max_response {
-            return Err(file_system::IoErrorKind::InvalidArgument);
+            return Err(io_error::Kind::InvalidArgument);
         }
         self.bytes.extend_from_slice(bytes);
 
         if self.expected_len.is_none() {
             let Some(header_end) = self.bytes.iter().position(|byte| *byte == b'\n') else {
                 if self.bytes.len() >= debug_protocol::MAX_RESPONSE_BYTES {
-                    return Err(file_system::IoErrorKind::InvalidArgument);
+                    return Err(io_error::Kind::InvalidArgument);
                 }
                 return Ok(false);
             };
             if header_end + 1 > debug_protocol::MAX_RESPONSE_BYTES {
-                return Err(file_system::IoErrorKind::InvalidArgument);
+                return Err(io_error::Kind::InvalidArgument);
             }
             let header: serde_json::Value = serde_json::from_slice(&self.bytes[..header_end])
-                .map_err(|_| file_system::IoErrorKind::InvalidArgument)?;
+                .map_err(|_| io_error::Kind::InvalidArgument)?;
             let screenshot = header
                 .get("result")
                 .and_then(serde_json::Value::as_object)
@@ -51,11 +51,11 @@ impl ResponseAccumulator {
                     header
                         .get("result")
                         .cloned()
-                        .ok_or(file_system::IoErrorKind::InvalidArgument)?,
+                        .ok_or(io_error::Kind::InvalidArgument)?,
                 )
-                .map_err(|_| file_system::IoErrorKind::InvalidArgument)?;
+                .map_err(|_| io_error::Kind::InvalidArgument)?;
                 debug_protocol::validate_screenshot_metadata(metadata)
-                    .map_err(|_| file_system::IoErrorKind::InvalidArgument)?;
+                    .map_err(|_| io_error::Kind::InvalidArgument)?;
                 metadata.payload_bytes
             } else {
                 0
@@ -64,13 +64,13 @@ impl ResponseAccumulator {
                 header_end
                     .checked_add(1)
                     .and_then(|length| length.checked_add(payload_bytes))
-                    .ok_or(file_system::IoErrorKind::InvalidArgument)?,
+                    .ok_or(io_error::Kind::InvalidArgument)?,
             );
         }
 
         let expected = self.expected_len.unwrap();
         if self.bytes.len() > expected {
-            return Err(file_system::IoErrorKind::InvalidArgument);
+            return Err(io_error::Kind::InvalidArgument);
         }
         Ok(self.bytes.len() == expected)
     }
@@ -89,53 +89,50 @@ static CONTROL_SERVER: Mutex<Option<ControlServer>> = Mutex::new(None);
 pub struct DebugTransportDevice;
 
 impl DebugTransportDevice {
-    fn initialize() -> file_system::Result<()> {
+    fn initialize() -> io_error::Result<()> {
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         let state = Arc::new(DeviceState {
             requests: Mutex::new(receiver),
             active: Mutex::new(None),
         });
         let state_slot = DEVICE_STATE.get_or_init(|| Mutex::new(None));
-        let mut state_guard = state_slot
-            .lock()
-            .map_err(|_| file_system::IoErrorKind::InputOutput)?;
+        let mut state_guard = state_slot.lock().map_err(|_| io_error::Kind::InputOutput)?;
         if state_guard.is_some() {
-            return Err(file_system::IoErrorKind::ResourceBusy);
+            return Err(io_error::Kind::ResourceBusy);
         }
-        let server =
-            ControlServer::start(sender).map_err(|_| file_system::IoErrorKind::InputOutput)?;
+        let server = ControlServer::start(sender).map_err(|_| io_error::Kind::InputOutput)?;
         *CONTROL_SERVER
             .lock()
-            .map_err(|_| file_system::IoErrorKind::InputOutput)? = Some(server);
+            .map_err(|_| io_error::Kind::InputOutput)? = Some(server);
         *state_guard = Some(state);
         Ok(())
     }
 
-    fn state() -> file_system::Result<Arc<DeviceState>> {
+    fn state() -> io_error::Result<Arc<DeviceState>> {
         DEVICE_STATE
             .get()
-            .ok_or(file_system::IoErrorKind::DeviceUnavailable)?
+            .ok_or(io_error::Kind::DeviceUnavailable)?
             .lock()
-            .map_err(|_| file_system::IoErrorKind::InputOutput)?
+            .map_err(|_| io_error::Kind::InputOutput)?
             .clone()
-            .ok_or(file_system::IoErrorKind::DeviceUnavailable)
+            .ok_or(io_error::Kind::DeviceUnavailable)
     }
 }
 
 impl DirectBaseOperations for DebugTransportDevice {
-    fn open(&self) -> file_system::Result<()> {
+    fn open(&self) -> io_error::Result<()> {
         Self::initialize()
     }
 
-    fn close(&self) -> file_system::Result<()> {
+    fn close(&self) -> io_error::Result<()> {
         *DEVICE_STATE
             .get()
-            .ok_or(file_system::IoErrorKind::DeviceUnavailable)?
+            .ok_or(io_error::Kind::DeviceUnavailable)?
             .lock()
-            .map_err(|_| file_system::IoErrorKind::InputOutput)? = None;
+            .map_err(|_| io_error::Kind::InputOutput)? = None;
         *CONTROL_SERVER
             .lock()
-            .map_err(|_| file_system::IoErrorKind::InputOutput)? = None;
+            .map_err(|_| io_error::Kind::InputOutput)? = None;
         Ok(())
     }
 
@@ -144,7 +141,7 @@ impl DirectBaseOperations for DebugTransportDevice {
         _cx: &mut core::task::Context<'_>,
         buffer: &mut [u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         file_system::ready(|| {
             if buffer.is_empty() {
                 return Ok(0);
@@ -153,13 +150,13 @@ impl DirectBaseOperations for DebugTransportDevice {
             let mut active = state
                 .active
                 .try_lock()
-                .map_err(|_| file_system::IoErrorKind::WouldBlock)?;
+                .map_err(|_| io_error::Kind::WouldBlock)?;
 
             if active.is_none() {
                 let requests = state
                     .requests
                     .try_lock()
-                    .map_err(|_| file_system::IoErrorKind::WouldBlock)?;
+                    .map_err(|_| io_error::Kind::WouldBlock)?;
                 match requests.try_recv() {
                     Ok(request) => {
                         *active = Some(ActiveRequest {
@@ -169,16 +166,16 @@ impl DirectBaseOperations for DebugTransportDevice {
                             response_frame: ResponseAccumulator::default(),
                         });
                     }
-                    Err(TryRecvError::Empty) => return Err(file_system::IoErrorKind::WouldBlock),
+                    Err(TryRecvError::Empty) => return Err(io_error::Kind::WouldBlock),
                     Err(TryRecvError::Disconnected) => {
-                        return Err(file_system::IoErrorKind::InputOutput);
+                        return Err(io_error::Kind::InputOutput);
                     }
                 }
             }
 
             let request = active.as_mut().unwrap();
             if request.offset == request.bytes.len() {
-                return Err(file_system::IoErrorKind::WouldBlock);
+                return Err(io_error::Kind::WouldBlock);
             }
             let length = buffer.len().min(request.bytes.len() - request.offset);
             buffer[..length]
@@ -193,23 +190,21 @@ impl DirectBaseOperations for DebugTransportDevice {
         _cx: &mut core::task::Context<'_>,
         buffer: &[u8],
         _: Size,
-    ) -> core::task::Poll<file_system::Result<usize>> {
+    ) -> core::task::Poll<io_error::Result<usize>> {
         file_system::ready(|| {
             let state = Self::state()?;
             let mut active = state
                 .active
                 .try_lock()
-                .map_err(|_| file_system::IoErrorKind::WouldBlock)?;
-            let request = active
-                .as_mut()
-                .ok_or(file_system::IoErrorKind::WouldBlock)?;
+                .map_err(|_| io_error::Kind::WouldBlock)?;
+            let request = active.as_mut().ok_or(io_error::Kind::WouldBlock)?;
             let length = buffer.len();
             if request.response_frame.push(buffer)? {
                 let active = active.take().unwrap();
                 active
                     .response
                     .send(active.response_frame.bytes)
-                    .map_err(|_| file_system::IoErrorKind::InputOutput)?;
+                    .map_err(|_| io_error::Kind::InputOutput)?;
             }
             Ok(length)
         })
@@ -257,30 +252,30 @@ mod tests {
         // No request is pending.
         assert_eq!(
             device.read_sync(&mut buffer, 0),
-            Err(file_system::IoErrorKind::WouldBlock)
+            Err(io_error::Kind::WouldBlock)
         );
         // A response with no request in flight has nothing to answer yet.
         assert_eq!(
             device.write_sync(b"{}\n", 0),
-            Err(file_system::IoErrorKind::WouldBlock)
+            Err(io_error::Kind::WouldBlock)
         );
         // A contended try-lock is also a readiness condition.
         {
             let _held = state.active.lock().unwrap();
             assert_eq!(
                 device.read_sync(&mut buffer, 0),
-                Err(file_system::IoErrorKind::WouldBlock)
+                Err(io_error::Kind::WouldBlock)
             );
             assert_eq!(
                 device.write_sync(b"{}\n", 0),
-                Err(file_system::IoErrorKind::WouldBlock)
+                Err(io_error::Kind::WouldBlock)
             );
         }
         {
             let _held = state.requests.lock().unwrap();
             assert_eq!(
                 device.read_sync(&mut buffer, 0),
-                Err(file_system::IoErrorKind::WouldBlock)
+                Err(io_error::Kind::WouldBlock)
             );
         }
         // A request that has been fully handed out waits for its response.
@@ -294,12 +289,12 @@ mod tests {
         assert_eq!(device.read_sync(&mut buffer, 0), Ok(5));
         assert_eq!(
             device.read_sync(&mut buffer, 0),
-            Err(file_system::IoErrorKind::WouldBlock)
+            Err(io_error::Kind::WouldBlock)
         );
         // Opening the exclusive transport twice is an administrative conflict.
         assert_eq!(
             DebugTransportDevice::initialize(),
-            Err(file_system::IoErrorKind::ResourceBusy)
+            Err(io_error::Kind::ResourceBusy)
         );
 
         *DEVICE_STATE.get().unwrap().lock().unwrap() = None;
@@ -310,7 +305,7 @@ mod tests {
         let mut frame = ResponseAccumulator::default();
         assert_eq!(
             frame.push(&screenshot_header(3)),
-            Err(file_system::IoErrorKind::InvalidArgument)
+            Err(io_error::Kind::InvalidArgument)
         );
     }
 

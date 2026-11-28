@@ -92,8 +92,9 @@ async fn main(task_manager: &'static xila::task::Manager) {
     use web_sys::{HtmlElement, MouseEvent};
     use xila::bootsplash::Bootsplash;
     use xila::executable::{self, Standard, mount_executables};
+    use xila::file_system::Path;
     use xila::file_system::mbr::Mbr;
-    use xila::file_system::{IoErrorKind, Path};
+    use xila::io_error::Kind;
     use xila::log;
     use xila::time::{self, Duration};
     use xila::virtual_file_system::mount_static;
@@ -138,11 +139,7 @@ async fn main(task_manager: &'static xila::task::Manager) {
             disk_manager_startup_failed(
                 &selected_disk,
                 &alloc::format!("Could not open {disk_label}: {error}"),
-                persistent
-                    && matches!(
-                        error,
-                        IoErrorKind::InvalidArgument | IoErrorKind::CorruptData
-                    ),
+                persistent && matches!(error, Kind::InvalidArgument | Kind::CorruptData),
             );
             return;
         }

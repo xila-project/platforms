@@ -1,8 +1,7 @@
 //! Nanoglia model ownership and accelerator selection for platform assemblies.
 use drivers_neural_network::{LoaderDevice, MAX_TENSOR_RANK, NeuralNetworkDevice};
-use file_system::{
-    BaseOperations, CharacterDevice, Context, IoErrorKind, MountOperations, Result, Size,
-};
+use file_system::{BaseOperations, CharacterDevice, Context, MountOperations, Size};
+use io_error::{Kind, Result};
 use nanoglia::{Encoding, Graph, GraphExecutionContext, GraphHandle, OwnedGraph};
 use neural_network::{
     Backend, Loader, ModelBuffer as CoreModelBuffer, ModelEncoding, QuantizationEntry, TensorInfo,
@@ -91,7 +90,7 @@ pub fn from_rom(
     target: Target,
 ) -> Result<NeuralNetworkDevice<NanogliaBackend>> {
     if !(model.as_ptr() as usize).is_multiple_of(nanoglia::core::ALIGN) {
-        return Err(IoErrorKind::InvalidArgument);
+        return Err(Kind::InvalidArgument);
     }
     let graph = Graph::load(&[model], Encoding::TensorFlowLite, target).map_err(map_error)?;
     Ok(NeuralNetworkDevice::new(NanogliaBackend {
@@ -118,7 +117,7 @@ pub async fn mount_rom(
     path: impl AsRef<file_system::Path>,
     model: &'static [u8],
     target: Target,
-) -> virtual_file_system::Result<()> {
+) -> io_error::Result<()> {
     vfs.mount_character_device(task, path, from_rom(model, target)?)
         .await
 }
@@ -130,7 +129,7 @@ pub async fn mount_owned_model(
     path: impl AsRef<file_system::Path>,
     model: ModelBuffer,
     target: Target,
-) -> virtual_file_system::Result<()> {
+) -> io_error::Result<()> {
     vfs.mount_character_device(task, path, from_owned_model(model, target)?)
         .await
 }
@@ -164,7 +163,7 @@ impl Loader for NanogliaLoader {
     /// consumption during model loading.
     fn load(&self, encoding: ModelEncoding, model: CoreModelBuffer) -> Result<Self::Backend> {
         if encoding != ModelEncoding::TensorFlowLite {
-            return Err(IoErrorKind::Unsupported);
+            return Err(Kind::Unsupported);
         }
         let mut block = NanogliaModelBuffer::new_zeroed(model.len(), Global).map_err(map_error)?;
         block.as_mut_slice().copy_from_slice(&model);
@@ -193,7 +192,7 @@ pub async fn mount_loader(
     path: impl AsRef<file_system::Path>,
     target: Target,
     maximum_model_size: usize,
-) -> virtual_file_system::Result<()> {
+) -> io_error::Result<()> {
     vfs.mount_character_device(task, path, from_loader(target, maximum_model_size))
         .await
 }
@@ -247,7 +246,7 @@ impl BaseOperations for BackendInformationDevice {
         _buffer: &[u8],
         _absolute_position: Size,
     ) -> core::task::Poll<Result<usize>> {
-        file_system::ready(|| Err(IoErrorKind::Unsupported))
+        file_system::ready(|| Err(Kind::Unsupported))
     }
 
     fn clone_context(&self, _context: &Context) -> Result<Context> {
@@ -268,19 +267,16 @@ pub async fn mount_backend_information(
     vfs: &virtual_file_system::VirtualFileSystem,
     task: task::TaskIdentifier,
     path: impl AsRef<file_system::Path>,
-) -> virtual_file_system::Result<()> {
+) -> io_error::Result<()> {
     vfs.mount_character_device(task, path, BackendInformationDevice)
         .await
 }
 
 fn quantization(quant: nanoglia::Quantization<'_>, index: usize) -> Result<QuantizationEntry> {
     Ok(QuantizationEntry {
-        scale: quant.scale.get(index).ok_or(IoErrorKind::InvalidArgument)?,
+        scale: quant.scale.get(index).ok_or(Kind::InvalidArgument)?,
         reserved: 0,
-        zero_point: quant
-            .zero_point
-            .get(index)
-            .ok_or(IoErrorKind::InvalidArgument)?,
+        zero_point: quant.zero_point.get(index).ok_or(Kind::InvalidArgument)?,
     })
 }
 
@@ -302,17 +298,17 @@ fn tensor_info(desc: nanoglia::TensorDesc<'_>) -> TensorInfo {
     }
 }
 
-fn map_error(error: nanoglia::Error) -> file_system::IoErrorKind {
+fn map_error(error: nanoglia::Error) -> io_error::Kind {
     match error.code {
-        nanoglia::ErrorCode::InvalidArgument => file_system::IoErrorKind::InvalidArgument,
-        nanoglia::ErrorCode::InvalidEncoding => file_system::IoErrorKind::InvalidData,
-        nanoglia::ErrorCode::TooLarge => file_system::IoErrorKind::OutOfMemory,
-        nanoglia::ErrorCode::NotFound => file_system::IoErrorKind::NotFound,
-        nanoglia::ErrorCode::UnsupportedOperation => file_system::IoErrorKind::Unsupported,
-        nanoglia::ErrorCode::Security => file_system::IoErrorKind::PermissionDenied,
-        nanoglia::ErrorCode::Timeout => file_system::IoErrorKind::TimedOut,
+        nanoglia::ErrorCode::InvalidArgument => io_error::Kind::InvalidArgument,
+        nanoglia::ErrorCode::InvalidEncoding => io_error::Kind::InvalidData,
+        nanoglia::ErrorCode::TooLarge => io_error::Kind::OutOfMemory,
+        nanoglia::ErrorCode::NotFound => io_error::Kind::NotFound,
+        nanoglia::ErrorCode::UnsupportedOperation => io_error::Kind::Unsupported,
+        nanoglia::ErrorCode::Security => io_error::Kind::PermissionDenied,
+        nanoglia::ErrorCode::Timeout => io_error::Kind::TimedOut,
         nanoglia::ErrorCode::RuntimeError | nanoglia::ErrorCode::Unknown => {
-            file_system::IoErrorKind::InputOutput
+            io_error::Kind::InputOutput
         }
     }
 }

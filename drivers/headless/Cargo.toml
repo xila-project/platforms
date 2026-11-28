@@ -5,6 +5,7 @@ edition = "2024"
 rust-version.workspace = true
 
 [dependencies]
+io_error.workspace = true
 audio = { workspace = true }
 file_system = { workspace = true }
 graphics = { workspace = true, features = [

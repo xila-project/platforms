@@ -6,7 +6,7 @@ rust-version.workspace = true
 
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
 file_system = { workspace = true }
-io_error = { workspace = true }
+io_error = { workspace = true, features = ["std"] }
 log = { workspace = true }
 memory = { workspace = true }
 time = { workspace = true }

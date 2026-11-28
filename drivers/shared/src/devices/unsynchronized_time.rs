@@ -1,8 +1,7 @@
 use core::task::{Context, Poll};
 
-use file_system::{
-    DirectBaseOperations, DirectCharacterDevice, IoErrorKind, MountOperations, Result, Size,
-};
+use file_system::{DirectBaseOperations, DirectCharacterDevice, MountOperations, Size};
+use io_error::{Kind, Result};
 
 /// Time device for boards without a battery-backed or configured wall clock.
 ///
@@ -20,11 +19,11 @@ impl UnsynchronizedTimeDevice {
 
 impl DirectBaseOperations for UnsynchronizedTimeDevice {
     fn read(&self, _: &mut Context<'_>, _: &mut [u8], _: Size) -> Poll<Result<usize>> {
-        Poll::Ready(Err(IoErrorKind::DeviceUnavailable))
+        Poll::Ready(Err(Kind::DeviceUnavailable))
     }
 
     fn write(&self, _: &mut Context<'_>, _: &[u8], _: Size) -> Poll<Result<usize>> {
-        Poll::Ready(Err(IoErrorKind::Unsupported))
+        Poll::Ready(Err(Kind::Unsupported))
     }
 }
 

@@ -31,6 +31,7 @@ drivers_std = { workspace = true, optional = true }
 critical-section = { workspace = true, optional = true, features = ["std"] }
 
 [dev-dependencies]
+io_error.workspace = true
 shared = { workspace = true }
 ed25519-dalek = { version = "3.0", default-features = false }
 

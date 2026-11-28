@@ -130,7 +130,7 @@ async fn hostfs_symlink_escaping_the_root_is_path_escapes_root() {
                 file_system::Flags::new(file_system::AccessFlags::Read, None, None),
             )
             .err(),
-        Some(file_system::IoErrorKind::PathEscapesRoot)
+        Some(io_error::Kind::PathEscapesRoot)
     );
 
     let _ = fs::remove_dir_all(root);
@@ -271,7 +271,8 @@ async fn confined_lookups_enter_a_host_mount() {
 #[cfg(target_os = "linux")]
 #[test]
 async fn confined_lookups_cannot_escape_through_host_links() {
-    use file_system::{AccessFlags, CreateFlags, Flags, IoErrorKind};
+    use file_system::{AccessFlags, CreateFlags, Flags};
+    use io_error::Kind;
     use std::fs;
 
     let root = host_test_root("hostfs-escape-confined");
@@ -323,7 +324,7 @@ async fn confined_lookups_cannot_escape_through_host_links() {
             vfs.open_beneath(&Path::from_str(path), read, task, &directory_root)
                 .await
                 .err(),
-            Some(IoErrorKind::PathEscapesRoot),
+            Some(Kind::PathEscapesRoot),
             "{path}"
         );
     }
@@ -369,7 +370,7 @@ async fn confined_lookups_cannot_escape_through_host_links() {
         vfs.open(&Path::from_str("/host/sandbox/up/secret"), read, task)
             .await
             .err(),
-        Some(IoErrorKind::NotFound)
+        Some(Kind::NotFound)
     );
 
     assert_eq!(fs::read(outside.join("secret")).unwrap(), b"secret");

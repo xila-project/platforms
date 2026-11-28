@@ -5,9 +5,9 @@ use embassy_nrf::mode::Blocking;
 use embassy_nrf::peripherals::RNG;
 use embassy_nrf::rng::Rng;
 use file_system::{
-    DirectBaseOperations, DirectCharacterDevice, IoErrorKind, MountOperations, Result, Size,
-    mount::MutexMountWrapper,
+    DirectBaseOperations, DirectCharacterDevice, MountOperations, Size, mount::MutexMountWrapper,
 };
+use io_error::{Kind, Result};
 use synchronization::blocking_mutex::raw::CriticalSectionRawMutex;
 
 struct RandomInner {
@@ -57,11 +57,11 @@ impl DirectBaseOperations for RandomDevice {
         _buffer: &[u8],
         _position: Size,
     ) -> Poll<Result<usize>> {
-        file_system::ready(|| Err(IoErrorKind::Unsupported))
+        file_system::ready(|| Err(Kind::Unsupported))
     }
 
     fn set_position(&self, _position: Size, _new_position: &file_system::Position) -> Result<Size> {
-        Err(IoErrorKind::Unsupported)
+        Err(Kind::Unsupported)
     }
 }
 
