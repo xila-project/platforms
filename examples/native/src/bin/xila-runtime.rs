@@ -9,6 +9,7 @@ use std::{
     vec::Vec,
 };
 use xila::file_system::PathOwned;
+use xila::task;
 
 #[path = "../native_executables.rs"]
 mod native_executables;
@@ -288,7 +289,6 @@ fn parse_environment(value: &str) -> Result<(String, String), String> {
 }
 
 #[xila::task::run(
-    task_path = xila::task,
     executor = drivers_std::executor::instantiate_static_executor!(),
     manager = &TASK_MANAGER
 )]
