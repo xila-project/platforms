@@ -7,8 +7,8 @@ use core::time::Duration;
 use embassy_futures::select::{Either, select};
 use file_system::{BaseOperations, CharacterDevice, Context, MountOperations, Size};
 use io_error::{Kind, Result};
-use shared::HttpRequestParser;
 use synchronization::Arc;
+use xila_http::HttpRequestParser;
 
 async fn run_request(
     manager: &'static network::Manager,

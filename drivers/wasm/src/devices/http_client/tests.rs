@@ -4,8 +4,8 @@ use super::{
 };
 use alloc::{string::String, vec, vec::Vec};
 use io_error::Kind;
-use shared::HttpResponseParser;
 use wasm_bindgen_test::wasm_bindgen_test;
+use xila_http::HttpResponseParser;
 
 /// The request `Weather` writes to `/devices/network/https_client`.
 const WEATHER_REQUEST: &[u8] = b"GET /v1/search?name=Paris&count=5 HTTP/1.1\r\nHost: geocoding-api.open-meteo.com\r\nConnection: close\r\nAccept: application/json\r\nAccept-Encoding: identity\r\nUser-Agent: Xila-Weather\r\n\r\n";

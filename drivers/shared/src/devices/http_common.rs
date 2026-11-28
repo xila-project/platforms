@@ -1,6 +1,6 @@
-use io_error::Result;
-use network::{ResolveError, TcpSocket};
-use shared::HttpRequestParser;
+use io_error::{ResolveError, Result};
+use network::TcpSocket;
+use xila_http::HttpRequestParser;
 
 /// Keep the failure kind of a DNS lookup. An unreachable network or host is a transport failure,
 /// never a missing file: `ResolveError` carries its own typed `Kind`.

@@ -15,8 +15,8 @@ use file_system::{
 };
 use io_error::{Kind, Result};
 use rand_core::{TryCryptoRng, TryRng};
-use shared::HttpRequestParser;
 use synchronization::Arc;
+use xila_http::HttpRequestParser;
 const DEFAULT_HTTPS_PORT: u16 = 443;
 const TLS_RECORD_BUFFER_SIZE: usize = 16384;
 // TLS 1.3 ciphertext can exceed the plaintext record limit by 256 bytes
