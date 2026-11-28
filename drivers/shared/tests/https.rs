@@ -219,7 +219,7 @@ async fn https_device_with_real_tls_server() {
                 .unwrap();
             let mut head = Vec::new();
             let mut buffer = [0; 4096];
-            while shared::get_body(&head).is_none() {
+            while xila_http::get_body(&head).is_none() {
                 let n = poll_fn(|cx| device.read(&mut context, cx, &mut buffer, 0))
                     .await
                     .expect(path);
@@ -227,7 +227,7 @@ async fn https_device_with_real_tls_server() {
                 head.extend_from_slice(&buffer[..n]);
             }
             assert_eq!(
-                shared::HttpResponseParser::from_buffer(&head).get_status_code(),
+                xila_http::HttpResponseParser::from_buffer(&head).get_status_code(),
                 Some(200)
             );
             let mut total = 0;

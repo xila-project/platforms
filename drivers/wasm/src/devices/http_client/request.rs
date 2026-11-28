@@ -6,7 +6,7 @@
 //! survives the translation.
 use alloc::{format, string::String, vec::Vec};
 use io_error::{Kind, Result};
-use shared::HttpRequestParser;
+use xila_http::HttpRequestParser;
 
 pub(super) struct PreparedRequest<'a> {
     pub method: &'a str,
