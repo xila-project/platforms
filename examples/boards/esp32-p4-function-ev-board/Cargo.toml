@@ -27,7 +27,7 @@ xila = { git = "https://github.com/xila-project/core", branch = "main", default-
 # Developer-only handler that runs raw ELF files from the file system as native
 # executables. It does not sandbox them.
 native-dev = ["firmware/native-dev"]
-# Statically linked C demo executable mounted at `/applications/executables/c_demo`.
+# Statically linked C programs mounted under `/applications/executables`.
 native-linked = ["firmware/native-linked"]
 
 [[bin]]

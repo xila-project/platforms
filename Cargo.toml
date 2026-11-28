@@ -101,6 +101,9 @@ drivers_wasm = { package = "xila-drivers-wasm", path = "drivers/wasm" }
 
 # - Executables
 c_demo = { package = "xila-c-demo", git = "https://github.com/xila-project/applications", branch = "main" }
+hexdump = { package = "xila-hexdump", git = "https://github.com/xila-project/applications", branch = "main", features = [
+  "native-linked",
+] }
 digits = { package = "xila-digits", git = "https://github.com/xila-project/applications", branch = "main", default-features = false }
 file_manager = { package = "xila-file-manager", git = "https://github.com/xila-project/applications", branch = "main" }
 command_line_shell = { package = "xila-command-line-shell", git = "https://github.com/xila-project/applications", branch = "main" }

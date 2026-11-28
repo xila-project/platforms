@@ -34,6 +34,28 @@ To compile and copy only the ELF, run
 from the Platforms root. Supply the version pins from `mise.toml`. The script
 uses the installed compiler and skips image packaging.
 
+## Linked C programs
+
+ESP32-S3 QEMU and ESP32-C6 QEMU build with `native-linked`. On the
+WT32-SC01 Plus and ESP32-P4X-Function-EV-Board, enable `native-linked` to
+mount `c_demo` and `hexdump` under `/applications/executables`.
+
+The QEMU build tasks prepare the native SDK from the Core revision in
+`Cargo.lock`. Install Python 3.12 or later and Zstandard. For ESP32-S3, put the
+pinned Xtensa GCC tools on `PATH`. For ESP32-C6 and ESP32-P4, install Clang,
+LLVM, LLD, and RISC-V bare-metal GCC with the target's 32-bit libraries.
+
+For a hardware build, prepare the SDK and pass its directory to the build
+task. For the WT32-SC01 Plus, use `xtensa-esp32s3-elf` as the SDK target.
+
+```sh
+export XILA_SDK_DIRECTORY="$(mise run --quiet setup:native-sdk riscv32imafc-unknown-none-elf)"
+mise run build:esp32-p4-function-ev-board -- --features native-linked
+```
+
+After login, run `hexdump /file.txt` to dump `file.txt` in your home directory.
+For `hexdump`, an absolute path starts at your home directory.
+
 ## Time zone
 
 At start-up, the firmware loads the time zone setting

@@ -163,9 +163,11 @@ jobs:
           - chip: esp32s3
             name: ESP32-S3
             task: test:esp32-s3-qemu
+            sdk-packages: ci:packages-espressif-sdk
           - chip: esp32c6
             name: ESP32-C6
             task: test:esp32-c6-qemu
+            sdk-packages: ci:packages-espressif-sdk-riscv
     steps:
       - name: "Setup | Checkout sources"
         uses: actions/checkout@v7
@@ -175,6 +177,8 @@ jobs:
         uses: jdx/mise-action@v5.2.2
       - name: "Setup | Native QEMU libraries"
         run: mise run ci:packages-espressif
+      - name: "Setup | Native SDK packages"
+        run: mise run ${{ matrix.sdk-packages }}
       - name: "Setup | Espressif Rust and GCC toolchain"
         if: matrix.chip == 'esp32s3'
         run: mise run setup:espressif-rust

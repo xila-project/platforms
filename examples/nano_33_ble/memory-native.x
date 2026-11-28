@@ -33,3 +33,10 @@ _storage_size = LENGTH(STORAGE);
 /* The stack: the 32 KiB below the crash record. The heap lies between the
    static data and this limit. */
 _heap_end = ORIGIN(RAM) + LENGTH(RAM) - 32K;
+
+/* The C SDK uses position-independent code. The static link resolves the
+   global offset table entries, so the table can stay in flash. */
+SECTIONS
+{
+  .linked_got : { *(.got .got.*) } > FLASH
+} INSERT AFTER .rodata;

@@ -39,6 +39,13 @@ partition_table="$directory/partitions.csv"
 root="$PWD/target/espressif-emulator"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
 
+prepare_native_sdk() {
+    if [[ -z ${XILA_SDK_DIRECTORY:-} ]]; then
+        XILA_SDK_DIRECTORY=$(mise run --quiet setup:native-sdk "$1")
+        export XILA_SDK_DIRECTORY
+    fi
+}
+
 build_xtensa() {
     local compiler esp_root gcc_bin target_environment
     compiler=$(rustup which --toolchain esp rustc)
@@ -67,6 +74,9 @@ build_xtensa() {
     local host
     host=$(rustup run esp rustc -vV | sed -n 's/^host: //p')
     export "BINDGEN_EXTRA_CLANG_ARGS_${host//-/_}=--target=$host"
+    if [[ "$board" == esp32-s3-qemu ]]; then
+        prepare_native_sdk xtensa-esp32s3-elf
+    fi
     rustup run esp cargo "${build_args[@]}" --target "$target" -Zbuild-std=core,alloc
     objdump="$gcc_bin/xtensa-$chip-elf-objdump"
 }
@@ -148,6 +158,7 @@ case "$board" in
         # again once the pinned QEMU release contains the fix.
         flash_mode=qio
         flash_size=4mb
+        prepare_native_sdk "$target"
         CC_riscv32imac_unknown_none_elf=clang \
             rustup run "$rust_version" cargo "${build_args[@]}" --target "$target"
         ;;

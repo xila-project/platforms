@@ -16,15 +16,16 @@ bring-up = []
 # executables, with their images in the SRAM heap. It does not sandbox them.
 # Selects `memory-native.x` (576 KiB firmware flash, 384 KiB LittleFS).
 native-dev = ["xila/native-dev"]
-# Statically linked C demo executable mounted at `/applications/executables/c_demo`.
+# Statically linked C programs mounted under `/applications/executables`.
 # Selects `memory-native.x` (576 KiB firmware flash, 384 KiB LittleFS).
-native-linked = ["dep:c_demo", "xila/native-linked"]
+native-linked = ["dep:c_demo", "dep:hexdump", "xila/native-linked"]
 
 [target.'cfg(all(target_arch = "arm", target_os = "none"))'.dependencies]
 # Not the workspace entries: this board has no network, and a workspace member
 # cannot turn off default features the workspace entry leaves on.
 xila = { git = "https://github.com/xila-project/core", branch = "main", default-features = false }
 c_demo = { workspace = true, optional = true }
+hexdump = { workspace = true, optional = true }
 command_line_shell = { package = "xila-command-line-shell", git = "https://github.com/xila-project/applications", branch = "main", default-features = false }
 drivers_core = { workspace = true }
 drivers_peripherals = { workspace = true }

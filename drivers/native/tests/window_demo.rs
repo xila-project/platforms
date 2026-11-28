@@ -39,6 +39,7 @@ async fn main() {
         true,
     )
     .await;
+    let graphics: &'static graphics::Manager = Box::leak(Box::new(graphics));
 
     graphics
         .add_input_device(Box::leak(Box::new(keyboard_device)), InputKind::Keypad)
@@ -52,33 +53,36 @@ async fn main() {
         .await
         .unwrap();
 
-    let mut window = graphics.create_window().await.unwrap();
-
-    let window = window.as_object_mutable();
-
-    let _calendar = unsafe { lvgl::lv_calendar_create(window) };
-
-    let button = unsafe { lvgl::lv_button_create(window) };
-
-    let label = unsafe { lvgl::lv_label_create(button) };
-
-    let slider = unsafe { lvgl::lv_slider_create(window) };
-
     unsafe extern "C" fn quit(_event: *mut lvgl::lv_event_t) {
         exit(0);
     }
 
-    unsafe {
-        lvgl::lv_obj_set_align(slider, lvgl::lv_align_t_LV_ALIGN_LEFT_MID);
-        lvgl::lv_obj_set_align(button, lvgl::lv_align_t_LV_ALIGN_CENTER);
-        lvgl::lv_label_set_text(label, c"Quit".as_ptr());
-        lvgl::lv_obj_add_event_cb(
-            button,
-            Some(quit),
-            lvgl::lv_event_code_t_LV_EVENT_CLICKED,
-            null_mut(),
-        );
-    }
+    let _window = graphics
+        .lock()
+        .await
+        .with_lvgl(|session| {
+            let mut window = graphics.create_window(session).unwrap();
+            let parent = window.as_object_mutable();
+
+            // SAFETY: The window is live and the graphics session holds the LVGL lock.
+            unsafe {
+                lvgl::lv_calendar_create(parent);
+                let button = lvgl::lv_button_create(parent);
+                let label = lvgl::lv_label_create(button);
+                let slider = lvgl::lv_slider_create(parent);
+                lvgl::lv_obj_set_align(slider, lvgl::lv_align_t_LV_ALIGN_LEFT_MID);
+                lvgl::lv_obj_set_align(button, lvgl::lv_align_t_LV_ALIGN_CENTER);
+                lvgl::lv_label_set_text(label, c"Quit".as_ptr());
+                lvgl::lv_obj_add_event_cb(
+                    button,
+                    Some(quit),
+                    lvgl::lv_event_code_t_LV_EVENT_CLICKED,
+                    null_mut(),
+                );
+            }
+            window
+        })
+        .unwrap();
 
     graphics.r#loop(task::Manager::sleep).await.unwrap();
 }

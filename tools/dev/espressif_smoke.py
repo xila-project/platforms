@@ -4,11 +4,15 @@
 
 Each run gets its own directory under RUNS_DIRECTORY holding a private copy of the
 image (the firmware formats its LittleFS partition), `uart.log` and `qemu.log`.
-The S3 run also keeps the LVGL frame in `screen.ppm` and `screen.png`.
+The ESP32-S3 (Xtensa) run also logs in, checks hexdump output for a file in
+the user's home, and keeps the LVGL frame in `screen.ppm` and `screen.png`.
+The ESP32-C6 run stops at the login prompt. Without an entropy source, the
+firmware cannot create the default account.
 """
 
 import argparse
 import asyncio
+from contextlib import suppress
 import json
 import os
 from pathlib import Path
@@ -21,12 +25,14 @@ import tempfile
 import time
 import zlib
 
-TIMEOUT = 60
+BOOT_TIMEOUT = 60
+SHELL_TIMEOUT = 120
 RNG_MARKER = "Random generator works"
 NATIVE_MARKER = "Xila: native executable memory self-test passed"
 LVGL_MARKER = "Xila: LVGL frame flushed"
 STACK_MARKER = "Xila: main stack high-water"
-SHELL_PROMPT_MARKER = "User name:"
+LOGIN_MARKER = "User name:"
+SHELL_PROMPT = re.compile(r"administrator@xila:[^\r\n]*\$ ")
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 # Each marker must appear in this order: the smoke check fails on the first one
 # that is missing, so the failing boot stage is named.
@@ -38,7 +44,7 @@ MARKERS = [
     LVGL_MARKER,
     "Xila heap: ",
     STACK_MARKER,
-    SHELL_PROMPT_MARKER,
+    LOGIN_MARKER,
 ]
 WIDTH, HEIGHT = 160, 120
 
@@ -162,6 +168,43 @@ def stop(emulator, failed):
         print(f"QEMU (process {emulator.pid}) did not exit after being killed", file=sys.stderr)
 
 
+def wait_for_uart(emulator, uart, marker, deadline, start=0):
+    """Return the text before the marker and the position after it."""
+    while time.monotonic() < deadline:
+        log = ANSI_ESCAPE.sub("", uart.read_text(errors="replace"))
+        if "Xila panic:" in log:
+            raise SmokeError("the firmware panicked")
+        if match := marker.search(log, start):
+            return log[:match.start()], match.end()
+        if emulator.poll() is not None:
+            raise SmokeError(f"QEMU exited with {emulator.returncode} before {marker.pattern!r}")
+        time.sleep(0.2)
+    raise SmokeError(f"timed out waiting for {marker.pattern!r} on UART")
+
+
+def check_hexdump(emulator, uart, deadline, position):
+    def send(line):
+        try:
+            emulator.stdin.write(line + b"\r")
+            emulator.stdin.flush()
+        except BrokenPipeError as error:
+            raise SmokeError("QEMU closed the UART input during the hexdump check") from error
+
+    send(b"administrator")
+    _, position = wait_for_uart(emulator, uart, re.compile("Password:"), deadline, position)
+    send(b"")
+    _, position = wait_for_uart(emulator, uart, SHELL_PROMPT, deadline, position)
+    send(b"echo Xila > /users/administrator/hexdump.txt")
+    _, position = wait_for_uart(emulator, uart, SHELL_PROMPT, deadline, position)
+    send(b"hexdump -c 5 /hexdump.txt")
+    output, _ = wait_for_uart(emulator, uart, SHELL_PROMPT, deadline, position)
+    rows = [line for line in output[position:].splitlines() if line.startswith("000000")]
+    expected = ["00000000  58 69 6c 61 0a  |Xila.|"]
+    if rows != expected:
+        raise SmokeError(f"hexdump returned {rows!r}, expected {expected!r}")
+    print("Verified hexdump output for the file in the user's home", flush=True)
+
+
 def run(chip, qemu, image, runs, expect_wifi_profile=False):
     # Espressif QEMU exposes the virtual RGB panel on the S3 machine.
     check_display = chip == "esp32s3"
@@ -174,47 +217,48 @@ def run(chip, qemu, image, runs, expect_wifi_profile=False):
     os.chdir(directory)
     command = [
         qemu, "-M", chip, "-display", "none", "-monitor", "none", "-nic", "none",
-        "-no-reboot", "-serial", f"file:{uart}",
+        "-no-reboot", "-serial", "stdio",
         # The flash copy is thrown away after the run, so QEMU never has to flush
         # it: an exit then does not wait on the disk when the machine is busy.
         "-drive", f"file={flash},if=mtd,format=raw,cache=unsafe",
     ]
     if check_display:
         command += ["-qmp", "unix:qmp.sock,server=on,wait=off"]
-    deadline = time.monotonic() + TIMEOUT
-    with (directory / "qemu.log").open("wb") as diagnostics:
-        emulator = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=diagnostics,
-                                    stderr=subprocess.STDOUT)
+    deadline = time.monotonic() + BOOT_TIMEOUT
+    with (directory / "qemu.log").open("wb") as diagnostics, uart.open("wb") as serial_log:
+        emulator = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=serial_log,
+                                    stderr=diagnostics)
         failed = True
         try:
-            log = ""
-            while SHELL_PROMPT_MARKER not in log:
-                if emulator.poll() is not None:
-                    raise SmokeError(f"QEMU exited with {emulator.returncode} before the shell prompt appeared")
-                if time.monotonic() > deadline:
-                    raise SmokeError(f"no {SHELL_PROMPT_MARKER!r} shell prompt after {TIMEOUT} s")
-                time.sleep(0.2)
-                log = uart.read_text(errors="replace") if uart.exists() else ""
-                if "Xila panic:" in log:
-                    raise SmokeError("the firmware panicked")
+            before_login, position = wait_for_uart(emulator, uart, re.compile(LOGIN_MARKER), deadline)
+            log = before_login + LOGIN_MARKER
             check_markers(log, chip)
             if expect_wifi_profile:
                 profile_position = log.find("Wi-Fi: station profile loaded")
                 failure_position = log.find("Wi-Fi: startup failed")
-                login_position = log.find(SHELL_PROMPT_MARKER)
+                login_position = log.find(LOGIN_MARKER)
                 if not 0 <= profile_position < failure_position < login_position:
                     raise SmokeError("valid Wi-Fi profile did not take the unavailable-radio path")
                 if WIFI_TEST_NAME.decode() in log:
                     raise SmokeError("the Wi-Fi name appeared in the boot log")
             if check_display:
                 check_frame(screendump(directory, deadline))
+                if not expect_wifi_profile:
+                    # File writes can take longer than boot on a loaded host.
+                    shell_deadline = time.monotonic() + SHELL_TIMEOUT
+                    check_hexdump(emulator, uart, shell_deadline, position)
             failed = False
         except BaseException:
             sys.stdout.write(uart.read_text(errors="replace") if uart.exists() else "")
             print(f"{chip} smoke failed; see {directory}", file=sys.stderr)
             raise
         finally:
-            stop(emulator, failed)
+            try:
+                stop(emulator, failed)
+            finally:
+                # Closing the pipe can flush bytes that QEMU did not read.
+                with suppress(BrokenPipeError):
+                    emulator.stdin.close()
     sys.stdout.write(uart.read_text(errors="replace"))
     return flash
 

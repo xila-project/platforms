@@ -12,9 +12,9 @@ builds the firmware and writes it through the Arduino bootloader, which stays
 in place. Then open the serial port the board presents (any speed), for example
 `picocom /dev/ttyACM0`, and log in as `administrator` with an empty password.
 
-The first start formats the file system and creates that account. Flashing
-again keeps the file system; to start over, erase its first pages from the
-bootloader.
+On first start, the firmware formats the LittleFS partition and creates the
+default account. Flashing again with the same layout keeps the file system.
+To start over, erase its first pages from the bootloader.
 
 ## Layout
 
@@ -24,9 +24,30 @@ bootloader.
 | Firmware | `0x10000`–`0x80000` (448 KiB) | Xila |
 | File system | `0x80000`–`0x100000` (512 KiB) | LittleFS, 4 KiB blocks |
 
-`memory.x` holds these addresses. The RAM is 256 KiB: static data, then the
+`memory.x` holds these addresses. Builds with `native-linked` or `native-dev`
+use `memory-native.x` instead (see Linked C programs). The RAM is 256 KiB: static data, then the
 heap, then 32 KiB of stack; the last 256 bytes carry the message of a crash
 across the reset.
+
+## Linked C programs
+
+Build with `native-linked` to mount `c_demo` and `hexdump` under
+`/applications/executables`. Install Python 3.12 or later, Clang, LLVM, LLD,
+Zstandard, and Arm bare-metal GCC.
+
+```sh
+export XILA_SDK_DIRECTORY="$(mise run --quiet setup:native-sdk thumbv7em-none-eabihf)"
+mise run build:nano-33-ble -- --features native-linked
+```
+
+After login, `hexdump /file.txt` reads `file.txt` in your home directory.
+With `native-linked`, the firmware has 576 KiB and LittleFS starts at
+`0xA0000` with 384 KiB.
+
+`native-linked` and `native-dev` place LittleFS at `0xA0000`. The default build
+places it at `0x80000`. Back up your files before you switch between them. The
+firmware does not migrate files. If it cannot mount LittleFS at the configured
+address, it formats the partition and creates the default account.
 
 ## Recovery
 
